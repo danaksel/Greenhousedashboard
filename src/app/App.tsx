@@ -3,7 +3,7 @@ import { MetricCard } from "./components/metric-card";
 import { TrendChart } from "./components/trend-chart";
 import { Thermometer, Droplets, RefreshCw } from "lucide-react";
 import { fetchLatestGreenhouseData, fetchGreenhouseHistory } from "./utils/api";
-import heroImage from "figma:asset/2f353a378db8c243386c6d858b56178b5d6ac275.png";
+import heroImage from "../assets/drivhus.png"";
 
 export default function App() {
   const [temperature, setTemperature] = useState<number | null>(null);
