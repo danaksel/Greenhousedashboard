@@ -1,8 +1,9 @@
+import { useState, useEffect } from "react";
 import { MetricCard } from "./components/metric-card";
 import { TrendChart } from "./components/trend-chart";
-import { Droplets, Thermometer, RefreshCw } from "lucide-react";
-import { useState, useEffect } from "react";
+import { Thermometer, Droplets, RefreshCw } from "lucide-react";
 import { fetchLatestGreenhouseData, fetchGreenhouseHistory } from "./utils/api";
+import heroImage from "figma:asset/7cc91f1e99a12ef00b582d893b4030c395b28918.png";
 
 export default function App() {
   const [temperature, setTemperature] = useState<number | null>(null);
@@ -58,16 +59,22 @@ export default function App() {
       const tempRawValues = tempHistory.map(item => item.value);
       const tempFilledValues = fillForward(tempRawValues);
       
-      const tempData = tempTimes.map((time, index) => ({
-        time: time,
-        value: tempFilledValues[index],
-        id: `temp-${time}-${index}`
-      }))
-      .filter(item => {
-        // Only show every third hour (00:00, 03:00, 06:00, 09:00, 12:00, 15:00, 18:00, 21:00)
-        const hour = parseInt(item.time.split(':')[0]);
-        return hour % 3 === 0 && item.value !== null;
-      }) as Array<{ time: string; value: number; id: string }>;
+      const tempData = tempTimes
+        .map((time, index) => ({
+          time: time,
+          value: tempFilledValues[index],
+          originalIndex: index
+        }))
+        .filter(item => {
+          // Only show every third hour (00:00, 03:00, 06:00, 09:00, 12:00, 15:00, 18:00, 21:00)
+          const hour = parseInt(item.time.split(':')[0]);
+          return hour % 3 === 0 && item.value !== null;
+        })
+        .map((item, finalIndex) => ({
+          time: item.time,
+          value: item.value as number,
+          id: `temp-${finalIndex}-${item.time}-${item.originalIndex}`
+        }));
       
       // Transform humidity history data
       const humHistory = history.humidity || [];
@@ -75,16 +82,22 @@ export default function App() {
       const humRawValues = humHistory.map(item => item.value);
       const humFilledValues = fillForward(humRawValues);
       
-      const humData = humTimes.map((time, index) => ({
-        time: time,
-        value: humFilledValues[index],
-        id: `hum-${time}-${index}`
-      }))
-      .filter(item => {
-        // Only show every third hour (00:00, 03:00, 06:00, 09:00, 12:00, 15:00, 18:00, 21:00)
-        const hour = parseInt(item.time.split(':')[0]);
-        return hour % 3 === 0 && item.value !== null;
-      }) as Array<{ time: string; value: number; id: string }>;
+      const humData = humTimes
+        .map((time, index) => ({
+          time: time,
+          value: humFilledValues[index],
+          originalIndex: index
+        }))
+        .filter(item => {
+          // Only show every third hour (00:00, 03:00, 06:00, 09:00, 12:00, 15:00, 18:00, 21:00)
+          const hour = parseInt(item.time.split(':')[0]);
+          return hour % 3 === 0 && item.value !== null;
+        })
+        .map((item, finalIndex) => ({
+          time: item.time,
+          value: item.value as number,
+          id: `hum-${finalIndex}-${item.time}-${item.originalIndex}`
+        }));
 
       setTemperatureData(tempData);
       setHumidityData(humData);
@@ -108,7 +121,7 @@ export default function App() {
   }, []);
 
   const getTemperatureStatus = (temp: number) => {
-    if (temp < 18 || temp > 28) return "warning";
+    if (temp < 12 || temp > 28) return "warning";
     return "normal";
   };
 
@@ -118,51 +131,61 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-teal-50 p-4">
+    <div className="min-h-screen bg-gradient-to-b from-stone-100 to-amber-50">
       <div className="max-w-md mx-auto">
-        {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-3xl mb-2 text-emerald-900">Greenhouse Monitor</h1>
-          <p className="text-sm text-emerald-700">
-            Last updated: {lastUpdated ? lastUpdated.toLocaleTimeString() : "N/A"}
-          </p>
-          {refreshing && <RefreshCw className="w-4 h-4 inline-block animate-spin ml-2" />}
+        {/* Hero Image */}
+        <div className="relative w-full h-80 overflow-hidden mb-6">
+          <img 
+            src={heroImage} 
+            alt="Drivhus" 
+            className="w-full h-full object-cover object-top"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent"></div>
+          <div className="absolute bottom-0 left-0 right-0 p-6">
+            <h1 className="text-4xl mb-2 text-white font-bold drop-shadow-lg">Drivhuset</h1>
+            <p className="text-sm text-white/90 drop-shadow">
+              Sist oppdatert: {lastUpdated ? lastUpdated.toLocaleTimeString('nb-NO') : "N/A"}
+              {refreshing && <RefreshCw className="w-4 h-4 inline-block animate-spin ml-2" />}
+            </p>
+          </div>
         </div>
 
-        {/* Metric Cards */}
-        <div className="space-y-4 mb-6">
-          <MetricCard
-            icon={<Thermometer className="w-8 h-8" />}
-            label="Temperature"
-            value={temperature}
-            unit="°C"
-            status={temperature !== null ? getTemperatureStatus(temperature) : "normal"}
-            iconColor="text-orange-500"
-          />
-          <MetricCard
-            icon={<Droplets className="w-8 h-8" />}
-            label="Humidity"
-            value={humidity}
-            unit="%"
-            status={humidity !== null ? getHumidityStatus(humidity) : "normal"}
-            iconColor="text-blue-500"
-          />
-        </div>
+        <div className="px-4 pb-6">
+          {/* Metric Cards */}
+          <div className="space-y-4 mb-6">
+            <MetricCard
+              icon={<Thermometer className="w-8 h-8" />}
+              label="Temperatur"
+              value={temperature}
+              unit="°C"
+              status={temperature !== null ? getTemperatureStatus(temperature) : "normal"}
+              iconColor="text-amber-600"
+            />
+            <MetricCard
+              icon={<Droplets className="w-8 h-8" />}
+              label="Luftfuktighet"
+              value={humidity}
+              unit="%"
+              status={humidity !== null ? getHumidityStatus(humidity) : "normal"}
+              iconColor="text-teal-600"
+            />
+          </div>
 
-        {/* Trend Charts */}
-        <div className="space-y-4">
-          <TrendChart
-            title="Temperature (24h)"
-            data={temperatureData}
-            color="#f97316"
-            unit="°C"
-          />
-          <TrendChart
-            title="Humidity (24h)"
-            data={humidityData}
-            color="#3b82f6"
-            unit="%"
-          />
+          {/* Trend Charts */}
+          <div className="space-y-4">
+            <TrendChart
+              title="Temperatur (24t)"
+              data={temperatureData}
+              color="#d97706"
+              unit="°C"
+            />
+            <TrendChart
+              title="Luftfuktighet (24t)"
+              data={humidityData}
+              color="#0d9488"
+              unit="%"
+            />
+          </div>
         </div>
       </div>
     </div>

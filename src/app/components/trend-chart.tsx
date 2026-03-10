@@ -10,25 +10,25 @@ interface TrendChartProps {
 
 export function TrendChart({ title, data, color, unit }: TrendChartProps) {
   return (
-    <Card className="p-4 bg-white shadow-lg">
-      <h3 className="text-sm mb-3 text-gray-700">{title}</h3>
+    <Card className="p-4 bg-white/90 backdrop-blur-sm shadow-lg border border-stone-200">
+      <h3 className="text-sm mb-3 text-stone-700">{title}</h3>
       <ResponsiveContainer width="100%" height={150}>
         <LineChart data={data}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+          <CartesianGrid strokeDasharray="3 3" stroke="#d6d3d1" />
           <XAxis 
             dataKey="time" 
-            tick={{ fontSize: 12 }} 
-            stroke="#9ca3af"
+            tick={{ fontSize: 12, fill: '#78716c' }} 
+            stroke="#a8a29e"
           />
           <YAxis 
-            tick={{ fontSize: 12 }} 
-            stroke="#9ca3af"
+            tick={{ fontSize: 12, fill: '#78716c' }} 
+            stroke="#a8a29e"
             domain={['auto', 'auto']}
           />
           <Tooltip
             contentStyle={{
               backgroundColor: "white",
-              border: "1px solid #e5e7eb",
+              border: "1px solid #d6d3d1",
               borderRadius: "8px",
               fontSize: "12px",
             }}
