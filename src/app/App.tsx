@@ -33,6 +33,17 @@ export default function App() {
       // Fetch historical data
       const history = await fetchGreenhouseHistory();
       
+      // Get current hour as the endpoint
+      const now = new Date();
+      const currentHour = now.getHours();
+      
+      // Generate list of hours to display (every 3rd hour going back 24 hours)
+      const hoursToShow: number[] = [];
+      for (let i = 0; i < 8; i++) { // 8 points * 3 hours = 24 hours
+        const hour = (currentHour - (i * 3) + 24) % 24;
+        hoursToShow.unshift(hour); // Add to beginning so oldest is first
+      }
+      
       // Fill forward function: carry last known value forward, but keep leading nulls
       const fillForward = (values: Array<number | null>): Array<number | null> => {
         let lastKnown: number | null = null;
@@ -53,51 +64,52 @@ export default function App() {
         });
       };
 
-      // Transform temperature history data
-      const tempHistory = history.temperature || [];
-      const tempTimes = tempHistory.map(item => item.time);
-      const tempRawValues = tempHistory.map(item => item.value);
-      const tempFilledValues = fillForward(tempRawValues);
-      
-      const tempData = tempTimes
-        .map((time, index) => ({
-          time: time,
-          value: tempFilledValues[index],
-          originalIndex: index
-        }))
-        .filter(item => {
-          // Only show every third hour (00:00, 03:00, 06:00, 09:00, 12:00, 15:00, 18:00, 21:00)
-          const hour = parseInt(item.time.split(':')[0]);
-          return hour % 3 === 0 && item.value !== null;
-        })
-        .map((item, finalIndex) => ({
-          time: item.time,
-          value: item.value as number,
-          id: `temp-${finalIndex}-${item.time}-${item.originalIndex}`
-        }));
-      
-      // Transform humidity history data
-      const humHistory = history.humidity || [];
-      const humTimes = humHistory.map(item => item.time);
-      const humRawValues = humHistory.map(item => item.value);
-      const humFilledValues = fillForward(humRawValues);
-      
-      const humData = humTimes
-        .map((time, index) => ({
-          time: time,
-          value: humFilledValues[index],
-          originalIndex: index
-        }))
-        .filter(item => {
-          // Only show every third hour (00:00, 03:00, 06:00, 09:00, 12:00, 15:00, 18:00, 21:00)
-          const hour = parseInt(item.time.split(':')[0]);
-          return hour % 3 === 0 && item.value !== null;
-        })
-        .map((item, finalIndex) => ({
-          time: item.time,
-          value: item.value as number,
-          id: `hum-${finalIndex}-${item.time}-${item.originalIndex}`
-        }));
+      // Process data for a given metric
+      const processHistoryData = (historyItems: Array<{ time: string; value: number | null }>, prefix: string) => {
+        const times = historyItems.map(item => item.time);
+        const rawValues = historyItems.map(item => item.value);
+        const filledValues = fillForward(rawValues);
+        
+        // Create a map to store the last occurrence of each hour
+        const hourMap = new Map<number, { time: string; value: number | null; originalIndex: number }>();
+        
+        times.forEach((time, index) => {
+          const hour = parseInt(time.split(':')[0]);
+          // Always update with the latest occurrence of this hour
+          hourMap.set(hour, {
+            time: time,
+            value: filledValues[index],
+            originalIndex: index
+          });
+        });
+        
+        // Build final data array using only the hours we want to show
+        const result = hoursToShow
+          .map(hour => {
+            const item = hourMap.get(hour);
+            if (item && item.value !== null) {
+              return {
+                hour,
+                time: item.time,
+                value: item.value,
+                originalIndex: item.originalIndex
+              };
+            }
+            return null;
+          })
+          .filter(item => item !== null)
+          .map((item, finalIndex) => ({
+            time: item!.time,
+            value: item!.value as number,
+            id: `${prefix}-${item!.hour}-${finalIndex}`
+          }));
+        
+        return result;
+      };
+
+      // Transform temperature and humidity history data
+      const tempData = processHistoryData(history.temperature || [], 'temp');
+      const humData = processHistoryData(history.humidity || [], 'hum');
 
       setTemperatureData(tempData);
       setHumidityData(humData);
