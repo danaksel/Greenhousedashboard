@@ -3,11 +3,13 @@ import { MetricCard } from "./components/metric-card";
 import { MetricCardSkeleton } from "./components/metric-card-skeleton";
 import { ChartSkeleton } from "./components/chart-skeleton";
 import { TrendChart } from "./components/trend-chart";
-import { Thermometer, Droplets, RefreshCw } from "lucide-react";
+import { Thermometer, Droplets, RefreshCw, Moon, Sun, WifiOff } from "lucide-react";
 import { fetchLatestGreenhouseData, fetchGreenhouseHistory, fetchWeatherData, type WeatherData } from "./utils/api";
 import { ImageWithFallback } from "./components/figma/ImageWithFallback";
 import { GreenhouseIcon } from "./components/greenhouse-icon";
 import { WeatherWidget } from "./components/weather-widget";
+import PullToRefresh from "react-pull-to-refresh";
+import { motion, AnimatePresence } from "motion/react";
 
 export default function App() {
   const [temperature, setTemperature] = useState<number | null>(null);
@@ -21,6 +23,14 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
+  const [darkMode, setDarkMode] = useState(() => {
+    const saved = localStorage.getItem("darkMode");
+    if (saved !== null) return saved === "true";
+    // Auto dark mode between 20:00 and 06:00
+    const hour = new Date().getHours();
+    return hour >= 20 || hour < 6;
+  });
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
 
   const loadData = async (isRefresh = false) => {
     try {
@@ -148,6 +158,12 @@ export default function App() {
       loadData(true);
     }, 900000);
 
+    // Online/offline listeners
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
     // Set theme-color meta tag for mobile browser address bar
     let metaThemeColor = document.querySelector('meta[name="theme-color"]');
     if (!metaThemeColor) {
@@ -155,7 +171,7 @@ export default function App() {
       metaThemeColor.setAttribute('name', 'theme-color');
       document.head.appendChild(metaThemeColor);
     }
-    metaThemeColor.setAttribute('content', '#5d7342');
+    metaThemeColor.setAttribute('content', darkMode ? '#2d3a21' : '#5d7342');
 
     // Set favicon
     let faviconLink = document.querySelector('link[rel="icon"]') as HTMLLinkElement;
@@ -170,8 +186,26 @@ export default function App() {
     // Set page title
     document.title = 'Kristins drivhus';
 
-    return () => clearInterval(interval);
-  }, []);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [darkMode]);
+
+  // Toggle dark mode
+  const toggleDarkMode = () => {
+    setDarkMode(prev => {
+      const newValue = !prev;
+      localStorage.setItem("darkMode", String(newValue));
+      return newValue;
+    });
+  };
+
+  // Manual refresh handler
+  const handleRefresh = async () => {
+    await loadData(true);
+  };
 
   const getTemperatureStatus = (temp: number) => {
     if (temp < 12 || temp > 28) return "warning";
@@ -234,18 +268,98 @@ export default function App() {
   const temperatureTrend = getTrend(temperature, temperatureData);
   const humidityTrend = getTrend(humidity, humidityData);
 
-  return (
-    <div className="min-h-screen bg-[#5d7342]">
-      <div className="max-w-md mx-auto">
-        {/* Header with Logo and Title */}
-        <div className="bg-[#5d7342] px-6 py-4">
-          <div className="flex items-end gap-3">
-            <GreenhouseIcon className="w-10 h-10 text-white" />
-            <h1 className="text-2xl text-white pb-0.5" style={{ fontFamily: "'Cinzel Decorative', serif", fontWeight: 400 }}>Kristins drivhus</h1>
+  const bgColor = darkMode ? 'bg-[#2d3a21]' : 'bg-[#f5f5f0]';
+  const textColor = darkMode ? 'text-white/80' : 'text-gray-800';
+  
+  // Icon colors with better contrast in dark mode
+  const humidityIconColor = darkMode ? 'text-[#8fbc5f]' : 'text-[#5d7342]';
+
+  const content = (
+    <div className={`min-h-screen transition-colors duration-300 ${bgColor}`}>
+      <div className="max-w-md mx-auto relative">
+        {/* Offline Indicator */}
+        <AnimatePresence>
+          {!isOnline && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="fixed top-0 left-0 right-0 z-50 bg-red-600 text-white text-center py-2 px-4 text-sm flex items-center justify-center gap-2"
+            >
+              <WifiOff className="w-4 h-4" />
+              <span>Ingen internettforbindelse</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Loading Progress Bar */}
+        <AnimatePresence>
+          {refreshing && (
+            <motion.div
+              initial={{ scaleX: 0 }}
+              animate={{ scaleX: 1 }}
+              exit={{ scaleX: 0 }}
+              transition={{ duration: 0.5 }}
+              className="fixed top-0 left-0 right-0 h-1 bg-[#d28c31] origin-left z-40"
+              style={{ transformOrigin: "left" }}
+            />
+          )}
+        </AnimatePresence>
+
+        {/* Header with Logo, Title, and Controls */}
+        <div className="bg-[#5d7342] px-6 py-4 sticky top-0 z-30">
+          <div className="flex items-end justify-between">
+            <div className="flex items-end gap-3">
+              <GreenhouseIcon className="w-10 h-10 text-white" />
+              <h1 className="text-2xl text-white pb-0.5" style={{ fontFamily: "'Cinzel Decorative', serif", fontWeight: 400 }}>Kristins drivhus</h1>
+            </div>
+            <div className="flex items-center gap-2 pb-1">
+              {/* Refresh Button */}
+              <button
+                onClick={handleRefresh}
+                disabled={refreshing || loading}
+                className="p-2 rounded-full hover:bg-white/10 transition-colors disabled:opacity-50"
+                aria-label="Oppdater data"
+              >
+                <motion.div
+                  animate={refreshing ? { rotate: 360 } : { rotate: 0 }}
+                  transition={refreshing ? { duration: 1, repeat: Infinity, ease: "linear" } : {}}
+                >
+                  <RefreshCw className="w-5 h-5 text-white" />
+                </motion.div>
+              </button>
+              {/* Dark Mode Toggle */}
+              <button
+                onClick={toggleDarkMode}
+                className="p-2 rounded-full hover:bg-white/10 transition-colors"
+                aria-label="Bytt modus"
+              >
+                {darkMode ? (
+                  <Sun className="w-5 h-5 text-white" />
+                ) : (
+                  <Moon className="w-5 h-5 text-white" />
+                )}
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Hero Image - Narrower */}
+        {/* Error Message */}
+        <AnimatePresence>
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              className="bg-red-500 text-white px-6 py-3 text-sm"
+            >
+              <p className="font-semibold">Feil ved lasting av data</p>
+              <p className="text-xs mt-1">{error}</p>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Hero Image */}
         <div className="relative w-full h-32 overflow-hidden mb-6">
           <ImageWithFallback
             src="/drivhus.png" 
@@ -262,41 +376,57 @@ export default function App() {
         </div>
 
         <div className="px-4 pb-6">
-          {/* Metric Cards */}
+          {/* Metric Cards with Animation */}
           <div className="space-y-4 mb-6">
             {loading ? (
               <MetricCardSkeleton />
             ) : (
-              <MetricCard
-                icon={<Thermometer className="w-8 h-8" />}
-                label="Temperatur"
-                value={temperature}
-                unit="°C"
-                status={temperature !== null ? getTemperatureStatus(temperature) : "normal"}
-                iconColor="text-[#d28c31]"
-                warningMessage={getTemperatureWarningMessage(temperature)}
-                min={temperatureMinMax.min}
-                max={temperatureMinMax.max}
-                trend={temperatureTrend}
-                updatedAt={temperatureUpdatedAt}
-              />
+              <motion.div
+                key={`temp-${temperature}`}
+                initial={{ opacity: 0.5 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.3 }}
+              >
+                <MetricCard
+                  icon={<Thermometer className="w-8 h-8" />}
+                  label="Temperatur"
+                  value={temperature}
+                  unit="°C"
+                  status={temperature !== null ? getTemperatureStatus(temperature) : "normal"}
+                  iconColor="text-[#d28c31]"
+                  warningMessage={getTemperatureWarningMessage(temperature)}
+                  min={temperatureMinMax.min}
+                  max={temperatureMinMax.max}
+                  trend={temperatureTrend}
+                  updatedAt={temperatureUpdatedAt}
+                  darkMode={darkMode}
+                />
+              </motion.div>
             )}
             {loading ? (
               <MetricCardSkeleton />
             ) : (
-              <MetricCard
-                icon={<Droplets className="w-8 h-8" />}
-                label="Luftfuktighet"
-                value={humidity}
-                unit="%"
-                status={humidity !== null ? getHumidityStatus(humidity) : "normal"}
-                iconColor="text-[#5d7342]"
-                warningMessage={getHumidityWarningMessage(humidity)}
-                min={humidityMinMax.min}
-                max={humidityMinMax.max}
-                trend={humidityTrend}
-                updatedAt={humidityUpdatedAt}
-              />
+              <motion.div
+                key={`hum-${humidity}`}
+                initial={{ opacity: 0.5 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.3 }}
+              >
+                <MetricCard
+                  icon={<Droplets className="w-8 h-8" />}
+                  label="Luftfuktighet"
+                  value={humidity}
+                  unit="%"
+                  status={humidity !== null ? getHumidityStatus(humidity) : "normal"}
+                  iconColor={humidityIconColor}
+                  warningMessage={getHumidityWarningMessage(humidity)}
+                  min={humidityMinMax.min}
+                  max={humidityMinMax.max}
+                  trend={humidityTrend}
+                  updatedAt={humidityUpdatedAt}
+                  darkMode={darkMode}
+                />
+              </motion.div>
             )}
           </div>
 
@@ -310,6 +440,7 @@ export default function App() {
                 data={temperatureData}
                 color="#d28c31"
                 unit="°C"
+                darkMode={darkMode}
               />
             )}
             {loading ? (
@@ -320,6 +451,7 @@ export default function App() {
                 data={humidityData}
                 color="#5d7342"
                 unit="%"
+                darkMode={darkMode}
               />
             )}
           </div>
@@ -327,7 +459,7 @@ export default function App() {
           {/* Footer with Last Updated */}
           {lastUpdated && (
             <div className="mt-6 text-center">
-              <p className="text-white/60 text-xs">
+              <p className={`text-xs ${darkMode ? 'text-white/60' : 'text-gray-500'}`}>
                 Siste data fra drivhuset mottatt {lastUpdated.toLocaleDateString('nb-NO', { 
                   day: '2-digit', 
                   month: '2-digit', 
@@ -342,5 +474,16 @@ export default function App() {
         </div>
       </div>
     </div>
+  );
+
+  return (
+    <PullToRefresh
+      onRefresh={handleRefresh}
+      resistance={3}
+      refreshingContent={<div className="text-center py-4"><RefreshCw className="w-6 h-6 animate-spin mx-auto text-[#5d7342]" /></div>}
+      pullingContent={<div className="text-center py-2 text-sm text-gray-500">Dra ned for å oppdatere...</div>}
+    >
+      {content}
+    </PullToRefresh>
   );
 }
