@@ -4,9 +4,10 @@ import { MetricCardSkeleton } from "./components/metric-card-skeleton";
 import { ChartSkeleton } from "./components/chart-skeleton";
 import { TrendChart } from "./components/trend-chart";
 import { Thermometer, Droplets, RefreshCw } from "lucide-react";
-import { fetchLatestGreenhouseData, fetchGreenhouseHistory } from "./utils/api";
+import { fetchLatestGreenhouseData, fetchGreenhouseHistory, fetchWeatherData, type WeatherData } from "./utils/api";
 import { ImageWithFallback } from "./components/figma/ImageWithFallback";
 import { GreenhouseIcon } from "./components/greenhouse-icon";
+import { WeatherWidget } from "./components/weather-widget";
 
 export default function App() {
   const [temperature, setTemperature] = useState<number | null>(null);
@@ -19,6 +20,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
 
   const loadData = async (isRefresh = false) => {
     try {
@@ -120,6 +122,10 @@ export default function App() {
 
       setTemperatureData(tempData);
       setHumidityData(humData);
+
+      // Fetch weather data
+      const weather = await fetchWeatherData();
+      setWeatherData(weather);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load data");
     } finally {
@@ -240,7 +246,13 @@ export default function App() {
             alt="Drivhus" 
             className="w-full h-full object-cover object-center"
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent"></div>
+          
+          {/* Weather Widget Overlay */}
+          {weatherData && (
+            <div className="absolute top-2 right-2">
+              <WeatherWidget data={weatherData} compact />
+            </div>
+          )}
         </div>
 
         <div className="px-4 pb-6">
