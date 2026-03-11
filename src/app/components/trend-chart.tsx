@@ -56,8 +56,10 @@ export function TrendChart({ title, data, color, unit, darkMode = false }: Trend
               border: `1px solid ${tooltipBorder}`,
               borderRadius: "8px",
               fontSize: "12px",
+              color: tickColor,
             }}
-            formatter={(value: number) => [`${value}${unit}`, "Value"]}
+            labelStyle={{ color: tickColor }}
+            formatter={(value: number) => [`${value}${unit}`]}
           />
           <Line
             type="monotone"
