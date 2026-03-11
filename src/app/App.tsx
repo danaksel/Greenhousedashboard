@@ -298,7 +298,7 @@ export default function App() {
   const temperatureTrend = getTrend(temperature, temperatureData);
   const humidityTrend = getTrend(humidity, humidityData);
 
-  const bgColor = darkMode ? 'bg-[#2d3a21]' : 'bg-[#f5f5f0]';
+  const bgColor = darkMode ? 'bg-[#2d3a21]' : 'bg-[#e8ede3]';
   const textColor = darkMode ? 'text-white/80' : 'text-gray-800';
   
   // Icon colors with better contrast in dark mode

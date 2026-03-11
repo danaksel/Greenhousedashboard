@@ -21,13 +21,13 @@ export function TrendChart({ title, data, color, unit, darkMode = false }: Trend
     ticks.push(i);
   }
 
-  const bgClass = darkMode ? 'bg-[#3d4d2e]/90' : 'bg-[#ebeee8]';
+  const bgClass = darkMode ? 'bg-[#2d3a21]' : 'bg-[#ebeee8]';
   const titleColor = darkMode ? 'text-white/80' : 'text-stone-700';
   const borderClass = darkMode ? 'border-white/10' : 'border-stone-200';
   const gridColor = darkMode ? '#4d5d3e' : '#d6d3d1';
   const axisColor = darkMode ? '#8d9d7e' : '#a8a29e';
   const tickColor = darkMode ? '#adbca2' : '#78716c';
-  const tooltipBg = darkMode ? '#3d4d2e' : 'white';
+  const tooltipBg = darkMode ? '#2d3a21' : 'white';
   const tooltipBorder = darkMode ? '#5d6d4e' : '#d6d3d1';
   
   return (
