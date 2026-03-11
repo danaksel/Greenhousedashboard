@@ -1,4 +1,4 @@
-import { Cloud, CloudRain, Sun, CloudDrizzle, CloudSnow, CloudFog, CloudLightning, Cloudy } from "lucide-react";
+import { Cloud, CloudRain, Sun, CloudDrizzle, CloudSnow, CloudFog, CloudLightning, Cloudy, RefreshCw } from "lucide-react";
 import { WeatherData } from "../utils/api";
 
 interface WeatherWidgetProps {
@@ -37,13 +37,30 @@ const getWeatherIcon = (symbolCode: string, compact = false) => {
 };
 
 export function WeatherWidget({ data, compact }: WeatherWidgetProps) {
+  const formatTime = (date: Date | undefined) => {
+    if (!date) return '--:--';
+    return date.toLocaleTimeString('nb-NO', { 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
+  };
+
   if (compact) {
     return (
-      <div className="flex items-center gap-2 bg-black/20 backdrop-blur-sm rounded-md px-2 py-1.5">
-        {getWeatherIcon(data.symbolCode, true)}
-        <div className="flex items-baseline gap-1.5">
-          <span className="text-white text-sm font-medium">{data.description}</span>
-          <span className="text-white text-xs">{data.temperature.toFixed(1)}°</span>
+      <div className="flex flex-col gap-0.5">
+        <div className="flex items-center gap-2 bg-black/20 backdrop-blur-sm rounded-md px-2 py-1.5">
+          {getWeatherIcon(data.symbolCode, true)}
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-white text-sm font-medium">{data.description}</span>
+            <span className="text-white text-xs">{data.temperature.toFixed(1)}°</span>
+          </div>
+        </div>
+        <div className="text-right px-1">
+          <p className="text-white/60 text-[10px] flex items-center justify-end gap-0.5">
+            <RefreshCw className="w-2.5 h-2.5" />
+            {formatTime(data.updatedAt)}
+          </p>
+          <p className="text-white/50 text-[9px]">yr.no</p>
         </div>
       </div>
     );

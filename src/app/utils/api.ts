@@ -7,6 +7,7 @@ export interface WeatherData {
   temperature: number;
   symbolCode: string;
   description: string;
+  updatedAt?: Date;
 }
 
 export async function fetchLatestGreenhouseData(): Promise<LatestData> {
@@ -111,6 +112,10 @@ export async function fetchWeatherData(): Promise<WeatherData> {
     throw new Error("No weather data available");
   }
 
+  // Get the actual update timestamp from Yr's metadata
+  const updatedAtString = json.properties?.meta?.updated_at;
+  const updatedAt = updatedAtString ? new Date(updatedAtString) : new Date();
+
   const symbolCode = current.data?.next_1_hours?.summary?.symbol_code || 
                      current.data?.next_6_hours?.summary?.symbol_code || 
                      "cloudy";
@@ -123,6 +128,7 @@ export async function fetchWeatherData(): Promise<WeatherData> {
   return {
     temperature,
     symbolCode: baseSymbol,
-    description
+    description,
+    updatedAt
   };
 }
