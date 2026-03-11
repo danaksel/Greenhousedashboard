@@ -1,5 +1,5 @@
 import { Card } from "./ui/card";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "./ui/dialog";
 
 interface MetricCardProps {
@@ -10,6 +10,9 @@ interface MetricCardProps {
   status: "normal" | "warning";
   iconColor: string;
   warningMessage?: string;
+  min?: number;
+  max?: number;
+  trend?: "up" | "down" | "stable";
 }
 
 export function MetricCard({
@@ -20,7 +23,22 @@ export function MetricCard({
   status,
   iconColor,
   warningMessage,
+  min,
+  max,
+  trend,
 }: MetricCardProps) {
+  const getTrendIcon = () => {
+    if (!trend) return null;
+    switch (trend) {
+      case "up":
+        return <TrendingUp className="w-5 h-5 text-stone-600" />;
+      case "down":
+        return <TrendingDown className="w-5 h-5 text-stone-600" />;
+      case "stable":
+        return <Minus className="w-5 h-5 text-stone-600" />;
+    }
+  };
+
   return (
     <Card className="p-6 bg-white/90 backdrop-blur-sm shadow-lg border border-stone-200">
       <div className="flex items-center justify-between">
@@ -28,10 +46,18 @@ export function MetricCard({
           <div className={iconColor}>{icon}</div>
           <div>
             <p className="text-sm text-stone-600 mb-1">{label}</p>
-            <p className="text-4xl text-stone-900">
-              {value !== null ? value.toFixed(1) : "--"}
-              <span className="text-xl text-stone-500 ml-1">{unit}</span>
-            </p>
+            <div className="flex items-center gap-2">
+              <p className="text-4xl text-stone-900">
+                {value !== null ? value.toFixed(1) : "--"}
+                <span className="text-xl text-stone-500 ml-1">{unit}</span>
+              </p>
+              {trend && <div className="mt-2">{getTrendIcon()}</div>}
+            </div>
+            {min !== undefined && max !== undefined && (
+              <p className="text-xs text-stone-500 mt-1">
+                Min: {min.toFixed(1)}{unit} • Max: {max.toFixed(1)}{unit} (24t)
+              </p>
+            )}
           </div>
         </div>
         {status === "warning" && warningMessage ? (

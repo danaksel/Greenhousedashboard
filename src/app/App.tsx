@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import { MetricCard } from "./components/metric-card";
+import { MetricCardSkeleton } from "./components/metric-card-skeleton";
+import { ChartSkeleton } from "./components/chart-skeleton";
 import { TrendChart } from "./components/trend-chart";
 import { Thermometer, Droplets, RefreshCw } from "lucide-react";
 import { fetchLatestGreenhouseData, fetchGreenhouseHistory } from "./utils/api";
@@ -150,7 +152,7 @@ export default function App() {
     faviconLink.setAttribute('href', '/favicon.svg');
 
     // Set page title
-    document.title = 'Drivhuset';
+    document.title = 'Kristins drivhus';
 
     return () => clearInterval(interval);
   }, []);
@@ -187,6 +189,35 @@ export default function App() {
     return undefined;
   };
 
+  // Calculate min/max from historical data
+  const getMinMax = (data: Array<{ time: string; value: number; id: string }>) => {
+    if (data.length === 0) return { min: undefined, max: undefined };
+    const values = data.map(d => d.value);
+    return {
+      min: Math.min(...values),
+      max: Math.max(...values)
+    };
+  };
+
+  // Calculate trend by comparing current value with recent history
+  const getTrend = (currentValue: number | null, historicalData: Array<{ time: string; value: number; id: string }>): "up" | "down" | "stable" | undefined => {
+    if (currentValue === null || historicalData.length < 3) return undefined;
+    
+    // Get last 3 data points
+    const recentData = historicalData.slice(-3).map(d => d.value);
+    const average = recentData.reduce((sum, val) => sum + val, 0) / recentData.length;
+    
+    // If current value differs by more than 0.5 from average, show trend
+    const diff = currentValue - average;
+    if (Math.abs(diff) < 0.5) return "stable";
+    return diff > 0 ? "up" : "down";
+  };
+
+  const temperatureMinMax = getMinMax(temperatureData);
+  const humidityMinMax = getMinMax(humidityData);
+  const temperatureTrend = getTrend(temperature, temperatureData);
+  const humidityTrend = getTrend(humidity, humidityData);
+
   return (
     <div className="min-h-screen bg-[#5d7342]">
       <div className="max-w-md mx-auto">
@@ -201,7 +232,7 @@ export default function App() {
           <div className="absolute bottom-0 left-0 right-0 p-6">
             <div className="flex items-center gap-3 mb-2">
               <GreenhouseIcon className="w-10 h-10 text-white drop-shadow-lg" />
-              <h1 className="text-4xl text-white font-bold drop-shadow-lg">Drivhuset</h1>
+              <h1 className="text-4xl text-white font-bold drop-shadow-lg">Kristins drivhus</h1>
             </div>
             <p className="text-sm text-white/90 drop-shadow">
               Sist oppdatert: {lastUpdated ? lastUpdated.toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' }) : "N/A"}
@@ -213,40 +244,62 @@ export default function App() {
         <div className="px-4 pb-6">
           {/* Metric Cards */}
           <div className="space-y-4 mb-6">
-            <MetricCard
-              icon={<Thermometer className="w-8 h-8" />}
-              label="Temperatur"
-              value={temperature}
-              unit="°C"
-              status={temperature !== null ? getTemperatureStatus(temperature) : "normal"}
-              iconColor="text-[#d28c31]"
-              warningMessage={getTemperatureWarningMessage(temperature)}
-            />
-            <MetricCard
-              icon={<Droplets className="w-8 h-8" />}
-              label="Luftfuktighet"
-              value={humidity}
-              unit="%"
-              status={humidity !== null ? getHumidityStatus(humidity) : "normal"}
-              iconColor="text-[#5d7342]"
-              warningMessage={getHumidityWarningMessage(humidity)}
-            />
+            {loading ? (
+              <MetricCardSkeleton />
+            ) : (
+              <MetricCard
+                icon={<Thermometer className="w-8 h-8" />}
+                label="Temperatur"
+                value={temperature}
+                unit="°C"
+                status={temperature !== null ? getTemperatureStatus(temperature) : "normal"}
+                iconColor="text-[#d28c31]"
+                warningMessage={getTemperatureWarningMessage(temperature)}
+                min={temperatureMinMax.min}
+                max={temperatureMinMax.max}
+                trend={temperatureTrend}
+              />
+            )}
+            {loading ? (
+              <MetricCardSkeleton />
+            ) : (
+              <MetricCard
+                icon={<Droplets className="w-8 h-8" />}
+                label="Luftfuktighet"
+                value={humidity}
+                unit="%"
+                status={humidity !== null ? getHumidityStatus(humidity) : "normal"}
+                iconColor="text-[#5d7342]"
+                warningMessage={getHumidityWarningMessage(humidity)}
+                min={humidityMinMax.min}
+                max={humidityMinMax.max}
+                trend={humidityTrend}
+              />
+            )}
           </div>
 
           {/* Trend Charts */}
           <div className="space-y-4">
-            <TrendChart
-              title="Temperatur (24t)"
-              data={temperatureData}
-              color="#d28c31"
-              unit="°C"
-            />
-            <TrendChart
-              title="Luftfuktighet (24t)"
-              data={humidityData}
-              color="#5d7342"
-              unit="%"
-            />
+            {loading ? (
+              <ChartSkeleton />
+            ) : (
+              <TrendChart
+                title="Temperatur (24t)"
+                data={temperatureData}
+                color="#d28c31"
+                unit="°C"
+              />
+            )}
+            {loading ? (
+              <ChartSkeleton />
+            ) : (
+              <TrendChart
+                title="Luftfuktighet (24t)"
+                data={humidityData}
+                color="#5d7342"
+                unit="%"
+              />
+            )}
           </div>
         </div>
       </div>
