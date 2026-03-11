@@ -3,12 +3,13 @@ import { MetricCard } from "./components/metric-card";
 import { MetricCardSkeleton } from "./components/metric-card-skeleton";
 import { ChartSkeleton } from "./components/chart-skeleton";
 import { TrendChart } from "./components/trend-chart";
-import { Thermometer, Droplets, RefreshCw, Moon, Sun, WifiOff } from "lucide-react";
+import { Thermometer, Droplets, RefreshCw, Moon, Sun, WifiOff, Info } from "lucide-react";
 import { fetchLatestGreenhouseData, fetchGreenhouseHistory, fetchWeatherData, type WeatherData } from "./utils/api";
 import { ImageWithFallback } from "./components/figma/ImageWithFallback";
 import { GreenhouseIcon } from "./components/greenhouse-icon";
 import { WeatherWidget } from "./components/weather-widget";
 import { motion, AnimatePresence } from "motion/react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "./components/ui/dialog";
 
 export default function App() {
   const [temperature, setTemperature] = useState<number | null>(null);
@@ -344,6 +345,63 @@ export default function App() {
               <h1 className="text-xl text-white" style={{ fontFamily: "'Cinzel Decorative', serif", fontWeight: 400 }}>Kristins drivhus</h1>
             </div>
             <div className="flex items-center gap-2">
+              {/* About Project Button */}
+              <Dialog>
+                <DialogTrigger asChild>
+                  <button
+                    className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 transition-colors flex items-center justify-center"
+                    aria-label="Om prosjektet"
+                  >
+                    <Info className="w-5 h-5 text-white" />
+                  </button>
+                </DialogTrigger>
+                <DialogContent className="max-w-md">
+                  <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2">
+                      <GreenhouseIcon className="w-6 h-6" />
+                      Om Kristins drivhus
+                    </DialogTitle>
+                    <DialogDescription className="text-base mt-4 space-y-4 text-left">
+                      <p>
+                        Kristins drivhus er et lite <strong>IoT-prosjekt</strong> bygget med det man nesten kan kalle ren <em>vibe-coding</em>: lette komponenter, raske API-er og minst mulig friksjon mellom sensor og nettside.
+                      </p>
+                      
+                      <div>
+                        <p className="font-semibold text-gray-900 mb-2">Hardware og nettverk</p>
+                        <p>
+                          I drivhuset står en <strong>Mill Smartplugg</strong> koblet til nettet via en <strong>UniFi Mobile Router Ultra</strong>. Enheten er integrert med <strong>Homey</strong>, som fungerer som lokal IoT-hub og registrerer temperatur og luftfuktighet. Når verdiene endrer seg, trigges en Homey Flow som sender oppdaterte målinger til <strong>Cloudflare KV</strong>.
+                        </p>
+                      </div>
+
+                      <div>
+                        <p className="font-semibold text-gray-900 mb-2">Backend og hosting</p>
+                        <p>
+                          En <strong>Cloudflare Worker</strong> eksponerer disse dataene via et enkelt API. Nettsiden – laget med <strong>Figma Make</strong> – henter dataene derfra og oppdaterer visningen løpende. Koden versjoneres i <strong>GitHub</strong>, og publiseres globalt gjennom Cloudflare Workers, noe som gir en lett og rask edge-basert løsning.
+                        </p>
+                      </div>
+
+                      <div>
+                        <p className="font-semibold text-gray-900 mb-2">Værintegrasjon</p>
+                        <p>
+                          For å sette drivhusdataene i kontekst hentes også værdata fra <strong>Yr</strong> sitt API, slik at man kan sammenligne forholdene inne i drivhuset med været ute.
+                        </p>
+                      </div>
+
+                      <div>
+                        <p className="font-semibold text-gray-900 mb-2">Smart overvåking</p>
+                        <p>
+                          Systemet fungerer også som en liten IoT-monitor: Dersom temperatur eller luftfuktighet passerer definerte grenser, sender Homey pushvarsler direkte til brukeren.
+                        </p>
+                      </div>
+
+                      <p className="pt-2 border-t border-gray-200 text-sm italic">
+                        Resultatet er en enkel, men effektiv edge-drevet IoT-stack – bygget med vibe-code, automatisering og sky-API-er – som gjør det mulig å følge klimaet i drivhuset i sanntid fra hvor som helst.
+                      </p>
+                    </DialogDescription>
+                  </DialogHeader>
+                </DialogContent>
+              </Dialog>
+
               {/* Dark Mode Slider */}
               <button
                 onClick={toggleDarkMode}
@@ -456,7 +514,7 @@ export default function App() {
               <ChartSkeleton />
             ) : (
               <TrendChart
-                title="Temperatur (12t)"
+                title="Temperatur siste 12 timer"
                 data={temperatureData}
                 color="#d28c31"
                 unit="°C"
@@ -467,7 +525,7 @@ export default function App() {
               <ChartSkeleton />
             ) : (
               <TrendChart
-                title="Luftfuktighet (12t)"
+                title="Luftfuktighet siste 12 timer"
                 data={humidityData}
                 color={darkMode ? "#8fbc5f" : "#5d7342"}
                 unit="%"

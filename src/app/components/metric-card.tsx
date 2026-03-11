@@ -1,5 +1,5 @@
 import { Card } from "./ui/card";
-import { AlertCircle, TrendingUp, TrendingDown, Minus, RefreshCw, ArrowDownToLine, ArrowUpToLine } from "lucide-react";
+import { AlertCircle, TrendingUp, TrendingDown, Minus, ArrowDownToLine, ArrowUpToLine, Clock, Info } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "./ui/dialog";
 
 interface MetricCardProps {
@@ -67,12 +67,6 @@ export function MetricCard({
                 <span className={`text-xl ${textTertiary} ml-1`}>{unit}</span>
               </p>
               {trend && <div className="mt-2">{getTrendIcon()}</div>}
-              {updatedAt && (
-                <div className={`flex items-center gap-1 text-xs ${textTertiary} mt-2 ml-2`}>
-                  <RefreshCw className="w-3 h-3" />
-                  <span>{updatedAt.toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' })}</span>
-                </div>
-              )}
             </div>
             {min !== undefined && max !== undefined && (
               <div className={`text-xs ${textTertiary} mt-2`}>
@@ -86,7 +80,31 @@ export function MetricCard({
                     <ArrowUpToLine className="w-3 h-3" />
                     {max.toFixed(1)}{unit}
                   </span>
-                  <span className={darkMode ? 'text-white/40' : 'text-stone-400'}>(24t)</span>
+                  <Dialog>
+                    <DialogTrigger asChild>
+                      <button className="flex items-center cursor-pointer hover:opacity-70 transition-opacity">
+                        <Clock className={`w-3 h-3 ${darkMode ? 'text-white/40' : 'text-stone-400'}`} />
+                      </button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                          <Clock className="w-5 h-5" />
+                          24-timers oversikt
+                        </DialogTitle>
+                        <DialogDescription className="text-base mt-4 space-y-3">
+                          <div className="flex items-start gap-3">
+                            <ArrowDownToLine className="w-5 h-5 mt-0.5 flex-shrink-0" />
+                            <span>Viser laveste målte {label.toLowerCase()} siste 24 timer.</span>
+                          </div>
+                          <div className="flex items-start gap-3">
+                            <ArrowUpToLine className="w-5 h-5 mt-0.5 flex-shrink-0" />
+                            <span>Viser høyeste målte {label.toLowerCase()} siste 24 timer.</span>
+                          </div>
+                        </DialogDescription>
+                      </DialogHeader>
+                    </DialogContent>
+                  </Dialog>
                 </div>
               </div>
             )}
