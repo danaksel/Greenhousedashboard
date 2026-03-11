@@ -5,8 +5,8 @@ import { ChartSkeleton } from "./components/chart-skeleton";
 import { TrendChart } from "./components/trend-chart";
 import { Thermometer, Droplets, RefreshCw } from "lucide-react";
 import { fetchLatestGreenhouseData, fetchGreenhouseHistory } from "./utils/api";
+import { ImageWithFallback } from "./components/figma/ImageWithFallback";
 import { GreenhouseIcon } from "./components/greenhouse-icon";
-import headerImage from "figma:asset/939c09f50e93fb508854f28c8e7118e510c591f2.png";
 
 export default function App() {
   const [temperature, setTemperature] = useState<number | null>(null);
@@ -105,11 +105,11 @@ export default function App() {
             return null;
           })
           .filter(item => item !== null)
-          .map((item, finalIndex) => ({
+          .map((item, finalIndex) => (({
             time: item!.time,
             value: item!.value as number,
-            id: `${prefix}-${item!.time.replace(':', '-')}-${finalIndex}`
-          }));
+            id: `${prefix}-${finalIndex}-${item!.hour}`
+          })));
         
         return result;
       };
@@ -227,8 +227,8 @@ export default function App() {
       <div className="max-w-md mx-auto">
         {/* Hero Image */}
         <div className="relative w-full h-56 overflow-hidden mb-6">
-          <img
-            src={headerImage} 
+          <ImageWithFallback
+            src="/drivhus.png" 
             alt="Drivhus" 
             className="w-full h-full object-cover object-top"
           />
