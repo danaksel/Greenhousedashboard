@@ -1,3 +1,16 @@
 @import './fonts.css';
 @import './tailwind.css';
 @import './theme.css';
+
+/* Fix scrolling on mobile */
+body, html {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+}
+
+/* Ensure PullToRefresh doesn't block scrolling */
+.ptr {
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+}

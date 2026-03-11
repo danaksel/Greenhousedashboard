@@ -314,31 +314,21 @@ export default function App() {
               <h1 className="text-2xl text-white pb-0.5" style={{ fontFamily: "'Cinzel Decorative', serif", fontWeight: 400 }}>Kristins drivhus</h1>
             </div>
             <div className="flex items-center gap-2 pb-1">
-              {/* Refresh Button */}
-              <button
-                onClick={handleRefresh}
-                disabled={refreshing || loading}
-                className="p-2 rounded-full hover:bg-white/10 transition-colors disabled:opacity-50"
-                aria-label="Oppdater data"
-              >
-                <motion.div
-                  animate={refreshing ? { rotate: 360 } : { rotate: 0 }}
-                  transition={refreshing ? { duration: 1, repeat: Infinity, ease: "linear" } : {}}
-                >
-                  <RefreshCw className="w-5 h-5 text-white" />
-                </motion.div>
-              </button>
-              {/* Dark Mode Toggle */}
+              {/* Dark Mode Slider */}
               <button
                 onClick={toggleDarkMode}
-                className="p-2 rounded-full hover:bg-white/10 transition-colors"
+                className="relative w-16 h-8 rounded-full bg-white/20 hover:bg-white/30 transition-colors p-1"
                 aria-label="Bytt modus"
               >
-                {darkMode ? (
-                  <Sun className="w-5 h-5 text-white" />
-                ) : (
-                  <Moon className="w-5 h-5 text-white" />
-                )}
+                <div className="flex items-center justify-between px-1 h-full">
+                  <Sun className="w-4 h-4 text-white" />
+                  <Moon className="w-4 h-4 text-white" />
+                </div>
+                <motion.div
+                  className="absolute top-1 left-1 w-6 h-6 bg-white rounded-full shadow-md"
+                  animate={{ x: darkMode ? 32 : 0 }}
+                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                />
               </button>
             </div>
           </div>
