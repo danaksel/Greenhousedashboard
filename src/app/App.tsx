@@ -323,6 +323,22 @@ export default function App() {
               />
             )}
           </div>
+
+          {/* Footer with Last Updated */}
+          {lastUpdated && (
+            <div className="mt-6 text-center">
+              <p className="text-white/60 text-xs">
+                Siste data fra drivhuset mottatt {lastUpdated.toLocaleDateString('nb-NO', { 
+                  day: '2-digit', 
+                  month: '2-digit', 
+                  year: 'numeric' 
+                })} {lastUpdated.toLocaleTimeString('nb-NO', { 
+                  hour: '2-digit', 
+                  minute: '2-digit' 
+                })}
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </div>
