@@ -68,15 +68,12 @@ export function WeatherWidget({ data, compact }: WeatherWidgetProps) {
   if (compact) {
     return (
       <div className="flex flex-col gap-0.5">
-        <div className="flex items-center gap-2 bg-black/20 backdrop-blur-sm rounded-md px-2 py-1.5">
+        <div className="flex items-center gap-1.5 bg-black/20 backdrop-blur-sm rounded-md px-2 py-1">
           {getWeatherIcon(data.symbolCode, true)}
-          <div className="flex items-baseline gap-1.5">
-            <span className="text-white text-sm font-medium">{data.description}</span>
-            <span className="text-white text-xs">{data.temperature.toFixed(1)}°</span>
-          </div>
+          <span className="text-white text-sm font-medium">{data.temperature.toFixed(1)}°</span>
         </div>
         <div className="text-right px-1">
-          <p className="text-white/60 text-[10px]">Høybråten gård, yr.no</p>
+          <p className="text-white/60 text-[10px]">yr.no</p>
         </div>
       </div>
     );

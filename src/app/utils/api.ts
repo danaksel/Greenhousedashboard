@@ -188,21 +188,19 @@ export async function fetchWeatherData(): Promise<WeatherData> {
                      "cloudy";
   const temperature = current.data?.instant?.details?.air_temperature || 0;
   
+  // Get base symbol without polarity variants (_polarlight, _polartwilight)
+  const baseSymbol = symbolCode.split("_polarlight")[0].split("_polartwilight")[0];
+  
   // Check for fog conditions - Yr combines fog with other weather symbols
   const details = current.data?.instant?.details;
   const fogCondition = details?.fog_area_fraction;
   const visibility = details?.visibility;
   
-  // Debug: Log all available details to see what data we have
-  console.log('Available weather details:', details);
-  
-  // If there's significant fog (>50% fog coverage) or very low visibility (<1000m), 
-  // we should indicate fog in the description
+  // Fog detection: Only trust Yr's actual fog data or symbol code
+  // fog_area_fraction and visibility are often undefined in the API response
   const hasFog = (fogCondition !== undefined && fogCondition > 0.5) || 
-                 (visibility !== undefined && visibility < 1000);
-
-  // Get base symbol without polarity variants (_polarlight, _polartwilight)
-  const baseSymbol = symbolCode.split("_polarlight")[0].split("_polartwilight")[0];
+                 (visibility !== undefined && visibility < 1000) ||
+                 baseSymbol.includes('fog'); // Trust Yr's symbol code if it explicitly says fog
   
   // Debug: Log the symbol code and fog conditions
   console.log('Yr symbol code:', symbolCode, '-> base:', baseSymbol);

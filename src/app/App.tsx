@@ -469,7 +469,7 @@ export default function App() {
               <TrendChart
                 title="Luftfuktighet (12t)"
                 data={humidityData}
-                color="#5d7342"
+                color={darkMode ? "#8fbc5f" : "#5d7342"}
                 unit="%"
                 darkMode={darkMode}
               />
