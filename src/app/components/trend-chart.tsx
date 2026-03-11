@@ -10,7 +10,7 @@ interface TrendChartProps {
 
 export function TrendChart({ title, data, color, unit }: TrendChartProps) {
   return (
-    <Card className="p-4 bg-white/90 backdrop-blur-sm shadow-lg border border-stone-200">
+    <Card className="p-4 bg-[#ebeee8] backdrop-blur-sm shadow-lg border border-stone-200">
       <h3 className="text-sm mb-3 text-stone-700">{title}</h3>
       <ResponsiveContainer width="100%" height={150}>
         <LineChart data={data}>

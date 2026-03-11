@@ -4,6 +4,7 @@ import { TrendChart } from "./components/trend-chart";
 import { Thermometer, Droplets, RefreshCw } from "lucide-react";
 import { fetchLatestGreenhouseData, fetchGreenhouseHistory } from "./utils/api";
 import { ImageWithFallback } from "./components/figma/ImageWithFallback";
+import { GreenhouseIcon } from "./components/greenhouse-icon";
 
 export default function App() {
   const [temperature, setTemperature] = useState<number | null>(null);
@@ -136,7 +137,20 @@ export default function App() {
       metaThemeColor.setAttribute('name', 'theme-color');
       document.head.appendChild(metaThemeColor);
     }
-    metaThemeColor.setAttribute('content', '#5e682c');
+    metaThemeColor.setAttribute('content', '#5d7342');
+
+    // Set favicon
+    let faviconLink = document.querySelector('link[rel="icon"]') as HTMLLinkElement;
+    if (!faviconLink) {
+      faviconLink = document.createElement('link');
+      faviconLink.setAttribute('rel', 'icon');
+      document.head.appendChild(faviconLink);
+    }
+    faviconLink.setAttribute('type', 'image/svg+xml');
+    faviconLink.setAttribute('href', '/favicon.svg');
+
+    // Set page title
+    document.title = 'Drivhuset';
 
     return () => clearInterval(interval);
   }, []);
@@ -174,7 +188,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#5e682c]">
+    <div className="min-h-screen bg-[#5d7342]">
       <div className="max-w-md mx-auto">
         {/* Hero Image */}
         <div className="relative w-full h-80 overflow-hidden mb-6">
@@ -185,7 +199,10 @@ export default function App() {
           />
           <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent"></div>
           <div className="absolute bottom-0 left-0 right-0 p-6">
-            <h1 className="text-4xl mb-2 text-white font-bold drop-shadow-lg">Drivhuset</h1>
+            <div className="flex items-center gap-3 mb-2">
+              <GreenhouseIcon className="w-10 h-10 text-white drop-shadow-lg" />
+              <h1 className="text-4xl text-white font-bold drop-shadow-lg">Drivhuset</h1>
+            </div>
             <p className="text-sm text-white/90 drop-shadow">
               Sist oppdatert: {lastUpdated ? lastUpdated.toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' }) : "N/A"}
               {refreshing && <RefreshCw className="w-4 h-4 inline-block animate-spin ml-2" />}
