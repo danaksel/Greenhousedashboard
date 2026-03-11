@@ -526,28 +526,35 @@ export default function App() {
                         </p>
                         
                         <div>
-                          <p className={`font-semibold mb-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>Hardware og nettverk</p>
+                          <p className={`font-semibold mb-2 ${darkMode ? 'text-[#8fbc5f]' : 'text-[#5d7342]'}`}>Hardware og nettverk</p>
                           <p>
-                            I drivhuset står en <strong>Mill Smartplugg</strong> koblet til nettet via en <strong>UniFi Mobile Router Ultra</strong>. Enheten er integrert med <strong>Homey</strong>, som fungerer som lokal IoT-hub og registrerer temperatur og luftfuktighet. Når verdiene endrer seg, trigges en Homey Flow som sender oppdaterte målinger til <strong>Cloudflare KV</strong>.
+                            I drivhuset står en <strong>Mill Smartplugg</strong> koblet til nettet via en <strong>UniFi Mobile Router Ultra</strong>. Enheten er integrert med <strong>Homey</strong> smart hub, men som står i et separat nettverk på et annet geografisk sted. Homey fungerer som IoT-hub og registrerer temperatur og luftfuktighet. Når verdiene endrer seg, trigges en Homey Flow som sender oppdaterte målinger til <strong>Cloudflare KV</strong>.
                           </p>
                         </div>
 
                         <div>
-                          <p className={`font-semibold mb-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>Backend og hosting</p>
+                          <p className={`font-semibold mb-2 ${darkMode ? 'text-[#8fbc5f]' : 'text-[#5d7342]'}`}>Backend og hosting</p>
                           <p>
                             En <strong>Cloudflare Worker</strong> eksponerer disse dataene via et enkelt API. Nettsiden – laget med <strong>Figma Make</strong> – henter dataene derfra og oppdaterer visningen løpende. Koden versjoneres i <strong>GitHub</strong>, og publiseres globalt gjennom Cloudflare Workers, noe som gir en lett og rask edge-basert løsning.
                           </p>
                         </div>
 
                         <div>
-                          <p className={`font-semibold mb-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>Værintegrasjon</p>
+                          <p className={`font-semibold mb-2 ${darkMode ? 'text-[#8fbc5f]' : 'text-[#5d7342]'}`}>Værintegrasjon</p>
                           <p>
-                            For å sette drivhusdataene i kontekst hentes også værdata fra <strong>Yr</strong> sitt API, slik at man kan sammenligne forholdene inne i drivhuset med været ute.
+                            For å sette drivhusdataene i kontekst hentes også værdata fra <strong>Yr.no</strong> sitt API, slik at man kan sammenligne forholdene inne i drivhuset med været ute.
                           </p>
                         </div>
 
                         <div>
-                          <p className={`font-semibold mb-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>Smart overvåking</p>
+                          <p className={`font-semibold mb-2 ${darkMode ? 'text-[#8fbc5f]' : 'text-[#5d7342]'}`}>Varmestyring</p>
+                          <p>
+                            I sensongstart er det kalde netter i Norge, og vifteovn er koblet til <strong>Mill Smartplugg</strong>. Homey styrer smartplugg og vifte basert på temperaturdata.
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className={`font-semibold mb-2 ${darkMode ? 'text-[#8fbc5f]' : 'text-[#5d7342]'}`}>Smart overvåking</p>
                           <p>
                             Systemet fungerer også som en liten IoT-monitor: Dersom temperatur eller luftfuktighet passerer definerte grenser, sender Homey pushvarsler direkte til brukeren.
                           </p>
