@@ -338,12 +338,12 @@ export default function App() {
 
         {/* Header with Logo, Title, and Controls */}
         <div className="bg-[#5d7342] px-6 py-4 sticky top-0 z-30">
-          <div className="flex items-end justify-between">
-            <div className="flex items-end gap-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
               <GreenhouseIcon className="w-9 h-9 text-white" />
-              <h1 className="text-xl text-white pb-0.5" style={{ fontFamily: "'Cinzel Decorative', serif", fontWeight: 400 }}>Kristins drivhus</h1>
+              <h1 className="text-xl text-white" style={{ fontFamily: "'Cinzel Decorative', serif", fontWeight: 400 }}>Kristins drivhus</h1>
             </div>
-            <div className="flex items-center gap-2 pb-1">
+            <div className="flex items-center gap-2">
               {/* Dark Mode Slider */}
               <button
                 onClick={toggleDarkMode}
