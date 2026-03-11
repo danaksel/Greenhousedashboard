@@ -8,7 +8,6 @@ import { fetchLatestGreenhouseData, fetchGreenhouseHistory, fetchWeatherData, ty
 import { ImageWithFallback } from "./components/figma/ImageWithFallback";
 import { GreenhouseIcon } from "./components/greenhouse-icon";
 import { WeatherWidget } from "./components/weather-widget";
-import PullToRefresh from "react-pull-to-refresh";
 import { motion, AnimatePresence } from "motion/react";
 
 export default function App() {
@@ -153,10 +152,10 @@ export default function App() {
   useEffect(() => {
     loadData();
 
-    // Auto-refresh every 15 minutes
+    // Auto-refresh every 5 minutes
     const interval = setInterval(() => {
       loadData(true);
-    }, 900000);
+    }, 300000);
 
     // Online/offline listeners
     const handleOnline = () => setIsOnline(true);
@@ -183,6 +182,42 @@ export default function App() {
     faviconLink.setAttribute('type', 'image/svg+xml');
     faviconLink.setAttribute('href', '/favicon.svg');
 
+    // Set apple-touch-icon for iOS home screen
+    let appleTouchIcon = document.querySelector('link[rel="apple-touch-icon"]') as HTMLLinkElement;
+    if (!appleTouchIcon) {
+      appleTouchIcon = document.createElement('link');
+      appleTouchIcon.setAttribute('rel', 'apple-touch-icon');
+      document.head.appendChild(appleTouchIcon);
+    }
+    appleTouchIcon.setAttribute('href', '/apple-touch-icon.svg');
+
+    // Set apple-mobile-web-app-capable for iOS
+    let appleCapable = document.querySelector('meta[name="apple-mobile-web-app-capable"]');
+    if (!appleCapable) {
+      appleCapable = document.createElement('meta');
+      appleCapable.setAttribute('name', 'apple-mobile-web-app-capable');
+      appleCapable.setAttribute('content', 'yes');
+      document.head.appendChild(appleCapable);
+    }
+
+    // Set apple-mobile-web-app-status-bar-style
+    let appleStatusBar = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
+    if (!appleStatusBar) {
+      appleStatusBar = document.createElement('meta');
+      appleStatusBar.setAttribute('name', 'apple-mobile-web-app-status-bar-style');
+      document.head.appendChild(appleStatusBar);
+    }
+    appleStatusBar.setAttribute('content', darkMode ? 'black-translucent' : 'default');
+
+    // Set apple-mobile-web-app-title
+    let appleTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+    if (!appleTitle) {
+      appleTitle = document.createElement('meta');
+      appleTitle.setAttribute('name', 'apple-mobile-web-app-title');
+      appleTitle.setAttribute('content', 'Kristins drivhus');
+      document.head.appendChild(appleTitle);
+    }
+
     // Set page title
     document.title = 'Kristins drivhus';
 
@@ -200,11 +235,6 @@ export default function App() {
       localStorage.setItem("darkMode", String(newValue));
       return newValue;
     });
-  };
-
-  // Manual refresh handler
-  const handleRefresh = async () => {
-    await loadData(true);
   };
 
   const getTemperatureStatus = (temp: number) => {
@@ -274,7 +304,7 @@ export default function App() {
   // Icon colors with better contrast in dark mode
   const humidityIconColor = darkMode ? 'text-[#8fbc5f]' : 'text-[#5d7342]';
 
-  const content = (
+  return (
     <div className={`min-h-screen transition-colors duration-300 ${bgColor}`}>
       <div className="max-w-md mx-auto relative">
         {/* Offline Indicator */}
@@ -464,16 +494,5 @@ export default function App() {
         </div>
       </div>
     </div>
-  );
-
-  return (
-    <PullToRefresh
-      onRefresh={handleRefresh}
-      resistance={3}
-      refreshingContent={<div className="text-center py-4"><RefreshCw className="w-6 h-6 animate-spin mx-auto text-[#5d7342]" /></div>}
-      pullingContent={<div className="text-center py-2 text-sm text-gray-500">Dra ned for å oppdatere...</div>}
-    >
-      {content}
-    </PullToRefresh>
   );
 }
