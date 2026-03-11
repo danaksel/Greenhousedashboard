@@ -187,7 +187,7 @@ export default function App() {
           <div className="absolute bottom-0 left-0 right-0 p-6">
             <h1 className="text-4xl mb-2 text-white font-bold drop-shadow-lg">Drivhuset</h1>
             <p className="text-sm text-white/90 drop-shadow">
-              Sist oppdatert: {lastUpdated ? lastUpdated.toLocaleTimeString('nb-NO') : "N/A"}
+              Sist oppdatert: {lastUpdated ? lastUpdated.toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' }) : "N/A"}
               {refreshing && <RefreshCw className="w-4 h-4 inline-block animate-spin ml-2" />}
             </p>
           </div>
