@@ -225,20 +225,22 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#5d7342]">
       <div className="max-w-md mx-auto">
-        {/* Hero Image */}
-        <div className="relative w-full h-56 overflow-hidden mb-6">
+        {/* Header with Logo and Title */}
+        <div className="bg-[#5d7342] px-6 py-4">
+          <div className="flex items-end gap-3">
+            <GreenhouseIcon className="w-10 h-10 text-white" />
+            <h1 className="text-2xl text-white pb-0.5" style={{ fontFamily: "'Cinzel Decorative', serif", fontWeight: 400 }}>Kristins drivhus</h1>
+          </div>
+        </div>
+
+        {/* Hero Image - Narrower */}
+        <div className="relative w-full h-32 overflow-hidden mb-6">
           <ImageWithFallback
             src="/drivhus.png" 
             alt="Drivhus" 
-            className="w-full h-full object-cover object-top"
+            className="w-full h-full object-cover object-center"
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent"></div>
-          <div className="absolute bottom-0 left-0 right-0 p-6">
-            <div className="flex items-center gap-3">
-              <GreenhouseIcon className="w-10 h-10 text-white drop-shadow-lg" />
-              <h1 className="text-4xl text-white font-bold drop-shadow-lg">Kristins drivhus</h1>
-            </div>
-          </div>
+          <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent"></div>
         </div>
 
         <div className="px-4 pb-6">
