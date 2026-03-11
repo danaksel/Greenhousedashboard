@@ -1,5 +1,6 @@
 import { Card } from "./ui/card";
 import { AlertCircle } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "./ui/dialog";
 
 interface MetricCardProps {
   icon: React.ReactNode;
@@ -8,6 +9,7 @@ interface MetricCardProps {
   unit: string;
   status: "normal" | "warning";
   iconColor: string;
+  warningMessage?: string;
 }
 
 export function MetricCard({
@@ -17,6 +19,7 @@ export function MetricCard({
   unit,
   status,
   iconColor,
+  warningMessage,
 }: MetricCardProps) {
   return (
     <Card className="p-6 bg-white/90 backdrop-blur-sm shadow-lg border border-stone-200">
@@ -31,16 +34,36 @@ export function MetricCard({
             </p>
           </div>
         </div>
-        {status === "warning" && (
+        {status === "warning" && warningMessage ? (
+          <Dialog>
+            <DialogTrigger asChild>
+              <button className="flex flex-col items-center cursor-pointer hover:opacity-80 transition-opacity">
+                <AlertCircle className="w-6 h-6 text-[#a02a2a]" />
+                <span className="text-xs text-[#a02a2a] mt-1">Varsel</span>
+              </button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <AlertCircle className="w-5 h-5 text-[#a02a2a]" />
+                  {label} - Varsel
+                </DialogTitle>
+                <DialogDescription className="text-base mt-2">
+                  {warningMessage}
+                </DialogDescription>
+              </DialogHeader>
+            </DialogContent>
+          </Dialog>
+        ) : status === "warning" ? (
           <div className="flex flex-col items-center">
-            <AlertCircle className="w-6 h-6 text-amber-600" />
-            <span className="text-xs text-amber-700 mt-1">Varsel</span>
+            <AlertCircle className="w-6 h-6 text-[#a02a2a]" />
+            <span className="text-xs text-[#a02a2a] mt-1">Varsel</span>
           </div>
-        )}
+        ) : null}
         {status === "normal" && (
           <div className="flex flex-col items-center">
-            <div className="w-3 h-3 rounded-full bg-teal-600"></div>
-            <span className="text-xs text-teal-700 mt-1">Normal</span>
+            <div className="w-3 h-3 rounded-full bg-[#5d7342]"></div>
+            <span className="text-xs text-[#5d7342] mt-1">Normal</span>
           </div>
         )}
       </div>

@@ -3,7 +3,7 @@ import { MetricCard } from "./components/metric-card";
 import { TrendChart } from "./components/trend-chart";
 import { Thermometer, Droplets, RefreshCw } from "lucide-react";
 import { fetchLatestGreenhouseData, fetchGreenhouseHistory } from "./utils/api";
-import heroImage from "../assets/drivhus.png";
+import { ImageWithFallback } from "./components/figma/ImageWithFallback";
 
 export default function App() {
   const [temperature, setTemperature] = useState<number | null>(null);
@@ -98,11 +98,11 @@ export default function App() {
             return null;
           })
           .filter(item => item !== null)
-          .map((item, finalIndex) => ({
+          .map((item, finalIndex) => (({
             time: item!.time,
             value: item!.value as number,
-            id: `${prefix}-${item!.hour}-${finalIndex}`
-          }));
+            id: `${prefix}-${item!.time.replace(/:/g, '')}-${item!.originalIndex}-${finalIndex}`
+          })));
         
         return result;
       };
@@ -129,6 +129,15 @@ export default function App() {
       loadData(true);
     }, 30000);
 
+    // Set theme-color meta tag for mobile browser address bar
+    let metaThemeColor = document.querySelector('meta[name="theme-color"]');
+    if (!metaThemeColor) {
+      metaThemeColor = document.createElement('meta');
+      metaThemeColor.setAttribute('name', 'theme-color');
+      document.head.appendChild(metaThemeColor);
+    }
+    metaThemeColor.setAttribute('content', '#5e682c');
+
     return () => clearInterval(interval);
   }, []);
 
@@ -142,13 +151,35 @@ export default function App() {
     return "normal";
   };
 
+  const getTemperatureWarningMessage = (temp: number | null) => {
+    if (temp === null) return undefined;
+    if (temp < 12) {
+      return `Temperaturen er ${temp.toFixed(1)}°C, som er under det anbefalte minimumet på 12°C. Dette kan skade plantene.`;
+    }
+    if (temp > 28) {
+      return `Temperaturen er ${temp.toFixed(1)}°C, som er over det anbefalte maksimum på 28°C. Dette kan stresse plantene.`;
+    }
+    return undefined;
+  };
+
+  const getHumidityWarningMessage = (humidity: number | null) => {
+    if (humidity === null) return undefined;
+    if (humidity < 50) {
+      return `Luftfuktigheten er ${humidity.toFixed(1)}%, som er under det anbefalte minimumet på 50%. Plantene kan tørke ut.`;
+    }
+    if (humidity > 80) {
+      return `Luftfuktigheten er ${humidity.toFixed(1)}%, som er over det anbefalte maksimum på 80%. Dette kan føre til mugg og sykdom.`;
+    }
+    return undefined;
+  };
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-stone-100 to-amber-50">
+    <div className="min-h-screen bg-[#5e682c]">
       <div className="max-w-md mx-auto">
         {/* Hero Image */}
         <div className="relative w-full h-80 overflow-hidden mb-6">
-          <img 
-            src={heroImage} 
+          <ImageWithFallback
+            src="/assets/drivhus.png" 
             alt="Drivhus" 
             className="w-full h-full object-cover object-top"
           />
@@ -171,7 +202,8 @@ export default function App() {
               value={temperature}
               unit="°C"
               status={temperature !== null ? getTemperatureStatus(temperature) : "normal"}
-              iconColor="text-amber-600"
+              iconColor="text-[#d28c31]"
+              warningMessage={getTemperatureWarningMessage(temperature)}
             />
             <MetricCard
               icon={<Droplets className="w-8 h-8" />}
@@ -179,7 +211,8 @@ export default function App() {
               value={humidity}
               unit="%"
               status={humidity !== null ? getHumidityStatus(humidity) : "normal"}
-              iconColor="text-teal-600"
+              iconColor="text-[#5d7342]"
+              warningMessage={getHumidityWarningMessage(humidity)}
             />
           </div>
 
@@ -188,13 +221,13 @@ export default function App() {
             <TrendChart
               title="Temperatur (24t)"
               data={temperatureData}
-              color="#d97706"
+              color="#d28c31"
               unit="°C"
             />
             <TrendChart
               title="Luftfuktighet (24t)"
               data={humidityData}
-              color="#0d9488"
+              color="#5d7342"
               unit="%"
             />
           </div>
