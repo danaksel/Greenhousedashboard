@@ -5,13 +5,15 @@ import { ChartSkeleton } from "./components/chart-skeleton";
 import { TrendChart } from "./components/trend-chart";
 import { Thermometer, Droplets, RefreshCw } from "lucide-react";
 import { fetchLatestGreenhouseData, fetchGreenhouseHistory } from "./utils/api";
-import { ImageWithFallback } from "./components/figma/ImageWithFallback";
 import { GreenhouseIcon } from "./components/greenhouse-icon";
+import headerImage from "figma:asset/939c09f50e93fb508854f28c8e7118e510c591f2.png";
 
 export default function App() {
   const [temperature, setTemperature] = useState<number | null>(null);
   const [humidity, setHumidity] = useState<number | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [temperatureUpdatedAt, setTemperatureUpdatedAt] = useState<Date | null>(null);
+  const [humidityUpdatedAt, setHumidityUpdatedAt] = useState<Date | null>(null);
   const [temperatureData, setTemperatureData] = useState<Array<{ time: string; value: number; id: string }>>([]);
   const [humidityData, setHumidityData] = useState<Array<{ time: string; value: number; id: string }>>([]);
   const [loading, setLoading] = useState(true);
@@ -32,6 +34,8 @@ export default function App() {
       setTemperature(latest.temperature);
       setHumidity(latest.humidity);
       setLastUpdated(new Date(latest.updatedAt));
+      setTemperatureUpdatedAt(new Date(latest.temperatureUpdatedAt));
+      setHumidityUpdatedAt(new Date(latest.humidityUpdatedAt));
 
       // Fetch historical data
       const history = await fetchGreenhouseHistory();
@@ -101,11 +105,11 @@ export default function App() {
             return null;
           })
           .filter(item => item !== null)
-          .map((item, finalIndex) => (({
+          .map((item, finalIndex) => ({
             time: item!.time,
             value: item!.value as number,
-            id: `${prefix}-${finalIndex}-${item!.hour}`
-          })));
+            id: `${prefix}-${item!.time.replace(':', '-')}-${finalIndex}`
+          }));
         
         return result;
       };
@@ -222,22 +226,18 @@ export default function App() {
     <div className="min-h-screen bg-[#5d7342]">
       <div className="max-w-md mx-auto">
         {/* Hero Image */}
-        <div className="relative w-full h-80 overflow-hidden mb-6">
-          <ImageWithFallback
-            src="/drivhus.png" 
+        <div className="relative w-full h-56 overflow-hidden mb-6">
+          <img
+            src={headerImage} 
             alt="Drivhus" 
             className="w-full h-full object-cover object-top"
           />
           <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent"></div>
           <div className="absolute bottom-0 left-0 right-0 p-6">
-            <div className="flex items-center gap-3 mb-2">
+            <div className="flex items-center gap-3">
               <GreenhouseIcon className="w-10 h-10 text-white drop-shadow-lg" />
               <h1 className="text-4xl text-white font-bold drop-shadow-lg">Kristins drivhus</h1>
             </div>
-            <p className="text-sm text-white/90 drop-shadow">
-              Sist oppdatert: {lastUpdated ? lastUpdated.toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' }) : "N/A"}
-              {refreshing && <RefreshCw className="w-4 h-4 inline-block animate-spin ml-2" />}
-            </p>
           </div>
         </div>
 
@@ -258,6 +258,7 @@ export default function App() {
                 min={temperatureMinMax.min}
                 max={temperatureMinMax.max}
                 trend={temperatureTrend}
+                updatedAt={temperatureUpdatedAt}
               />
             )}
             {loading ? (
@@ -274,6 +275,7 @@ export default function App() {
                 min={humidityMinMax.min}
                 max={humidityMinMax.max}
                 trend={humidityTrend}
+                updatedAt={humidityUpdatedAt}
               />
             )}
           </div>

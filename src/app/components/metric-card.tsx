@@ -1,5 +1,5 @@
 import { Card } from "./ui/card";
-import { AlertCircle, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { AlertCircle, TrendingUp, TrendingDown, Minus, RefreshCw, ArrowDownToLine, ArrowUpToLine } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "./ui/dialog";
 
 interface MetricCardProps {
@@ -13,6 +13,7 @@ interface MetricCardProps {
   min?: number;
   max?: number;
   trend?: "up" | "down" | "stable";
+  updatedAt?: Date | null;
 }
 
 export function MetricCard({
@@ -26,6 +27,7 @@ export function MetricCard({
   min,
   max,
   trend,
+  updatedAt,
 }: MetricCardProps) {
   const getTrendIcon = () => {
     if (!trend) return null;
@@ -52,11 +54,28 @@ export function MetricCard({
                 <span className="text-xl text-stone-500 ml-1">{unit}</span>
               </p>
               {trend && <div className="mt-2">{getTrendIcon()}</div>}
+              {updatedAt && (
+                <div className="flex items-center gap-1 text-xs text-stone-400 mt-2 ml-2">
+                  <RefreshCw className="w-3 h-3" />
+                  <span>{updatedAt.toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' })}</span>
+                </div>
+              )}
             </div>
             {min !== undefined && max !== undefined && (
-              <p className="text-xs text-stone-500 mt-1">
-                Min: {min.toFixed(1)}{unit} • Max: {max.toFixed(1)}{unit} (24t)
-              </p>
+              <div className="text-xs text-stone-500 mt-2">
+                <div className="flex items-center gap-2">
+                  <span className="flex items-center gap-1">
+                    <ArrowDownToLine className="w-3 h-3" />
+                    {min.toFixed(1)}{unit}
+                  </span>
+                  <span>•</span>
+                  <span className="flex items-center gap-1">
+                    <ArrowUpToLine className="w-3 h-3" />
+                    {max.toFixed(1)}{unit}
+                  </span>
+                  <span className="text-stone-400">(24t)</span>
+                </div>
+              </div>
             )}
           </div>
         </div>
