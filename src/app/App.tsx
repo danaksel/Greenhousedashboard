@@ -40,10 +40,10 @@ export default function App() {
       const now = new Date();
       const currentHour = now.getHours();
       
-      // Generate list of hours to display (every 3rd hour going back 24 hours)
+      // Generate list of hours to display (every 2nd hour going back 12 hours)
       const hoursToShow: number[] = [];
-      for (let i = 0; i < 8; i++) { // 8 points * 3 hours = 24 hours
-        const hour = (currentHour - (i * 3) + 24) % 24;
+      for (let i = 0; i < 7; i++) { // 7 points * 2 hours = 12 hours span
+        const hour = (currentHour - (i * 2) + 24) % 24;
         hoursToShow.unshift(hour); // Add to beginning so oldest is first
       }
       
@@ -104,7 +104,7 @@ export default function App() {
           .map((item, finalIndex) => (({
             time: item!.time,
             value: item!.value as number,
-            id: `${prefix}-${item!.time.replace(/:/g, '')}-${item!.originalIndex}-${finalIndex}`
+            id: `${prefix}-${finalIndex}-${item!.hour}`
           })));
         
         return result;
@@ -284,7 +284,7 @@ export default function App() {
               <ChartSkeleton />
             ) : (
               <TrendChart
-                title="Temperatur (24t)"
+                title="Temperatur (12t)"
                 data={temperatureData}
                 color="#d28c31"
                 unit="°C"
@@ -294,7 +294,7 @@ export default function App() {
               <ChartSkeleton />
             ) : (
               <TrendChart
-                title="Luftfuktighet (24t)"
+                title="Luftfuktighet (12t)"
                 data={humidityData}
                 color="#5d7342"
                 unit="%"

@@ -13,12 +13,13 @@ export function TrendChart({ title, data, color, unit }: TrendChartProps) {
     <Card className="p-4 bg-[#ebeee8] backdrop-blur-sm shadow-lg border border-stone-200">
       <h3 className="text-sm mb-3 text-stone-700">{title}</h3>
       <ResponsiveContainer width="100%" height={150}>
-        <LineChart data={data}>
+        <LineChart data={data} margin={{ right: 20, left: -10 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#d6d3d1" />
           <XAxis 
             dataKey="time" 
             tick={{ fontSize: 12, fill: '#78716c' }} 
             stroke="#a8a29e"
+            interval={0}
           />
           <YAxis 
             tick={{ fontSize: 12, fill: '#78716c' }} 
