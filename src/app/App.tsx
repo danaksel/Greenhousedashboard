@@ -126,9 +126,10 @@ export default function App() {
       // Fetch weather data
       try {
         const weather = await fetchWeatherData();
+        console.log('Weather data fetched:', weather);
         setWeatherData(weather);
       } catch (weatherErr) {
-        console.warn('Failed to fetch weather data:', weatherErr);
+        console.error('Failed to fetch weather data:', weatherErr);
         // Don't set error state for weather failures - just skip showing weather
       }
     } catch (err) {

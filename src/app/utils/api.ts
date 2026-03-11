@@ -91,14 +91,7 @@ export async function fetchWeatherData(): Promise<WeatherData> {
   const lon = 10.67;
   
   const res = await fetch(
-    `https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${lat}&lon=${lon}`,
-    {
-      method: "GET",
-      headers: {
-        "User-Agent": "KristinsDrivhus/1.0 (github.com/yourusername/drivhus)"
-      },
-      cache: "no-store"
-    }
+    `https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${lat}&lon=${lon}`
   );
 
   if (!res.ok) {
