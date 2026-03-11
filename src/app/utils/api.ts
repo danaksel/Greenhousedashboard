@@ -193,6 +193,9 @@ export async function fetchWeatherData(): Promise<WeatherData> {
   const fogCondition = details?.fog_area_fraction;
   const visibility = details?.visibility;
   
+  // Debug: Log all available details to see what data we have
+  console.log('Available weather details:', details);
+  
   // If there's significant fog (>50% fog coverage) or very low visibility (<1000m), 
   // we should indicate fog in the description
   const hasFog = (fogCondition !== undefined && fogCondition > 0.5) || 
