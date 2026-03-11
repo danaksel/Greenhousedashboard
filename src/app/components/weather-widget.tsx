@@ -11,27 +11,47 @@ const getWeatherIcon = (symbolCode: string, compact = false) => {
   const iconClass = compact ? "w-5 h-5" : "w-8 h-8";
   const color = compact ? "text-white" : "";
   
-  if (symbolCode.includes("clearsky")) {
-    return <Sun className={`${iconClass} ${color || "text-[#d28c31]"}`} />;
+  // Thunder variants (check first since they can contain rain/snow/sleet)
+  if (symbolCode.includes("thunder")) {
+    return <CloudLightning className={`${iconClass} ${color || "text-yellow-400"}`} />;
   }
-  if (symbolCode.includes("fair") || symbolCode.includes("partlycloudy")) {
-    return <Cloudy className={`${iconClass} ${color || "text-gray-400"}`} />;
+  
+  // Snow variants
+  if (symbolCode.includes("snow")) {
+    return <CloudSnow className={`${iconClass} ${color || "text-blue-200"}`} />;
+  }
+  
+  // Sleet variants
+  if (symbolCode.includes("sleet")) {
+    return <CloudSnow className={`${iconClass} ${color || "text-blue-300"}`} />;
+  }
+  
+  // Rain variants (heavyrain before rain to match correctly)
+  if (symbolCode.includes("heavyrain")) {
+    return <CloudRain className={`${iconClass} ${color || "text-blue-500"}`} />;
   }
   if (symbolCode.includes("rain")) {
     return <CloudRain className={`${iconClass} ${color || "text-blue-400"}`} />;
   }
-  if (symbolCode.includes("lightrain") || symbolCode.includes("drizzle")) {
+  if (symbolCode.includes("drizzle")) {
     return <CloudDrizzle className={`${iconClass} ${color || "text-blue-400"}`} />;
   }
-  if (symbolCode.includes("snow")) {
-    return <CloudSnow className={`${iconClass} ${color || "text-blue-200"}`} />;
-  }
+  
+  // Fog
   if (symbolCode.includes("fog")) {
     return <CloudFog className={`${iconClass} ${color || "text-gray-400"}`} />;
   }
-  if (symbolCode.includes("thunder")) {
-    return <CloudLightning className={`${iconClass} ${color || "text-yellow-400"}`} />;
+  
+  // Clear sky
+  if (symbolCode.includes("clearsky")) {
+    return <Sun className={`${iconClass} ${color || "text-[#d28c31]"}`} />;
   }
+  
+  // Fair or partly cloudy
+  if (symbolCode.includes("fair") || symbolCode.includes("partlycloudy")) {
+    return <Cloudy className={`${iconClass} ${color || "text-gray-400"}`} />;
+  }
+  
   // Default cloudy
   return <Cloud className={`${iconClass} ${color || "text-gray-400"}`} />;
 };

@@ -66,23 +66,82 @@ const weatherDescriptions: Record<string, string> = {
   partlycloudy_day: "Delvis skyet",
   partlycloudy_night: "Delvis skyet",
   cloudy: "Overskyet",
+  fog: "Tåke",
+  
+  // Rain showers
   lightrainshowers_day: "Lette regnbyger",
   lightrainshowers_night: "Lette regnbyger",
   rainshowers_day: "Regnbyger",
   rainshowers_night: "Regnbyger",
   heavyrainshowers_day: "Kraftige regnbyger",
   heavyrainshowers_night: "Kraftige regnbyger",
+  
+  // Rain
   lightrain: "Lett regn",
   rain: "Regn",
   heavyrain: "Kraftig regn",
-  lightsleet: "Sludd",
+  
+  // Sleet showers
+  lightsleetshowers_day: "Lette sluddbyger",
+  lightsleetshowers_night: "Lette sluddbyger",
+  sleetshowers_day: "Sluddbyger",
+  sleetshowers_night: "Sluddbyger",
+  heavysleetshowers_day: "Kraftige sluddbyger",
+  heavysleetshowers_night: "Kraftige sluddbyger",
+  
+  // Sleet
+  lightsleet: "Lett sludd",
   sleet: "Sludd",
   heavysleet: "Kraftig sludd",
+  
+  // Snow showers
+  lightsnowshowers_day: "Lette snøbyger",
+  lightsnowshowers_night: "Lette snøbyger",
+  snowshowers_day: "Snøbyger",
+  snowshowers_night: "Snøbyger",
+  heavysnowshowers_day: "Kraftige snøbyger",
+  heavysnowshowers_night: "Kraftige snøbyger",
+  
+  // Snow
   lightsnow: "Lett snø",
   snow: "Snø",
   heavysnow: "Kraftig snø",
-  fog: "Tåke",
+  
+  // Thunder
   thunderstorm: "Tordenvær",
+  
+  // Rain and thunder
+  lightrainshowersandthunder_day: "Lette regnbyger og torden",
+  lightrainshowersandthunder_night: "Lette regnbyger og torden",
+  rainshowersandthunder_day: "Regnbyger og torden",
+  rainshowersandthunder_night: "Regnbyger og torden",
+  heavyrainshowersandthunder_day: "Kraftige regnbyger og torden",
+  heavyrainshowersandthunder_night: "Kraftige regnbyger og torden",
+  lightrainandthunder: "Lett regn og torden",
+  rainandthunder: "Regn og torden",
+  heavyrainandthunder: "Kraftig regn og torden",
+  
+  // Sleet and thunder
+  lightsleetshowersandthunder_day: "Lette sluddbyger og torden",
+  lightsleetshowersandthunder_night: "Lette sluddbyger og torden",
+  sleetshowersandthunder_day: "Sluddbyger og torden",
+  sleetshowersandthunder_night: "Sluddbyger og torden",
+  heavysleetshowersandthunder_day: "Kraftige sluddbyger og torden",
+  heavysleetshowersandthunder_night: "Kraftige sluddbyger og torden",
+  lightsleetandthunder: "Lett sludd og torden",
+  sleetandthunder: "Sludd og torden",
+  heavysleetandthunder: "Kraftig sludd og torden",
+  
+  // Snow and thunder
+  lightsnowshowersandthunder_day: "Lette snøbyger og torden",
+  lightsnowshowersandthunder_night: "Lette snøbyger og torden",
+  snowshowersandthunder_day: "Snøbyger og torden",
+  snowshowersandthunder_night: "Snøbyger og torden",
+  heavysnowshowersandthunder_day: "Kraftige snøbyger og torden",
+  heavysnowshowersandthunder_night: "Kraftige snøbyger og torden",
+  lightsnowandthunder: "Lett snø og torden",
+  snowandthunder: "Snø og torden",
+  heavysnowandthunder: "Kraftig snø og torden",
 };
 
 export async function fetchWeatherData(): Promise<WeatherData> {
@@ -128,14 +187,42 @@ export async function fetchWeatherData(): Promise<WeatherData> {
                      current.data?.next_6_hours?.summary?.symbol_code || 
                      "cloudy";
   const temperature = current.data?.instant?.details?.air_temperature || 0;
+  
+  // Check for fog conditions - Yr combines fog with other weather symbols
+  const details = current.data?.instant?.details;
+  const fogCondition = details?.fog_area_fraction;
+  const visibility = details?.visibility;
+  
+  // If there's significant fog (>50% fog coverage) or very low visibility (<1000m), 
+  // we should indicate fog in the description
+  const hasFog = (fogCondition !== undefined && fogCondition > 0.5) || 
+                 (visibility !== undefined && visibility < 1000);
 
   // Get base symbol without polarity variants (_polarlight, _polartwilight)
   const baseSymbol = symbolCode.split("_polarlight")[0].split("_polartwilight")[0];
-  const description = weatherDescriptions[baseSymbol] || weatherDescriptions[symbolCode] || "Ukjent";
+  
+  // Debug: Log the symbol code and fog conditions
+  console.log('Yr symbol code:', symbolCode, '-> base:', baseSymbol);
+  console.log('Fog conditions - fog_area_fraction:', fogCondition, 'visibility:', visibility, 'hasFog:', hasFog);
+  
+  // Adjust description based on fog conditions
+  let description = weatherDescriptions[baseSymbol] || weatherDescriptions[symbolCode] || `Ukjent (${baseSymbol})`;
+  
+  // If we detect fog conditions, modify the description
+  if (hasFog) {
+    if (baseSymbol === 'cloudy') {
+      description = 'Overskyet med tåke';
+    } else if (baseSymbol.includes('partlycloudy')) {
+      description = 'Delvis skyet med tåke';
+    } else if (!baseSymbol.includes('fog')) {
+      // Add fog to other conditions if not already mentioned
+      description = `${description} og tåke`;
+    }
+  }
 
   return {
     temperature,
-    symbolCode: baseSymbol,
+    symbolCode: hasFog ? 'fog' : baseSymbol,
     description,
     updatedAt
   };
