@@ -19,6 +19,8 @@ export default function App() {
   const [humidityUpdatedAt, setHumidityUpdatedAt] = useState<Date | null>(null);
   const [temperatureData, setTemperatureData] = useState<Array<{ time: string; value: number; id: string }>>([]);
   const [humidityData, setHumidityData] = useState<Array<{ time: string; value: number; id: string }>>([]);
+  const [temperatureData24h, setTemperatureData24h] = useState<Array<{ time: string; value: number; id: string }>>([]);
+  const [humidityData24h, setHumidityData24h] = useState<Array<{ time: string; value: number; id: string }>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -57,11 +59,18 @@ export default function App() {
       const now = new Date();
       const currentHour = now.getHours();
       
-      // Generate list of hours to display (every 2nd hour going back 12 hours)
-      const hoursToShow: number[] = [];
+      // Generate list of hours to display for graph (every 2nd hour going back 12 hours)
+      const hoursToShow12: number[] = [];
       for (let i = 0; i < 7; i++) { // 7 points * 2 hours = 12 hours span
         const hour = (currentHour - (i * 2) + 24) % 24;
-        hoursToShow.unshift(hour); // Add to beginning so oldest is first
+        hoursToShow12.unshift(hour); // Add to beginning so oldest is first
+      }
+      
+      // Generate list of hours for min/max calculation (every hour going back 24 hours)
+      const hoursToShow24: number[] = [];
+      for (let i = 0; i < 24; i++) { // 24 hours
+        const hour = (currentHour - i + 24) % 24;
+        hoursToShow24.unshift(hour); // Add to beginning so oldest is first
       }
       
       // Fill forward function: carry last known value forward, but keep leading nulls
@@ -85,7 +94,7 @@ export default function App() {
       };
 
       // Process data for a given metric
-      const processHistoryData = (historyItems: Array<{ time: string; value: number | null }>, prefix: string) => {
+      const processHistoryData = (historyItems: Array<{ time: string; value: number | null }>, prefix: string, hoursToShow: number[]) => {
         const times = historyItems.map(item => item.time);
         const rawValues = historyItems.map(item => item.value);
         const filledValues = fillForward(rawValues);
@@ -127,12 +136,19 @@ export default function App() {
         return result;
       };
 
-      // Transform temperature and humidity history data
-      const tempData = processHistoryData(history.temperature || [], 'temp');
-      const humData = processHistoryData(history.humidity || [], 'hum');
+      // Transform temperature and humidity history data (for graphs - 12 hours)
+      const tempData = processHistoryData(history.temperature || [], 'temp', hoursToShow12);
+      const humData = processHistoryData(history.humidity || [], 'hum', hoursToShow12);
 
       setTemperatureData(tempData);
       setHumidityData(humData);
+
+      // Transform temperature and humidity history data (for min/max - 24 hours)
+      const tempData24h = processHistoryData(history.temperature || [], 'temp24', hoursToShow24);
+      const humData24h = processHistoryData(history.humidity || [], 'hum24', hoursToShow24);
+
+      setTemperatureData24h(tempData24h);
+      setHumidityData24h(humData24h);
 
       // Fetch weather data
       try {
@@ -295,8 +311,8 @@ export default function App() {
     return diff > 0 ? "up" : "down";
   };
 
-  const temperatureMinMax = getMinMax(temperatureData);
-  const humidityMinMax = getMinMax(humidityData);
+  const temperatureMinMax = getMinMax(temperatureData24h);
+  const humidityMinMax = getMinMax(humidityData24h);
   const temperatureTrend = getTrend(temperature, temperatureData);
   const humidityTrend = getTrend(humidity, humidityData);
 
@@ -522,46 +538,161 @@ export default function App() {
                     >
                       <div className={`px-4 pb-4 text-sm ${darkMode ? 'text-white/70' : 'text-gray-700'} space-y-4`}>
                         <p>
-                          Kristins drivhus er et lite <strong>IoT-prosjekt</strong> bygget med det man nesten kan kalle ren <em>vibe-coding</em>: lette komponenter, raske API-er og minst mulig friksjon mellom sensor og nettside.
+                          Dette prosjektet er en liten edge-drevet <strong>IoT-løsning</strong> for å overvåke klimaet i et drivhus i sanntid. Systemet samler inn temperatur- og luftfuktighetsdata, styrer oppvarming ved behov, og publiserer dataene til en nettside via en lett skyarkitektur.
+                        </p>
+                        
+                        <p>
+                          Stacken består av <strong>Homey</strong>, <strong>Cloudflare Workers</strong>, <strong>Cloudflare KV</strong>, <strong>GitHub</strong> og <strong>Figma Make</strong>, kombinert med en enkel IoT-sensor i drivhuset.
                         </p>
                         
                         <div>
+                          <p className={`font-semibold mb-2 ${darkMode ? 'text-[#8fbc5f]' : 'text-[#5d7342]'}`}>Arkitektur</p>
+                          <div className={`p-3 rounded-lg font-mono text-xs ${darkMode ? 'bg-black/20' : 'bg-white/50'} overflow-x-auto`}>
+                            <pre className={darkMode ? 'text-white/80' : 'text-gray-700'}>
+{`Mill Smartplug (drivhus)
+        │
+        │
+        ▼
+      Internet
+        │
+        ▼
+     Mill Cloud
+        │
+        ▼
+       Homey
+        │
+        │  (Homey Flow)
+        ▼
+   Cloudflare KV
+        │
+        ▼
+ Cloudflare Worker API
+        │
+        ▼
+   Website (Figma Make)`}
+                            </pre>
+                          </div>
+                        </div>
+                        
+                        <div>
                           <p className={`font-semibold mb-2 ${darkMode ? 'text-[#8fbc5f]' : 'text-[#5d7342]'}`}>Hardware og nettverk</p>
+                          <p className="mb-2">
+                            I drivhuset står en <strong>Mill Smartplugg</strong> koblet til internett via en <strong>UniFi Mobile Router Ultra</strong>.
+                          </p>
+                          <p className="mb-2">Smartpluggen:</p>
+                          <ul className="list-disc list-inside ml-2 mb-2 space-y-1">
+                            <li>måler temperatur</li>
+                            <li>måler luftfuktighet</li>
+                            <li>kan styre en tilkoblet vifteovn</li>
+                            <li>rapporterer energiforbruket til ovnen</li>
+                          </ul>
+                          <p className="mb-2">
+                            En <strong>Homey</strong> smarthub fungerer som IoT-hub og mottar alle målinger.
+                          </p>
                           <p>
-                            I drivhuset står en <strong>Mill Smartplugg</strong> koblet til nettet via en <strong>UniFi Mobile Router Ultra</strong>. Enheten er integrert med <strong>Homey</strong> smart hub, men som står i et separat nettverk på et annet geografisk sted. Homey fungerer som IoT-hub og registrerer temperatur og luftfuktighet. Når verdiene endrer seg, trigges en Homey Flow som sender oppdaterte målinger til <strong>Cloudflare KV</strong>.
+                            Smartpluggen og Homey befinner seg på ulike geografiske lokasjoner og separate nettverk, og kommuniserer via internett. Det er ikke nødvendig med VPN mellom nettverkene. Smartpluggen kommuniserer direkte med Mill sine skytjenester, og Homeys Mill-integrasjon kobler seg til samme tjeneste for å hente data.
                           </p>
                         </div>
 
                         <div>
-                          <p className={`font-semibold mb-2 ${darkMode ? 'text-[#8fbc5f]' : 'text-[#5d7342]'}`}>Backend og hosting</p>
+                          <p className={`font-semibold mb-2 ${darkMode ? 'text-[#8fbc5f]' : 'text-[#5d7342]'}`}>Datainnsamling</p>
+                          <p className="mb-2">
+                            Når målinger i smartpluggen endrer seg, trigges en Homey Flow.
+                          </p>
+                          <p className="mb-2">Denne:</p>
+                          <ol className="list-decimal list-inside ml-2 mb-2 space-y-1">
+                            <li>leser de oppdaterte verdiene</li>
+                            <li>sender data til Cloudflare KV</li>
+                          </ol>
                           <p>
-                            En <strong>Cloudflare Worker</strong> eksponerer disse dataene via et enkelt API. Nettsiden – laget med <strong>Figma Make</strong> – henter dataene derfra og oppdaterer visningen løpende. Koden versjoneres i <strong>GitHub</strong>, og publiseres globalt gjennom Cloudflare Workers, noe som gir en lett og rask edge-basert løsning.
+                            Cloudflare KV fungerer som en enkel nøkkel-verdi database for siste målinger.
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className={`font-semibold mb-2 ${darkMode ? 'text-[#8fbc5f]' : 'text-[#5d7342]'}`}>Backend</p>
+                          <p className="mb-2">
+                            En <strong>Cloudflare Worker</strong> fungerer som backend og eksponerer dataene via et enkelt API.
+                          </p>
+                          <p className="mb-2">API-et leverer blant annet:</p>
+                          <ul className="list-disc list-inside ml-2 mb-2 space-y-1">
+                            <li>temperatur</li>
+                            <li>luftfuktighet</li>
+                            <li>energiforbruk</li>
+                            <li>tidspunkt for siste oppdatering</li>
+                          </ul>
+                          <p>
+                            Siden API-et kjører på Cloudflare Edge, kan dataene hentes raskt fra hvor som helst.
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className={`font-semibold mb-2 ${darkMode ? 'text-[#8fbc5f]' : 'text-[#5d7342]'}`}>Frontend</p>
+                          <p className="mb-2">
+                            Nettsiden er laget med <strong>Figma Make</strong>.
+                          </p>
+                          <p className="mb-2">Den:</p>
+                          <ul className="list-disc list-inside ml-2 mb-2 space-y-1">
+                            <li>henter data fra Worker-API-et</li>
+                            <li>viser målingene i sanntid</li>
+                            <li>oppdaterer visningen fortløpende</li>
+                          </ul>
+                          <p className="mb-2">Koden:</p>
+                          <ul className="list-disc list-inside ml-2 mb-2 space-y-1">
+                            <li>versjoneres i GitHub</li>
+                            <li>publiseres globalt via Cloudflare Workers</li>
+                          </ul>
+                          <p>
+                            Dette gir en svært lett og rask edge-basert hostingmodell.
                           </p>
                         </div>
 
                         <div>
                           <p className={`font-semibold mb-2 ${darkMode ? 'text-[#8fbc5f]' : 'text-[#5d7342]'}`}>Værintegrasjon</p>
-                          <p>
-                            For å sette drivhusdataene i kontekst hentes også værdata fra <strong>Yr.no</strong> sitt API, slik at man kan sammenligne forholdene inne i drivhuset med været ute.
+                          <p className="mb-2">
+                            For å gi kontekst til drivhusdataene hentes også værdata fra <strong>Yr.no</strong> sitt API.
                           </p>
+                          <p className="mb-2">Dette gjør det mulig å sammenligne:</p>
+                          <ul className="list-disc list-inside ml-2 space-y-1">
+                            <li>temperatur i drivhuset</li>
+                            <li>temperatur utendørs</li>
+                            <li>luftfuktighet</li>
+                            <li>lokale værforhold</li>
+                          </ul>
                         </div>
 
                         <div>
                           <p className={`font-semibold mb-2 ${darkMode ? 'text-[#8fbc5f]' : 'text-[#5d7342]'}`}>Varmestyring</p>
-                          <p>
-                            I sensongstart er det kalde netter i Norge, og vifteovn er koblet til <strong>Mill Smartplugg</strong>. Homey styrer smartplugg og vifte basert på temperaturdata.
+                          <p className="mb-2">
+                            Tidlig i sesongen kan nettene være kalde i Norge.
                           </p>
+                          <p className="mb-2">
+                            I denne perioden er en vifteovn koblet til smartpluggen.
+                          </p>
+                          <p className="mb-2">Homey kan automatisk:</p>
+                          <ul className="list-disc list-inside ml-2 space-y-1">
+                            <li>slå ovnen på når temperaturen blir for lav</li>
+                            <li>slå den av når ønsket temperatur er nådd</li>
+                          </ul>
                         </div>
 
                         <div>
-                          <p className={`font-semibold mb-2 ${darkMode ? 'text-[#8fbc5f]' : 'text-[#5d7342]'}`}>Smart overvåking</p>
+                          <p className={`font-semibold mb-2 ${darkMode ? 'text-[#8fbc5f]' : 'text-[#5d7342]'}`}>Varsling</p>
+                          <p className="mb-2">
+                            Systemet fungerer også som enkel IoT-monitor.
+                          </p>
+                          <p className="mb-2">Dersom temperatur eller luftfuktighet passerer definerte grenser:</p>
+                          <ul className="list-disc list-inside ml-2 mb-2 space-y-1">
+                            <li>trigges en Homey Flow</li>
+                            <li>brukeren får pushvarsel på telefon</li>
+                          </ul>
                           <p>
-                            Systemet fungerer også som en liten IoT-monitor: Dersom temperatur eller luftfuktighet passerer definerte grenser, sender Homey pushvarsler direkte til brukeren.
+                            Dette gjør det mulig å reagere raskt dersom forholdene i drivhuset endrer seg.
                           </p>
                         </div>
 
                         <p className={`pt-2 border-t text-sm ${darkMode ? 'border-white/10' : 'border-gray-200'}`}>
-                          Resultatet er en enkel, men effektiv edge-drevet IoT-stack – bygget med vibe-code, automatisering og sky-API-er – som gjør det mulig å følge klimaet i drivhuset i sanntid fra hvor som helst.
+                          Prosjektet er en liten, men effektiv IoT-stack bygget med edge-infrastruktur, sky-API-er, automatisering via Homey og en god dose vibe-coding. Resultatet er en løsning som gjør det mulig å følge klimaet i drivhuset i sanntid – fra hvor som helst.
                         </p>
                       </div>
                     </motion.div>
