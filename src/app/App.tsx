@@ -124,8 +124,13 @@ export default function App() {
       setHumidityData(humData);
 
       // Fetch weather data
-      const weather = await fetchWeatherData();
-      setWeatherData(weather);
+      try {
+        const weather = await fetchWeatherData();
+        setWeatherData(weather);
+      } catch (weatherErr) {
+        console.warn('Failed to fetch weather data:', weatherErr);
+        // Don't set error state for weather failures - just skip showing weather
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load data");
     } finally {

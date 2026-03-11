@@ -114,7 +114,22 @@ export async function fetchWeatherData(): Promise<WeatherData> {
 
   // Get the actual update timestamp from Yr's metadata
   const updatedAtString = json.properties?.meta?.updated_at;
-  const updatedAt = updatedAtString ? new Date(updatedAtString) : new Date();
+  let updatedAt: Date;
+  
+  if (updatedAtString) {
+    // Safari is strict about date formats, so ensure it's valid
+    try {
+      updatedAt = new Date(updatedAtString);
+      // Check if date is valid
+      if (isNaN(updatedAt.getTime())) {
+        updatedAt = new Date();
+      }
+    } catch {
+      updatedAt = new Date();
+    }
+  } else {
+    updatedAt = new Date();
+  }
 
   const symbolCode = current.data?.next_1_hours?.summary?.symbol_code || 
                      current.data?.next_6_hours?.summary?.symbol_code || 
