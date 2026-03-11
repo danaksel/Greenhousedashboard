@@ -193,7 +193,7 @@ export default function App() {
         {/* Hero Image */}
         <div className="relative w-full h-80 overflow-hidden mb-6">
           <ImageWithFallback
-            src="/assets/drivhus.png" 
+            src="/drivhus.png" 
             alt="Drivhus" 
             className="w-full h-full object-cover object-top"
           />
