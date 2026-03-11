@@ -56,11 +56,7 @@ export function WeatherWidget({ data, compact }: WeatherWidgetProps) {
           </div>
         </div>
         <div className="text-right px-1">
-          <p className="text-white/60 text-[10px] flex items-center justify-end gap-0.5">
-            <RefreshCw className="w-2.5 h-2.5" />
-            {formatTime(data.updatedAt)}
-          </p>
-          <p className="text-white/50 text-[9px]">yr.no</p>
+          <p className="text-white/60 text-[10px]">Høybråten gård, yr.no</p>
         </div>
       </div>
     );
