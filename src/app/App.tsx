@@ -124,10 +124,10 @@ export default function App() {
   useEffect(() => {
     loadData();
 
-    // Auto-refresh every 30 seconds
+    // Auto-refresh every 15 minutes
     const interval = setInterval(() => {
       loadData(true);
-    }, 30000);
+    }, 900000);
 
     // Set theme-color meta tag for mobile browser address bar
     let metaThemeColor = document.querySelector('meta[name="theme-color"]');
