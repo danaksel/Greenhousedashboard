@@ -417,7 +417,7 @@ export default function App() {
           {/* Metric Cards with Animation */}
           <div className="space-y-4 mb-6">
             {loading ? (
-              <MetricCardSkeleton />
+              <MetricCardSkeleton darkMode={darkMode} />
             ) : (
               <motion.div
                 key={`temp-${temperature}`}
@@ -442,7 +442,7 @@ export default function App() {
               </motion.div>
             )}
             {loading ? (
-              <MetricCardSkeleton />
+              <MetricCardSkeleton darkMode={darkMode} />
             ) : (
               <motion.div
                 key={`hum-${humidity}`}
@@ -471,7 +471,7 @@ export default function App() {
           {/* Trend Charts */}
           <div className="space-y-4">
             {loading ? (
-              <ChartSkeleton />
+              <ChartSkeleton darkMode={darkMode} />
             ) : (
               <TrendChart
                 title="Temperatur siste 12 timer"
@@ -482,7 +482,7 @@ export default function App() {
               />
             )}
             {loading ? (
-              <ChartSkeleton />
+              <ChartSkeleton darkMode={darkMode} />
             ) : (
               <TrendChart
                 title="Luftfuktighet siste 12 timer"
@@ -605,7 +605,7 @@ export default function App() {
                             <li>sender data til Cloudflare KV</li>
                           </ol>
                           <p>
-                            Cloudflare KV fungerer som en enkel nøkkel-verdi database for siste målinger.
+                            Cloudflare KV fungerer som enkel nøkkel-verdi database for siste målinger.
                           </p>
                         </div>
 
