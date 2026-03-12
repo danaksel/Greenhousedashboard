@@ -12,13 +12,35 @@ interface TrendChartProps {
 export function TrendChart({ title, data, color, unit, darkMode = false }: TrendChartProps) {
   // Calculate domain with whole numbers
   const values = data.map(d => d.value);
-  const minValue = Math.floor(Math.min(...values));
-  const maxValue = Math.ceil(Math.max(...values));
+  const rawMin = Math.min(...values);
+  const rawMax = Math.max(...values);
   
-  // Generate array of all whole numbers from floor(min) to ceil(max)
+  const minTick = Math.floor(rawMin);
+  const baseMaxTick = Math.ceil(rawMax);
+  
+  const candidateSteps = [1, 2, 5, 10, 20, 50];
+  
+  let chosen = null;
+  
+  for (const step of candidateSteps) {
+    const axisMax = Math.ceil((baseMaxTick - minTick) / step) * step + minTick;
+    const tickCount = Math.floor((axisMax - minTick) / step) + 1;
+    
+    if (tickCount <= 4) {
+      chosen = { step, axisMax, tickCount };
+      break;
+    }
+  }
+  
+  // Fallback if no step found (shouldn't happen with our candidate steps)
+  if (!chosen) {
+    chosen = { step: 10, axisMax: baseMaxTick, tickCount: 4 };
+  }
+  
+  // Generate ticks
   const ticks = [];
-  for (let i = minValue; i <= maxValue; i++) {
-    ticks.push(i);
+  for (let v = minTick; v <= chosen.axisMax; v += chosen.step) {
+    ticks.push(v);
   }
 
   const bgClass = darkMode ? 'bg-[#2d3a21]' : 'bg-[#ebeee8]';
@@ -45,9 +67,8 @@ export function TrendChart({ title, data, color, unit, darkMode = false }: Trend
           <YAxis 
             tick={{ fontSize: 12, fill: tickColor }} 
             stroke={axisColor}
-            domain={[minValue, maxValue]}
+            domain={[minTick, chosen.axisMax]}
             ticks={ticks}
-            interval={0}
             tickFormatter={(value) => `${value}${unit}`}
           />
           <Tooltip
