@@ -146,10 +146,11 @@ const weatherDescriptions: Record<string, string> = {
 };
 
 export async function fetchWeatherData(): Promise<WeatherData> {
-  // Coordinates for Las Palmas, Gran Canaria (for UV testing)
-  const lat = 28.1;
-  const lon = -15.4;
+  // Coordinates for Høybråten, Nesodden
+  const lat = 59.87;
+  const lon = 10.67;
   
+  // Fetch weather data from Yr (temperature + symbol)
   const res = await fetch(
     `https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${lat}&lon=${lon}`
   );
@@ -188,12 +189,22 @@ export async function fetchWeatherData(): Promise<WeatherData> {
                      current.data?.next_6_hours?.summary?.symbol_code || 
                      "cloudy";
   const temperature = current.data?.instant?.details?.air_temperature || 0;
-  const uvIndex = current.data?.instant?.details?.ultraviolet_index_clear_sky;
   
-  // Debug: Log UV data and all available details
-  console.log('UV Index from API:', uvIndex);
-  console.log('All instant details:', current.data?.instant?.details);
-  console.log('Full current data:', JSON.stringify(current.data, null, 2));
+  // Fetch UV index from Open-Meteo (Yr doesn't provide UV data)
+  let uvIndex: number | undefined;
+  try {
+    const uvRes = await fetch(
+      `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=uv_index`
+    );
+    
+    if (uvRes.ok) {
+      const uvJson = await uvRes.json();
+      uvIndex = uvJson.current?.uv_index;
+    }
+  } catch (error) {
+    console.warn('Failed to fetch UV data from Open-Meteo:', error);
+    // Continue without UV data
+  }
   
   // Get base symbol without polarity variants (_polarlight, _polartwilight)
   const baseSymbol = symbolCode.split("_polarlight")[0].split("_polartwilight")[0];
