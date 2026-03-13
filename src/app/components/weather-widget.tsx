@@ -99,10 +99,6 @@ export function WeatherWidget({ data, compact }: WeatherWidgetProps) {
             <span className="font-medium">{displayUvIndex.toFixed(1)}</span>
           </div>
         </div>
-
-        <div className="text-right px-1">
-          <p className="text-white/60 text-[10px]">yr.no</p>
-        </div>
       </div>
     );
   }
