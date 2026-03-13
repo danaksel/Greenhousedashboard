@@ -83,13 +83,13 @@ export function MetricCard({
                   <Dialog>
                     <DialogTrigger asChild>
                       <button className="flex items-center cursor-pointer hover:opacity-70 transition-opacity">
-                        <Clock className={`w-3 h-3 ${darkMode ? 'text-white/40' : 'text-stone-400'}`} />
+                        <Info className={`w-3 h-3 ${darkMode ? 'text-white/40' : 'text-stone-400'}`} />
                       </button>
                     </DialogTrigger>
                     <DialogContent>
                       <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
-                          <Clock className="w-5 h-5" />
+                          <Info className="w-5 h-5" />
                           24-timers oversikt
                         </DialogTitle>
                         <DialogDescription className="text-base mt-4 space-y-3">

@@ -8,6 +8,7 @@ import { fetchLatestGreenhouseData, fetchGreenhouseHistory, fetchWeatherData, ty
 import { ImageWithFallback } from "./components/figma/ImageWithFallback";
 import { GreenhouseIcon } from "./components/greenhouse-icon";
 import { WeatherWidget } from "./components/weather-widget";
+import { WeatherWidgetSkeleton } from "./components/weather-widget-skeleton";
 import { motion, AnimatePresence } from "motion/react";
 
 export default function App() {
@@ -405,11 +406,15 @@ export default function App() {
           />
           
           {/* Weather Widget Overlay */}
-          {weatherData && (
+          {loading ? (
+            <div className="absolute top-4 right-4">
+              <WeatherWidgetSkeleton />
+            </div>
+          ) : weatherData ? (
             <div className="absolute top-4 right-4">
               <WeatherWidget data={weatherData} compact />
             </div>
-          )}
+          ) : null}
         </div>
 
         <div className="px-4 pb-6">
