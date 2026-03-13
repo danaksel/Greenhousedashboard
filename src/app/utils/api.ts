@@ -3,6 +3,15 @@ export interface HistoryData {
   humidity: Array<{ time: string; value: number | null; timestamp: string | null; bucketStart: string | null }>;
 }
 
+export interface LatestData {
+  temperature: number;
+  humidity: number;
+  updatedAt: string;
+  temperatureUpdatedAt: string;
+  humidityUpdatedAt: string;
+  rainToday?: number;
+}
+
 export interface WeatherData {
   temperature: number;
   symbolCode: string;
@@ -32,7 +41,8 @@ export async function fetchLatestGreenhouseData(): Promise<LatestData> {
     humidity: data.humidity,
     updatedAt: data.updatedAt,
     temperatureUpdatedAt: data.temperatureUpdatedAt,
-    humidityUpdatedAt: data.humidityUpdatedAt
+    humidityUpdatedAt: data.humidityUpdatedAt,
+    rainToday: data.rainToday
   };
 }
 

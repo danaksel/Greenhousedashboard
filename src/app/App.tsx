@@ -14,6 +14,7 @@ import { motion, AnimatePresence } from "motion/react";
 export default function App() {
   const [temperature, setTemperature] = useState<number | null>(null);
   const [humidity, setHumidity] = useState<number | null>(null);
+  const [rainToday, setRainToday] = useState<number | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [temperatureUpdatedAt, setTemperatureUpdatedAt] = useState<Date | null>(null);
   const [humidityUpdatedAt, setHumidityUpdatedAt] = useState<Date | null>(null);
@@ -48,6 +49,7 @@ export default function App() {
       const latest = await fetchLatestGreenhouseData();
       setTemperature(latest.temperature);
       setHumidity(latest.humidity);
+      setRainToday(latest.rainToday ?? null);
       setLastUpdated(new Date(latest.updatedAt));
       setTemperatureUpdatedAt(new Date(latest.temperatureUpdatedAt));
       setHumidityUpdatedAt(new Date(latest.humidityUpdatedAt));
@@ -398,7 +400,7 @@ export default function App() {
         </AnimatePresence>
 
         {/* Hero Image */}
-        <div className="relative w-full h-36 overflow-hidden mb-6">
+        <div className="relative w-full h-[200px] overflow-hidden mb-6">
           <ImageWithFallback
             src="/drivhus.png" 
             alt="Drivhus" 
@@ -407,12 +409,12 @@ export default function App() {
           
           {/* Weather Widget Overlay */}
           {loading ? (
-            <div className="absolute top-4 right-4">
+            <div className="absolute top-4 right-4 bottom-4">
               <WeatherWidgetSkeleton />
             </div>
           ) : weatherData ? (
-            <div className="absolute top-4 right-4">
-              <WeatherWidget data={weatherData} compact />
+            <div className="absolute top-4 right-4 bottom-4">
+              <WeatherWidget data={weatherData} compact rainToday={rainToday} />
             </div>
           ) : null}
         </div>
