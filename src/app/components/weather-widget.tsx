@@ -1,5 +1,6 @@
-import { Cloud, CloudRain, Sun, CloudDrizzle, CloudSnow, CloudFog, CloudLightning, Cloudy, RefreshCw } from "lucide-react";
+import { Cloud, CloudRain, Sun, CloudDrizzle, CloudSnow, CloudFog, CloudLightning, Cloudy, RefreshCw, Sunrise, Sunset } from "lucide-react";
 import { WeatherData } from "../utils/api";
+import SunCalc from "suncalc";
 
 interface WeatherWidgetProps {
   data: WeatherData;
@@ -65,13 +66,40 @@ export function WeatherWidget({ data, compact }: WeatherWidgetProps) {
     });
   };
 
+  // Calculate sun times for Høybråten, Nesodden
+  const lat = 59.8667;
+  const lon = 10.7167;
+  const now = new Date();
+  const sunTimes = SunCalc.getTimes(now, lat, lon);
+
+  // Use live UV data, or 0 if not available
+  const displayUvIndex = data.uvIndex ?? 0;
+
   if (compact) {
     return (
-      <div className="flex flex-col gap-0.5">
+      <div className="flex flex-col gap-2">
+        {/* Weather section */}
         <div className="flex items-center gap-1.5 bg-black/20 backdrop-blur-sm rounded-md px-2 py-1">
           {getWeatherIcon(data.symbolCode, true)}
           <span className="text-white text-sm font-medium">{data.temperature.toFixed(1)}°</span>
         </div>
+        
+        {/* Sun times section */}
+        <div className="flex flex-col gap-1 bg-black/15 backdrop-blur-sm rounded-md px-2 py-1.5 text-white/90">
+          <div className="flex items-center justify-between text-[11px]">
+            <Sunrise className="w-3 h-3" />
+            <span className="font-medium">{formatTime(sunTimes.sunrise)}</span>
+          </div>
+          <div className="flex items-center justify-between text-[11px]">
+            <Sunset className="w-3 h-3" />
+            <span className="font-medium">{formatTime(sunTimes.sunset)}</span>
+          </div>
+          <div className="flex items-center justify-between text-[11px] mt-0.5 pt-1 border-t border-white/20">
+            <span className="opacity-90">UV</span>
+            <span className="font-medium">{displayUvIndex.toFixed(1)}</span>
+          </div>
+        </div>
+
         <div className="text-right px-1">
           <p className="text-white/60 text-[10px]">yr.no</p>
         </div>

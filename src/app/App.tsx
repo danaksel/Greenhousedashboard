@@ -9,7 +9,6 @@ import { ImageWithFallback } from "./components/figma/ImageWithFallback";
 import { GreenhouseIcon } from "./components/greenhouse-icon";
 import { WeatherWidget } from "./components/weather-widget";
 import { motion, AnimatePresence } from "motion/react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "./components/ui/dialog";
 
 export default function App() {
   const [temperature, setTemperature] = useState<number | null>(null);
@@ -355,7 +354,7 @@ export default function App() {
         </AnimatePresence>
 
         {/* Header with Logo, Title, and Controls */}
-        <div className="bg-[#5d7342] px-6 py-4 sticky top-0 z-30">
+        <div className="bg-[#5d7342] px-4 py-4 sticky top-0 z-30">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <GreenhouseIcon className="w-9 h-9 text-white" />
@@ -389,7 +388,7 @@ export default function App() {
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
               exit={{ opacity: 0, height: 0 }}
-              className="bg-red-500 text-white px-6 py-3 text-sm"
+              className="bg-red-500 text-white px-4 py-3 text-sm"
             >
               <p className="font-semibold">Feil ved lasting av data</p>
               <p className="text-xs mt-1">{error}</p>
@@ -398,7 +397,7 @@ export default function App() {
         </AnimatePresence>
 
         {/* Hero Image */}
-        <div className="relative w-full h-32 overflow-hidden mb-6">
+        <div className="relative w-full h-36 overflow-hidden mb-6">
           <ImageWithFallback
             src="/drivhus.png" 
             alt="Drivhus" 
@@ -407,7 +406,7 @@ export default function App() {
           
           {/* Weather Widget Overlay */}
           {weatherData && (
-            <div className="absolute top-2 right-2">
+            <div className="absolute top-4 right-4">
               <WeatherWidget data={weatherData} compact />
             </div>
           )}

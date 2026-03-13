@@ -8,6 +8,7 @@ export interface WeatherData {
   symbolCode: string;
   description: string;
   updatedAt?: Date;
+  uvIndex?: number;
 }
 
 export async function fetchLatestGreenhouseData(): Promise<LatestData> {
@@ -145,9 +146,9 @@ const weatherDescriptions: Record<string, string> = {
 };
 
 export async function fetchWeatherData(): Promise<WeatherData> {
-  // Coordinates for Høybråtan, Nesodden
-  const lat = 59.87;
-  const lon = 10.67;
+  // Coordinates for Las Palmas, Gran Canaria (for UV testing)
+  const lat = 28.1;
+  const lon = -15.4;
   
   const res = await fetch(
     `https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${lat}&lon=${lon}`
@@ -187,6 +188,12 @@ export async function fetchWeatherData(): Promise<WeatherData> {
                      current.data?.next_6_hours?.summary?.symbol_code || 
                      "cloudy";
   const temperature = current.data?.instant?.details?.air_temperature || 0;
+  const uvIndex = current.data?.instant?.details?.ultraviolet_index_clear_sky;
+  
+  // Debug: Log UV data and all available details
+  console.log('UV Index from API:', uvIndex);
+  console.log('All instant details:', current.data?.instant?.details);
+  console.log('Full current data:', JSON.stringify(current.data, null, 2));
   
   // Get base symbol without polarity variants (_polarlight, _polartwilight)
   const baseSymbol = symbolCode.split("_polarlight")[0].split("_polartwilight")[0];
@@ -225,6 +232,7 @@ export async function fetchWeatherData(): Promise<WeatherData> {
     temperature,
     symbolCode: hasFog ? 'fog' : baseSymbol,
     description,
-    updatedAt
+    updatedAt,
+    uvIndex
   };
 }
