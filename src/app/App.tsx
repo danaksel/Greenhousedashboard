@@ -364,6 +364,16 @@ export default function App() {
               <h1 className="text-xl text-white" style={{ fontFamily: "'Cinzel Decorative', serif", fontWeight: 400 }}>Kristins drivhus</h1>
             </div>
             <div className="flex items-center gap-2">
+              {/* Refresh Button */}
+              <button
+                onClick={() => loadData(true)}
+                disabled={refreshing}
+                className="p-2 rounded-full bg-white/20 hover:bg-white/30 transition-colors disabled:opacity-50"
+                aria-label="Oppdater data"
+              >
+                <RefreshCw className={`w-5 h-5 text-white ${refreshing ? 'animate-spin' : ''}`} />
+              </button>
+              
               {/* Dark Mode Slider */}
               <button
                 onClick={toggleDarkMode}
