@@ -10,6 +10,7 @@ import { GreenhouseIcon } from "./components/greenhouse-icon";
 import { WeatherWidget } from "./components/weather-widget";
 import { WeatherWidgetSkeleton } from "./components/weather-widget-skeleton";
 import { motion, AnimatePresence } from "motion/react";
+import { thresholds, warningMessages } from "../config/thresholds";
 
 export default function App() {
   const [temperature, setTemperature] = useState<number | null>(null);
@@ -258,33 +259,33 @@ export default function App() {
   };
 
   const getTemperatureStatus = (temp: number) => {
-    if (temp < 12 || temp > 28) return "warning";
+    if (temp < thresholds.temperature.min || temp > thresholds.temperature.max) return "warning";
     return "normal";
   };
 
   const getHumidityStatus = (humidity: number) => {
-    if (humidity < 50 || humidity > 80) return "warning";
+    if (humidity < thresholds.humidity.min || humidity > thresholds.humidity.max) return "warning";
     return "normal";
   };
 
   const getTemperatureWarningMessage = (temp: number | null) => {
     if (temp === null) return undefined;
-    if (temp < 12) {
-      return `Temperaturen er ${temp.toFixed(1)}°C, som er under det anbefalte minimumet på 12°C. Dette kan skade plantene.`;
+    if (temp < thresholds.temperature.min) {
+      return `Temperaturen er ${temp.toFixed(1)}°C, som er under det anbefalte minimumet på ${thresholds.temperature.min}°C. Dette kan skade plantene.`;
     }
-    if (temp > 28) {
-      return `Temperaturen er ${temp.toFixed(1)}°C, som er over det anbefalte maksimum på 28°C. Dette kan stresse plantene.`;
+    if (temp > thresholds.temperature.max) {
+      return `Temperaturen er ${temp.toFixed(1)}°C, som er over det anbefalte maksimum på ${thresholds.temperature.max}°C. Dette kan stresse plantene.`;
     }
     return undefined;
   };
 
   const getHumidityWarningMessage = (humidity: number | null) => {
     if (humidity === null) return undefined;
-    if (humidity < 50) {
-      return `Luftfuktigheten er ${humidity.toFixed(1)}%, som er under det anbefalte minimumet på 50%. Plantene kan tørke ut.`;
+    if (humidity < thresholds.humidity.min) {
+      return `Luftfuktigheten er ${humidity.toFixed(1)}%, som er under det anbefalte minimumet på ${thresholds.humidity.min}%. Plantene kan tørke ut.`;
     }
-    if (humidity > 80) {
-      return `Luftfuktigheten er ${humidity.toFixed(1)}%, som er over det anbefalte maksimum på 80%. Dette kan føre til mugg og sykdom.`;
+    if (humidity > thresholds.humidity.max) {
+      return `Luftfuktigheten er ${humidity.toFixed(1)}%, som er over det anbefalte maksimum på ${thresholds.humidity.max}%. Dette kan føre til mugg og sykdom.`;
     }
     return undefined;
   };
