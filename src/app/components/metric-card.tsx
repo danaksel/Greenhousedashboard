@@ -72,6 +72,18 @@ export function MetricCard({
               </p>
               {trend && <div className="mt-2">{getTrendIcon()}</div>}
             </div>
+            {updatedAt && (
+              <div className={`text-xs ${textTertiary} mt-1 flex items-center gap-1`}>
+                <Clock className="w-3 h-3" />
+                <span>
+                  Oppdatert{" "}
+                  {updatedAt.toLocaleTimeString("nb-NO", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </span>
+              </div>
+            )}
             {min !== undefined && max !== undefined && (
               <div className={`text-xs ${textTertiary} mt-2`}>
                 <div className="flex items-center gap-2">
