@@ -508,6 +508,29 @@ export default function App() {
                 </div>
               </div>
             )}
+            {loading ? (
+              <MetricCardSkeleton darkMode={darkMode} />
+            ) : (
+              <motion.div
+                key={`door-${door}`}
+                initial={{ opacity: 0.5 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.3 }}
+              >
+                <MetricCard
+                  icon={<DoorOpen className="w-8 h-8" />}
+                  label="Dør"
+                  value={null}
+                  valueDisplay={doorDisplay}
+                  unit=""
+                  status="normal"
+                  iconColor={darkMode ? "text-[#d7c7a3]" : "text-[#6e5b3c]"}
+                  updatedAt={doorUpdatedAt}
+                  darkMode={darkMode}
+                  hideStatusIndicator
+                />
+              </motion.div>
+            )}
           </div>
 
           <div className={`rounded-2xl border p-4 ${panelClass}`}>
