@@ -6,9 +6,15 @@ export interface HistoryData {
 export interface LatestData {
   temperature: number;
   humidity: number;
+  door?: "open" | "closed";
+  fan?: "on" | "off";
+  heating?: "on" | "off";
   updatedAt: string;
   temperatureUpdatedAt: string;
   humidityUpdatedAt: string;
+  doorUpdatedAt?: string;
+  fanUpdatedAt?: string;
+  heatingUpdatedAt?: string;
   rainToday?: number;
 }
 
@@ -39,9 +45,15 @@ export async function fetchLatestGreenhouseData(): Promise<LatestData> {
   return {
     temperature: data.temperature,
     humidity: data.humidity,
+    door: data.door,
+    fan: data.fan,
+    heating: data.heating,
     updatedAt: data.updatedAt,
     temperatureUpdatedAt: data.temperatureUpdatedAt,
     humidityUpdatedAt: data.humidityUpdatedAt,
+    doorUpdatedAt: data.doorUpdatedAt,
+    fanUpdatedAt: data.fanUpdatedAt,
+    heatingUpdatedAt: data.heatingUpdatedAt,
     rainToday: data.rainToday
   };
 }

@@ -1,24 +1,26 @@
 import { useState, useEffect } from "react";
-import { MetricCard } from "./components/metric-card";
-import { MetricCardSkeleton } from "./components/metric-card-skeleton";
 import { ChartSkeleton } from "./components/chart-skeleton";
 import { TrendChart } from "./components/trend-chart";
-import { Thermometer, Droplets, RefreshCw, Moon, Sun, WifiOff, Info, ChevronDown } from "lucide-react";
+import { Thermometer, Droplets, RefreshCw, Moon, Sun, WifiOff, Info, ChevronDown, DoorOpen, Fan, Flame } from "lucide-react";
 import { fetchLatestGreenhouseData, fetchGreenhouseHistory, fetchWeatherData, type WeatherData } from "./utils/api";
 import { ImageWithFallback } from "./components/figma/ImageWithFallback";
 import { GreenhouseIcon } from "./components/greenhouse-icon";
 import { WeatherWidget } from "./components/weather-widget";
 import { WeatherWidgetSkeleton } from "./components/weather-widget-skeleton";
 import { motion, AnimatePresence } from "motion/react";
-import { thresholds, warningMessages } from "../config/thresholds";
+import { thresholds } from "../config/thresholds";
 
 export default function App() {
   const [temperature, setTemperature] = useState<number | null>(null);
   const [humidity, setHumidity] = useState<number | null>(null);
   const [rainToday, setRainToday] = useState<number | null>(null);
+  const [door, setDoor] = useState<"open" | "closed" | null>(null);
+  const [fan, setFan] = useState<"on" | "off" | null>(null);
+  const [heating, setHeating] = useState<"on" | "off" | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [temperatureUpdatedAt, setTemperatureUpdatedAt] = useState<Date | null>(null);
-  const [humidityUpdatedAt, setHumidityUpdatedAt] = useState<Date | null>(null);
+  const [doorUpdatedAt, setDoorUpdatedAt] = useState<Date | null>(null);
+  const [fanUpdatedAt, setFanUpdatedAt] = useState<Date | null>(null);
+  const [heatingUpdatedAt, setHeatingUpdatedAt] = useState<Date | null>(null);
   const [temperatureData, setTemperatureData] = useState<Array<{ time: string; value: number; id: string }>>([]);
   const [humidityData, setHumidityData] = useState<Array<{ time: string; value: number; id: string }>>([]);
   const [temperatureData24h, setTemperatureData24h] = useState<Array<{ time: string; value: number; id: string }>>([]);
@@ -36,6 +38,7 @@ export default function App() {
   });
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [aboutExpanded, setAboutExpanded] = useState(false);
+  const [activeChart, setActiveChart] = useState<"temperature" | "humidity">("temperature");
 
   const loadData = async (isRefresh = false) => {
     try {
@@ -50,10 +53,14 @@ export default function App() {
       const latest = await fetchLatestGreenhouseData();
       setTemperature(latest.temperature);
       setHumidity(latest.humidity);
+      setDoor(latest.door ?? null);
+      setFan(latest.fan ?? null);
+      setHeating(latest.heating ?? null);
       setRainToday(latest.rainToday ?? null);
       setLastUpdated(new Date(latest.updatedAt));
-      setTemperatureUpdatedAt(new Date(latest.temperatureUpdatedAt));
-      setHumidityUpdatedAt(new Date(latest.humidityUpdatedAt));
+      setDoorUpdatedAt(latest.doorUpdatedAt ? new Date(latest.doorUpdatedAt) : null);
+      setFanUpdatedAt(latest.fanUpdatedAt ? new Date(latest.fanUpdatedAt) : null);
+      setHeatingUpdatedAt(latest.heatingUpdatedAt ? new Date(latest.heatingUpdatedAt) : null);
 
       // Fetch historical data
       const history = await fetchGreenhouseHistory();
@@ -258,38 +265,6 @@ export default function App() {
     });
   };
 
-  const getTemperatureStatus = (temp: number) => {
-    if (temp < thresholds.temperature.min || temp > thresholds.temperature.max) return "warning";
-    return "normal";
-  };
-
-  const getHumidityStatus = (humidity: number) => {
-    if (humidity < thresholds.humidity.min || humidity > thresholds.humidity.max) return "warning";
-    return "normal";
-  };
-
-  const getTemperatureWarningMessage = (temp: number | null) => {
-    if (temp === null) return undefined;
-    if (temp < thresholds.temperature.min) {
-      return `Temperaturen er ${temp.toFixed(1)}°C, som er under det anbefalte minimumet på ${thresholds.temperature.min}°C. Dette kan skade plantene.`;
-    }
-    if (temp > thresholds.temperature.max) {
-      return `Temperaturen er ${temp.toFixed(1)}°C, som er over det anbefalte maksimum på ${thresholds.temperature.max}°C. Dette kan stresse plantene.`;
-    }
-    return undefined;
-  };
-
-  const getHumidityWarningMessage = (humidity: number | null) => {
-    if (humidity === null) return undefined;
-    if (humidity < thresholds.humidity.min) {
-      return `Luftfuktigheten er ${humidity.toFixed(1)}%, som er under det anbefalte minimumet på ${thresholds.humidity.min}%. Plantene kan tørke ut.`;
-    }
-    if (humidity > thresholds.humidity.max) {
-      return `Luftfuktigheten er ${humidity.toFixed(1)}%, som er over det anbefalte maksimum på ${thresholds.humidity.max}%. Dette kan føre til mugg og sykdom.`;
-    }
-    return undefined;
-  };
-
   // Calculate min/max from historical data
   const getMinMax = (data: Array<{ time: string; value: number; id: string }>) => {
     if (data.length === 0) return { min: undefined, max: undefined };
@@ -316,14 +291,34 @@ export default function App() {
 
   const temperatureMinMax = getMinMax(temperatureData24h);
   const humidityMinMax = getMinMax(humidityData24h);
+  const doorDisplay = door === "open" ? "Åpen" : door === "closed" ? "Lukket" : "--";
+  const fanDisplay = fan === "on" ? "På" : fan === "off" ? "Av" : "--";
+  const heatingDisplay = heating === "on" ? "På" : heating === "off" ? "Av" : "--";
+  const fanRunning = fan === "on";
+  const heatingRunning = heating === "on";
+  const fanStatusUpdatedAt =
+    fanUpdatedAt && heatingUpdatedAt
+      ? new Date(Math.max(fanUpdatedAt.getTime(), heatingUpdatedAt.getTime()))
+      : fanUpdatedAt ?? heatingUpdatedAt;
   const temperatureTrend = getTrend(temperature, temperatureData);
   const humidityTrend = getTrend(humidity, humidityData);
+  const formatUpdatedAt = (date: Date | null) =>
+    date
+      ? date.toLocaleTimeString("nb-NO", {
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : "--:--";
+  const isTemperatureOutOfRange =
+    temperature !== null &&
+    (temperature < thresholds.temperature.min || temperature > thresholds.temperature.max);
+  const isHumidityOutOfRange =
+    humidity !== null &&
+    (humidity < thresholds.humidity.min || humidity > thresholds.humidity.max);
 
   const bgColor = darkMode ? 'bg-[#2d3a21]' : 'bg-[#e8ede3]';
-  const textColor = darkMode ? 'text-white/80' : 'text-gray-800';
-  
-  // Icon colors with better contrast in dark mode
-  const humidityIconColor = darkMode ? 'text-[#8fbc5f]' : 'text-[#5d7342]';
+  const panelClass = darkMode ? "bg-white/8 border-white/10" : "bg-white/85 border-stone-200/80";
+  const mutedText = darkMode ? "text-white/65" : "text-stone-600";
 
   return (
     <div className={`min-h-screen transition-colors duration-300 ${bgColor}`}>
@@ -431,78 +426,121 @@ export default function App() {
         </div>
 
         <div className="px-4 pb-6">
-          {/* Metric Cards with Animation */}
-          <div className="space-y-4 mb-6">
+          <div className={`rounded-2xl border p-4 mb-4 ${panelClass}`}>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className={`text-sm font-semibold ${darkMode ? "text-white/90" : "text-stone-800"}`}>Drivhus nå</h2>
+              <span className={`text-xs ${mutedText}`}>Kompakt oversikt</span>
+            </div>
+
             {loading ? (
-              <MetricCardSkeleton darkMode={darkMode} />
+              <div className="grid grid-cols-2 gap-3">
+                <div className={`h-24 rounded-xl ${darkMode ? "bg-white/10" : "bg-stone-100"} animate-pulse`} />
+                <div className={`h-24 rounded-xl ${darkMode ? "bg-white/10" : "bg-stone-100"} animate-pulse`} />
+                <div className={`h-24 rounded-xl ${darkMode ? "bg-white/10" : "bg-stone-100"} animate-pulse`} />
+                <div className={`h-24 rounded-xl ${darkMode ? "bg-white/10" : "bg-stone-100"} animate-pulse`} />
+              </div>
             ) : (
-              <motion.div
-                key={`temp-${temperature}`}
-                initial={{ opacity: 0.5 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.3 }}
-              >
-                <MetricCard
-                  icon={<Thermometer className="w-8 h-8" />}
-                  label="Temperatur"
-                  value={temperature}
-                  unit="°C"
-                  status={temperature !== null ? getTemperatureStatus(temperature) : "normal"}
-                  iconColor="text-[#d28c31]"
-                  warningMessage={getTemperatureWarningMessage(temperature)}
-                  min={temperatureMinMax.min}
-                  max={temperatureMinMax.max}
-                  trend={temperatureTrend}
-                  updatedAt={temperatureUpdatedAt}
-                  darkMode={darkMode}
-                />
-              </motion.div>
-            )}
-            {loading ? (
-              <MetricCardSkeleton darkMode={darkMode} />
-            ) : (
-              <motion.div
-                key={`hum-${humidity}`}
-                initial={{ opacity: 0.5 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.3 }}
-              >
-                <MetricCard
-                  icon={<Droplets className="w-8 h-8" />}
-                  label="Luftfuktighet"
-                  value={humidity}
-                  unit="%"
-                  status={humidity !== null ? getHumidityStatus(humidity) : "normal"}
-                  iconColor={humidityIconColor}
-                  warningMessage={getHumidityWarningMessage(humidity)}
-                  min={humidityMinMax.min}
-                  max={humidityMinMax.max}
-                  trend={humidityTrend}
-                  updatedAt={humidityUpdatedAt}
-                  darkMode={darkMode}
-                />
-              </motion.div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className={`rounded-xl border p-3 ${panelClass}`}>
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-2">
+                      <Thermometer className="w-4 h-4 text-[#d28c31]" />
+                      <span className={`text-xs ${mutedText}`}>Temperatur</span>
+                    </div>
+                    {isTemperatureOutOfRange && <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/20 text-red-400">Varsel</span>}
+                  </div>
+                  <div className={`text-2xl font-semibold ${darkMode ? "text-white" : "text-stone-900"}`}>{temperature !== null ? `${temperature.toFixed(1)}°C` : "--"}</div>
+                  <div className={`text-[11px] mt-1 ${mutedText}`}>Min {temperatureMinMax.min?.toFixed(1) ?? "--"} • Max {temperatureMinMax.max?.toFixed(1) ?? "--"}</div>
+                </div>
+
+                <div className={`rounded-xl border p-3 ${panelClass}`}>
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-2">
+                      <Droplets className={`w-4 h-4 ${darkMode ? "text-[#8fbc5f]" : "text-[#5d7342]"}`} />
+                      <span className={`text-xs ${mutedText}`}>Luftfuktighet</span>
+                    </div>
+                    {isHumidityOutOfRange && <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/20 text-red-400">Varsel</span>}
+                  </div>
+                  <div className={`text-2xl font-semibold ${darkMode ? "text-white" : "text-stone-900"}`}>{humidity !== null ? `${humidity.toFixed(1)}%` : "--"}</div>
+                  <div className={`text-[11px] mt-1 ${mutedText}`}>Min {humidityMinMax.min?.toFixed(1) ?? "--"} • Max {humidityMinMax.max?.toFixed(1) ?? "--"}</div>
+                </div>
+
+                <div className={`rounded-xl border p-3 ${panelClass}`}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <DoorOpen className={`w-4 h-4 ${darkMode ? "text-[#d7c7a3]" : "text-[#6e5b3c]"}`} />
+                    <span className={`text-xs ${mutedText}`}>Dørstatus</span>
+                  </div>
+                  <div className={`text-2xl font-semibold ${darkMode ? "text-white" : "text-stone-900"}`}>{doorDisplay}</div>
+                  <div className={`text-[11px] mt-1 ${mutedText}`}>Oppdatert {formatUpdatedAt(doorUpdatedAt)}</div>
+                </div>
+
+                <div className={`rounded-xl border p-3 ${panelClass}`}>
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-2">
+                      <Fan className="w-4 h-4 text-[#6aa0ff]" />
+                      <span className={`text-xs ${mutedText}`}>Vifte + varme</span>
+                    </div>
+                    {heatingRunning && <Flame className="w-4 h-4 text-orange-400" />}
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="relative w-11 h-11">
+                      <div className={`absolute inset-0 ${fanRunning ? "animate-[spin_1.6s_linear_infinite]" : ""}`}>
+                        <div className={`absolute left-1/2 top-0 -translate-x-1/2 w-2.5 h-4 rounded-full ${darkMode ? "bg-blue-300/70" : "bg-blue-400/80"}`} />
+                        <div className={`absolute right-0 top-1/2 -translate-y-1/2 w-4 h-2.5 rounded-full ${darkMode ? "bg-blue-300/70" : "bg-blue-400/80"}`} />
+                        <div className={`absolute left-1/2 bottom-0 -translate-x-1/2 w-2.5 h-4 rounded-full ${darkMode ? "bg-blue-300/70" : "bg-blue-400/80"}`} />
+                        <div className={`absolute left-0 top-1/2 -translate-y-1/2 w-4 h-2.5 rounded-full ${darkMode ? "bg-blue-300/70" : "bg-blue-400/80"}`} />
+                      </div>
+                      <div className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-3 h-3 rounded-full ${darkMode ? "bg-white/80" : "bg-slate-700"}`} />
+                    </div>
+                    <div>
+                      <div className={`text-base font-semibold ${darkMode ? "text-white" : "text-stone-900"}`}>Vifte: {fanDisplay}</div>
+                      <div className={`text-xs ${mutedText}`}>Varme: {heatingDisplay}</div>
+                      <div className={`text-[11px] ${mutedText}`}>Oppdatert {formatUpdatedAt(fanStatusUpdatedAt)}</div>
+                    </div>
+                  </div>
+                  {heatingRunning && (
+                    <div className="mt-2 flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-orange-400 animate-pulse" />
+                      <span className="w-2 h-2 rounded-full bg-orange-400/80 animate-pulse [animation-delay:150ms]" />
+                      <span className="w-2 h-2 rounded-full bg-orange-400/60 animate-pulse [animation-delay:300ms]" />
+                    </div>
+                  )}
+                </div>
+              </div>
             )}
           </div>
 
-          {/* Trend Charts */}
-          <div className="space-y-4">
+          <div className={`rounded-2xl border p-4 ${panelClass}`}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className={`text-sm font-semibold ${darkMode ? "text-white/90" : "text-stone-800"}`}>Siste 12 timer</h3>
+              <div className={`rounded-lg p-1 flex gap-1 ${darkMode ? "bg-black/20" : "bg-stone-100"}`}>
+                <button
+                  onClick={() => setActiveChart("temperature")}
+                  className={`px-2.5 py-1 text-xs rounded-md transition-colors ${activeChart === "temperature" ? "bg-[#d28c31] text-white" : mutedText}`}
+                >
+                  Temperatur
+                </button>
+                <button
+                  onClick={() => setActiveChart("humidity")}
+                  className={`px-2.5 py-1 text-xs rounded-md transition-colors ${activeChart === "humidity" ? "bg-[#5d7342] text-white" : mutedText}`}
+                >
+                  Luftfukt
+                </button>
+              </div>
+            </div>
             {loading ? (
               <ChartSkeleton darkMode={darkMode} />
-            ) : (
+            ) : activeChart === "temperature" ? (
               <TrendChart
-                title="Temperatur siste 12 timer"
+                title={`Temperatur ${temperatureTrend ? `(trend: ${temperatureTrend})` : ""}`}
                 data={temperatureData}
                 color="#d28c31"
                 unit="°C"
                 darkMode={darkMode}
               />
-            )}
-            {loading ? (
-              <ChartSkeleton darkMode={darkMode} />
             ) : (
               <TrendChart
-                title="Luftfuktighet siste 12 timer"
+                title={`Luftfuktighet ${humidityTrend ? `(trend: ${humidityTrend})` : ""}`}
                 data={humidityData}
                 color={darkMode ? "#8fbc5f" : "#5d7342"}
                 unit="%"
