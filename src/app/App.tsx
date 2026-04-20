@@ -3,7 +3,7 @@ import { MetricCard } from "./components/metric-card";
 import { MetricCardSkeleton } from "./components/metric-card-skeleton";
 import { ChartSkeleton } from "./components/chart-skeleton";
 import { TrendChart } from "./components/trend-chart";
-import { Thermometer, Droplets, RefreshCw, Moon, Sun, WifiOff, Info, ChevronDown } from "lucide-react";
+import { Thermometer, Droplets, RefreshCw, Moon, Sun, WifiOff, Info, ChevronDown, DoorOpen } from "lucide-react";
 import { fetchLatestGreenhouseData, fetchGreenhouseHistory, fetchWeatherData, type WeatherData } from "./utils/api";
 import { ImageWithFallback } from "./components/figma/ImageWithFallback";
 import { GreenhouseIcon } from "./components/greenhouse-icon";
@@ -16,9 +16,11 @@ export default function App() {
   const [temperature, setTemperature] = useState<number | null>(null);
   const [humidity, setHumidity] = useState<number | null>(null);
   const [rainToday, setRainToday] = useState<number | null>(null);
+  const [door, setDoor] = useState<"open" | "closed" | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [temperatureUpdatedAt, setTemperatureUpdatedAt] = useState<Date | null>(null);
   const [humidityUpdatedAt, setHumidityUpdatedAt] = useState<Date | null>(null);
+  const [doorUpdatedAt, setDoorUpdatedAt] = useState<Date | null>(null);
   const [temperatureData, setTemperatureData] = useState<Array<{ time: string; value: number; id: string }>>([]);
   const [humidityData, setHumidityData] = useState<Array<{ time: string; value: number; id: string }>>([]);
   const [temperatureData24h, setTemperatureData24h] = useState<Array<{ time: string; value: number; id: string }>>([]);
@@ -50,10 +52,12 @@ export default function App() {
       const latest = await fetchLatestGreenhouseData();
       setTemperature(latest.temperature);
       setHumidity(latest.humidity);
+      setDoor(latest.door ?? null);
       setRainToday(latest.rainToday ?? null);
       setLastUpdated(new Date(latest.updatedAt));
       setTemperatureUpdatedAt(new Date(latest.temperatureUpdatedAt));
       setHumidityUpdatedAt(new Date(latest.humidityUpdatedAt));
+      setDoorUpdatedAt(latest.doorUpdatedAt ? new Date(latest.doorUpdatedAt) : null);
 
       // Fetch historical data
       const history = await fetchGreenhouseHistory();
@@ -318,6 +322,7 @@ export default function App() {
   const humidityMinMax = getMinMax(humidityData24h);
   const temperatureTrend = getTrend(temperature, temperatureData);
   const humidityTrend = getTrend(humidity, humidityData);
+  const doorDisplay = door === "open" ? "Åpen" : door === "closed" ? "Lukket" : "--";
 
   const bgColor = darkMode ? 'bg-[#2d3a21]' : 'bg-[#e8ede3]';
   const textColor = darkMode ? 'text-white/80' : 'text-gray-800';
@@ -480,6 +485,29 @@ export default function App() {
                   trend={humidityTrend}
                   updatedAt={humidityUpdatedAt}
                   darkMode={darkMode}
+                />
+              </motion.div>
+            )}
+            {loading ? (
+              <MetricCardSkeleton darkMode={darkMode} />
+            ) : (
+              <motion.div
+                key={`door-${door}`}
+                initial={{ opacity: 0.5 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.3 }}
+              >
+                <MetricCard
+                  icon={<DoorOpen className="w-8 h-8" />}
+                  label="Dør"
+                  value={null}
+                  valueDisplay={doorDisplay}
+                  unit=""
+                  status="normal"
+                  iconColor={darkMode ? "text-[#d7c7a3]" : "text-[#6e5b3c]"}
+                  updatedAt={doorUpdatedAt}
+                  darkMode={darkMode}
+                  hideStatusIndicator
                 />
               </motion.div>
             )}
