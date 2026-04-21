@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { ChartSkeleton } from "./components/chart-skeleton";
-import { fetchLatestGreenhouseData, fetchGreenhouseHistory, fetchWeatherData, setFanPower, type WeatherData } from "./utils/api";
+import { fetchLatestGreenhouseData, fetchGreenhouseHistory, fetchWeatherData, type WeatherData } from "./utils/api";
 import { ImageWithFallback } from "./components/figma/ImageWithFallback";
 import { GreenhouseIcon } from "./components/greenhouse-icon";
 import { WeatherWidgetSkeleton } from "./components/weather-widget-skeleton";
@@ -9,8 +9,6 @@ import { ClimateMetric } from "./components/climate-metric";
 import { ClimateMetricsSkeleton } from "./components/climate-metrics-skeleton";
 import { DeviceStatusRow } from "./components/device-status-row";
 import { ChevronDownIcon, InfoIcon, MoonIcon, RefreshCwIcon, SunIcon, WifiOffIcon } from "./components/icons";
-
-const FAN_TRANSITION_MS = 30_000;
 
 const TrendChart = lazy(async () => {
   const module = await import("./components/trend-chart");
@@ -28,8 +26,11 @@ export default function App() {
   const [rainToday, setRainToday] = useState<number | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [door, setDoor] = useState<"open" | "closed" | null>(null);
+  const [doorUpdatedAt, setDoorUpdatedAt] = useState<string | null>(null);
   const [windowCount, setWindowCount] = useState<number | null>(null);
+  const [windowUpdatedAt, setWindowUpdatedAt] = useState<string | null>(null);
   const [fan, setFan] = useState<"on" | "off" | null>(null);
+  const [fanUpdatedAt, setFanUpdatedAt] = useState<string | null>(null);
   const [heating, setHeating] = useState<"on" | "off" | null>(null);
   const [temperatureData, setTemperatureData] = useState<Array<{ time: string; value: number; id: string }>>([]);
   const [humidityData, setHumidityData] = useState<Array<{ time: string; value: number; id: string }>>([]);
@@ -38,10 +39,6 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [fanTransition, setFanTransition] = useState<{
-    target: "on" | "off";
-    label: "Starter" | "Stopper";
-  } | null>(null);
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
   const [darkMode, setDarkMode] = useState(() => {
     const saved = localStorage.getItem("darkMode");
@@ -53,7 +50,7 @@ export default function App() {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [aboutExpanded, setAboutExpanded] = useState(false);
 
-  const loadData = async (isRefresh = false, ignoreFanTransition = false) => {
+  const loadData = async (isRefresh = false) => {
     try {
       if (isRefresh) {
         setRefreshing(true);
@@ -69,10 +66,11 @@ export default function App() {
       setRainToday(latest.rainToday ?? null);
       setLastUpdated(new Date(latest.updatedAt));
       setDoor(latest.door ?? null);
+      setDoorUpdatedAt(latest.doorUpdatedAt ?? null);
       setWindowCount(latest.window ?? null);
-      if (!fanTransition || ignoreFanTransition) {
-        setFan(latest.fan ?? null);
-      }
+      setWindowUpdatedAt(latest.windowUpdatedAt ?? null);
+      setFan(latest.fan ?? null);
+      setFanUpdatedAt(latest.fanUpdatedAt ?? null);
       setHeating(latest.heating ?? null);
       // Fetch historical data
       const history = await fetchGreenhouseHistory();
@@ -299,31 +297,30 @@ export default function App() {
     return undefined;
   };
 
-  const handleFanToggle = async () => {
-    if (fanTransition || fan === null) return;
+  const formatStatusTimestamp = (timestamp: string | null) => {
+    if (!timestamp) return undefined;
 
-    const nextState = fan === "on" ? "off" : "on";
-    const nextLabel = nextState === "on" ? "Starter" : "Stopper";
+    const date = new Date(timestamp);
+    if (Number.isNaN(date.getTime())) return undefined;
 
-    try {
-      setFanTransition({ target: nextState, label: nextLabel });
-      await setFanPower(nextState);
-    } catch (err) {
-      setFanTransition(null);
-      setError(err instanceof Error ? err.message : "Kunne ikke styre vifte");
-    }
+    const now = new Date();
+    const time = date.toLocaleTimeString("nb-NO", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    const dateOnly = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const todayOnly = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const diffDays = Math.round((todayOnly.getTime() - dateOnly.getTime()) / 86400000);
+
+    if (diffDays === 0) return time;
+    if (diffDays === 1) return `i går ${time}`;
+
+    return date.toLocaleDateString("nb-NO", {
+      day: "numeric",
+      month: "long",
+    });
   };
-
-  useEffect(() => {
-    if (!fanTransition) return;
-
-    const timeoutId = window.setTimeout(() => {
-      setFanTransition(null);
-      void loadData(true, true);
-    }, FAN_TRANSITION_MS);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [fanTransition]);
 
   // Calculate min/max from historical data
   const getMinMax = (data: Array<{ time: string; value: number; id: string }>) => {
@@ -339,34 +336,33 @@ export default function App() {
   const humidityMinMax = getMinMax(humidityData24h);
   const bgColor = darkMode ? 'bg-[#2d3a21]' : 'bg-[#e8ede3]';
   const safeWindowCount = Math.min(Math.max(windowCount ?? 0, 0), 3);
-  const effectiveFanState = fanTransition?.target ?? fan;
   const statusItems = [
     {
       iconSrc: darkMode
         ? door === "open" ? "/door-open.svg" : "/door-closed.svg"
         : door === "open" ? "/door-open-light.svg" : "/door-closed-light.svg",
       label: door === "open" ? "Dør åpen" : "Dør lukket",
+      tooltip: `${door === "open" ? "Åpnet" : "Lukket"} ${formatStatusTimestamp(doorUpdatedAt) ?? ""}`.trim(),
     },
     {
       iconSrc: darkMode
-        ? heating === "on" ? "/fan-heating.svg" : effectiveFanState === "on" ? "/fan-cooling.svg" : "/fan-off.svg"
-        : heating === "on" ? "/fan-heating-light.svg" : effectiveFanState === "on" ? "/fan-cooling-light.svg" : "/fan-off-light.svg",
-      label: fanTransition
-        ? fanTransition.label
-        : effectiveFanState === "on"
+        ? heating === "on" ? "/fan-heating.svg" : fan === "on" ? "/fan-cooling.svg" : "/fan-off.svg"
+        : heating === "on" ? "/fan-heating-light.svg" : fan === "on" ? "/fan-cooling-light.svg" : "/fan-off-light.svg",
+      label:
+        fan === "on"
           ? heating === "on"
             ? "Varmevifte"
             : "Ventilasjon"
           : "Vifte av",
-      spinning: fanTransition ? true : effectiveFanState === "on",
-      onClick: handleFanToggle,
-      disabled: Boolean(fanTransition) || loading,
+      spinning: fan === "on",
+      tooltip: `${fan === "on" ? "Slått på" : "Avslått"} ${formatStatusTimestamp(fanUpdatedAt) ?? ""}`.trim(),
     },
     {
       iconSrc: darkMode
         ? safeWindowCount > 0 ? "/window-open-dark.svg" : "/window-closed-dark.svg"
         : safeWindowCount > 0 ? "/window-open-light.svg" : "/window-closed-light.svg",
       label: safeWindowCount > 0 ? `${safeWindowCount}/3 vindu åpne` : "Vinduer lukket",
+      tooltip: `${safeWindowCount > 0 ? "Åpnet" : "Lukket"} ${formatStatusTimestamp(windowUpdatedAt) ?? ""}`.trim(),
     },
   ];
 

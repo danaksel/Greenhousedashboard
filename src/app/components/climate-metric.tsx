@@ -28,9 +28,13 @@ export function ClimateMetric({
     : "";
   const unitColor = darkMode ? "text-[#b3bea3]" : "text-stone-500";
   const metaColor = darkMode ? "text-white/50" : "text-stone-500";
+  const labelColor = darkMode ? "text-white/45" : "text-stone-500";
 
   return (
     <div className="space-y-1.5">
+      <p className={`ml-[10px] text-[10px] uppercase tracking-[0.02em] leading-[1.15] ${labelColor}`}>
+        {label}
+      </p>
       {hasWarning ? (
         <Dialog>
           <DialogTrigger asChild>
