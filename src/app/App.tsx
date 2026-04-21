@@ -1,17 +1,24 @@
-import { useState, useEffect } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { ChartSkeleton } from "./components/chart-skeleton";
-import { TrendChart } from "./components/trend-chart";
-import { RefreshCw, Moon, Sun, WifiOff, Info, ChevronDown } from "lucide-react";
 import { fetchLatestGreenhouseData, fetchGreenhouseHistory, fetchWeatherData, type WeatherData } from "./utils/api";
 import { ImageWithFallback } from "./components/figma/ImageWithFallback";
 import { GreenhouseIcon } from "./components/greenhouse-icon";
-import { WeatherWidget } from "./components/weather-widget";
 import { WeatherWidgetSkeleton } from "./components/weather-widget-skeleton";
-import { motion, AnimatePresence } from "motion/react";
 import { thresholds } from "../config/thresholds";
 import { ClimateMetric } from "./components/climate-metric";
 import { ClimateMetricsSkeleton } from "./components/climate-metrics-skeleton";
 import { DeviceStatusRow } from "./components/device-status-row";
+import { ChevronDownIcon, InfoIcon, MoonIcon, RefreshCwIcon, SunIcon, WifiOffIcon } from "./components/icons";
+
+const TrendChart = lazy(async () => {
+  const module = await import("./components/trend-chart");
+  return { default: module.TrendChart };
+});
+
+const WeatherWidget = lazy(async () => {
+  const module = await import("./components/weather-widget");
+  return { default: module.WeatherWidget };
+});
 
 export default function App() {
   const [temperature, setTemperature] = useState<number | null>(null);
@@ -320,33 +327,22 @@ export default function App() {
     <div className={`min-h-screen transition-colors duration-300 ${bgColor}`}>
       <div className="max-w-md mx-auto relative">
         {/* Offline Indicator */}
-        <AnimatePresence>
-          {!isOnline && (
-            <motion.div
-              initial={{ opacity: 0, y: -20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="fixed top-0 left-0 right-0 z-50 bg-red-600 text-white text-center py-2 px-4 text-sm flex items-center justify-center gap-2"
-            >
-              <WifiOff className="w-4 h-4" />
-              <span>Ingen internettforbindelse</span>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        <div
+          className={`fixed top-0 left-0 right-0 z-50 flex items-center justify-center gap-2 bg-red-600 px-4 py-2 text-center text-sm text-white transition-all duration-300 ${
+            isOnline ? "pointer-events-none -translate-y-full opacity-0" : "translate-y-0 opacity-100"
+          }`}
+        >
+          <WifiOffIcon className="w-4 h-4" />
+          <span>Ingen internettforbindelse</span>
+        </div>
 
         {/* Loading Progress Bar */}
-        <AnimatePresence>
-          {refreshing && (
-            <motion.div
-              initial={{ scaleX: 0 }}
-              animate={{ scaleX: 1 }}
-              exit={{ scaleX: 0 }}
-              transition={{ duration: 0.5 }}
-              className="fixed top-0 left-0 right-0 h-1 bg-[#d28c31] origin-left z-40"
-              style={{ transformOrigin: "left" }}
-            />
-          )}
-        </AnimatePresence>
+        <div
+          className={`fixed top-0 left-0 right-0 z-40 h-1 origin-left bg-[#d28c31] transition-transform duration-500 ${
+            refreshing ? "scale-x-100" : "scale-x-0"
+          }`}
+          style={{ transformOrigin: "left" }}
+        />
 
         {/* Header with Logo, Title, and Controls */}
         <div className="bg-[#5d7342] px-4 py-4 sticky top-0 z-30">
@@ -363,7 +359,7 @@ export default function App() {
                 className="p-2 rounded-full bg-white/20 hover:bg-white/30 transition-colors disabled:opacity-50"
                 aria-label="Oppdater data"
               >
-                <RefreshCw className={`w-5 h-5 text-white ${refreshing ? 'animate-spin' : ''}`} />
+                <RefreshCwIcon className={`w-5 h-5 text-white ${refreshing ? 'animate-spin' : ''}`} />
               </button>
               
               {/* Dark Mode Slider */}
@@ -373,13 +369,13 @@ export default function App() {
                 aria-label="Bytt modus"
               >
                 <div className="flex items-center justify-between px-1 h-full">
-                  <Sun className="w-4 h-4 text-white" />
-                  <Moon className="w-4 h-4 text-white" />
+                  <SunIcon className="w-4 h-4 text-white" />
+                  <MoonIcon className="w-4 h-4 text-white" />
                 </div>
-                <motion.div
-                  className="absolute top-1 left-1 w-6 h-6 bg-white rounded-full shadow-md"
-                  animate={{ x: darkMode ? 32 : 0 }}
-                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                <div
+                  className={`absolute top-1 left-1 h-6 w-6 rounded-full bg-white shadow-md transition-transform duration-300 ${
+                    darkMode ? "translate-x-8" : "translate-x-0"
+                  }`}
                 />
               </button>
             </div>
@@ -387,19 +383,18 @@ export default function App() {
         </div>
 
         {/* Error Message */}
-        <AnimatePresence>
+        <div
+          className={`overflow-hidden bg-red-500 px-4 text-sm text-white transition-all duration-300 ${
+            error ? "max-h-24 py-3 opacity-100" : "max-h-0 py-0 opacity-0"
+          }`}
+        >
           {error && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
-              className="bg-red-500 text-white px-4 py-3 text-sm"
-            >
+            <>
               <p className="font-semibold">Feil ved lasting av data</p>
-              <p className="text-xs mt-1">{error}</p>
-            </motion.div>
+              <p className="mt-1 text-xs">{error}</p>
+            </>
           )}
-        </AnimatePresence>
+        </div>
 
         {/* Hero Image */}
         <div className="relative w-full h-[200px] overflow-hidden mb-6">
@@ -416,7 +411,9 @@ export default function App() {
             </div>
           ) : weatherData ? (
             <div className="absolute top-4 right-4 bottom-4">
-              <WeatherWidget data={weatherData} compact rainToday={rainToday} />
+              <Suspense fallback={<WeatherWidgetSkeleton />}>
+                <WeatherWidget data={weatherData} compact rainToday={rainToday} />
+              </Suspense>
             </div>
           ) : null}
         </div>
@@ -427,12 +424,9 @@ export default function App() {
             {loading ? (
               <ClimateMetricsSkeleton darkMode={darkMode} />
             ) : (
-              <motion.div
+              <div
                 key={`climate-${temperature}-${humidity}`}
-                initial={{ opacity: 0.5 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.3 }}
-                className="grid grid-cols-2 gap-3 sm:gap-4"
+                className="grid grid-cols-2 gap-3 opacity-100 transition-opacity duration-300 sm:gap-4"
               >
                 <ClimateMetric
                   label="Temperatur"
@@ -452,7 +446,7 @@ export default function App() {
                   max={humidityMinMax.max}
                   darkMode={darkMode}
                 />
-              </motion.div>
+              </div>
             )}
           </div>
 
@@ -463,24 +457,28 @@ export default function App() {
             {loading ? (
               <ChartSkeleton darkMode={darkMode} />
             ) : (
-              <TrendChart
-                title="Temperatur siste 12 timer"
-                data={temperatureData}
-                color="#d28c31"
-                unit="°C"
-                darkMode={darkMode}
-              />
+              <Suspense fallback={<ChartSkeleton darkMode={darkMode} />}>
+                <TrendChart
+                  title="Temperatur siste 12 timer"
+                  data={temperatureData}
+                  color="#d28c31"
+                  unit="°C"
+                  darkMode={darkMode}
+                />
+              </Suspense>
             )}
             {loading ? (
               <ChartSkeleton darkMode={darkMode} />
             ) : (
-              <TrendChart
-                title="Luftfuktighet siste 12 timer"
-                data={humidityData}
-                color={darkMode ? "#8fbc5f" : "#5d7342"}
-                unit="%"
-                darkMode={darkMode}
-              />
+              <Suspense fallback={<ChartSkeleton darkMode={darkMode} />}>
+                <TrendChart
+                  title="Luftfuktighet siste 12 timer"
+                  data={humidityData}
+                  color={darkMode ? "#8fbc5f" : "#5d7342"}
+                  unit="%"
+                  darkMode={darkMode}
+                />
+              </Suspense>
             )}
           </div>
 
@@ -505,28 +503,23 @@ export default function App() {
                   className={`w-full px-4 py-3 flex items-center justify-between ${darkMode ? 'hover:bg-white/10' : 'hover:bg-white/70'} transition-colors`}
                 >
                   <div className="flex items-center gap-2">
-                    <Info className={`w-4 h-4 ${darkMode ? 'text-white/70' : 'text-gray-600'}`} />
+                    <InfoIcon className={`w-4 h-4 ${darkMode ? 'text-white/70' : 'text-gray-600'}`} />
                     <span className={`text-sm font-medium ${darkMode ? 'text-white/80' : 'text-gray-700'}`}>
                       Om prosjektet
                     </span>
                   </div>
-                  <motion.div
-                    animate={{ rotate: aboutExpanded ? 180 : 0 }}
-                    transition={{ duration: 0.3 }}
-                  >
-                    <ChevronDown className={`w-5 h-5 ${darkMode ? 'text-white/70' : 'text-gray-600'}`} />
-                  </motion.div>
+                  <div className={`transition-transform duration-300 ${aboutExpanded ? 'rotate-180' : 'rotate-0'}`}>
+                    <ChevronDownIcon className={`w-5 h-5 ${darkMode ? 'text-white/70' : 'text-gray-600'}`} />
+                  </div>
                 </button>
 
-                <AnimatePresence>
-                  {aboutExpanded && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: "auto", opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      transition={{ duration: 0.3 }}
-                    >
-                      <div className={`px-4 pb-4 text-sm ${darkMode ? 'text-white/70' : 'text-gray-700'} space-y-4`}>
+                <div
+                  className={`grid overflow-hidden transition-[grid-template-rows,opacity] duration-300 ${
+                    aboutExpanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
+                  }`}
+                >
+                  <div className="overflow-hidden">
+                    <div className={`px-4 pb-4 text-sm ${darkMode ? 'text-white/70' : 'text-gray-700'} space-y-4`}>
                         <p>
                           Dette prosjektet er en liten edge-drevet <strong>IoT-løsning</strong> for å overvåke klimaet i et drivhus i sanntid. Systemet samler inn temperatur- og luftfuktighetsdata, styrer oppvarming ved behov, og publiserer dataene til en nettside via en lett skyarkitektur.
                         </p>
@@ -684,10 +677,9 @@ export default function App() {
                         <p className={`pt-2 border-t text-sm ${darkMode ? 'border-white/10' : 'border-gray-200'}`}>
                           Prosjektet er en liten, men effektiv IoT-stack bygget med edge-infrastruktur, sky-API-er, automatisering via Homey og en god dose vibe-coding. Resultatet er en løsning som gjør det mulig å følge klimaet i drivhuset i sanntid – fra hvor som helst.
                         </p>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           )}

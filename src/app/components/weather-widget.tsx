@@ -1,7 +1,7 @@
-import { Cloud, CloudRain, Sun, CloudDrizzle, CloudSnow, CloudFog, CloudLightning, Cloudy, RefreshCw, Sunrise, Sunset, Droplets } from "lucide-react";
 import { WeatherData } from "../utils/api";
 import SunCalc from "suncalc";
 import { useState } from "react";
+import { CloudDrizzleIcon, CloudFogIcon, CloudIcon, CloudLightningIcon, CloudRainIcon, CloudSnowIcon, CloudyIcon, SunIcon, SunriseIcon, SunsetIcon } from "./icons";
 
 interface WeatherWidgetProps {
   data: WeatherData;
@@ -16,47 +16,47 @@ const getWeatherIcon = (symbolCode: string, compact = false) => {
   
   // Thunder variants (check first since they can contain rain/snow/sleet)
   if (symbolCode.includes("thunder")) {
-    return <CloudLightning className={`${iconClass} ${color || "text-yellow-400"}`} />;
+    return <CloudLightningIcon className={`${iconClass} ${color || "text-yellow-400"}`} />;
   }
   
   // Snow variants
   if (symbolCode.includes("snow")) {
-    return <CloudSnow className={`${iconClass} ${color || "text-blue-200"}`} />;
+    return <CloudSnowIcon className={`${iconClass} ${color || "text-blue-200"}`} />;
   }
   
   // Sleet variants
   if (symbolCode.includes("sleet")) {
-    return <CloudSnow className={`${iconClass} ${color || "text-blue-300"}`} />;
+    return <CloudSnowIcon className={`${iconClass} ${color || "text-blue-300"}`} />;
   }
   
   // Rain variants (heavyrain before rain to match correctly)
   if (symbolCode.includes("heavyrain")) {
-    return <CloudRain className={`${iconClass} ${color || "text-blue-500"}`} />;
+    return <CloudRainIcon className={`${iconClass} ${color || "text-blue-500"}`} />;
   }
   if (symbolCode.includes("rain")) {
-    return <CloudRain className={`${iconClass} ${color || "text-blue-400"}`} />;
+    return <CloudRainIcon className={`${iconClass} ${color || "text-blue-400"}`} />;
   }
   if (symbolCode.includes("drizzle")) {
-    return <CloudDrizzle className={`${iconClass} ${color || "text-blue-400"}`} />;
+    return <CloudDrizzleIcon className={`${iconClass} ${color || "text-blue-400"}`} />;
   }
   
   // Fog
   if (symbolCode.includes("fog")) {
-    return <CloudFog className={`${iconClass} ${color || "text-gray-400"}`} />;
+    return <CloudFogIcon className={`${iconClass} ${color || "text-gray-400"}`} />;
   }
   
   // Clear sky
   if (symbolCode.includes("clearsky")) {
-    return <Sun className={`${iconClass} ${color || "text-[#d28c31]"}`} />;
+    return <SunIcon className={`${iconClass} ${color || "text-[#d28c31]"}`} />;
   }
   
   // Fair or partly cloudy
   if (symbolCode.includes("fair") || symbolCode.includes("partlycloudy")) {
-    return <Cloudy className={`${iconClass} ${color || "text-gray-400"}`} />;
+    return <CloudyIcon className={`${iconClass} ${color || "text-gray-400"}`} />;
   }
   
   // Default cloudy
-  return <Cloud className={`${iconClass} ${color || "text-gray-400"}`} />;
+  return <CloudIcon className={`${iconClass} ${color || "text-gray-400"}`} />;
 };
 
 export function WeatherWidget({ data, compact, rainToday }: WeatherWidgetProps) {
@@ -127,7 +127,7 @@ export function WeatherWidget({ data, compact, rainToday }: WeatherWidgetProps) 
               onClick={() => handleTooltipClick('sunrise')}
               className="w-full flex items-center justify-between text-[11px] touch-manipulation active:bg-white/5 rounded px-1 py-0.5 transition-colors"
             >
-              <Sunrise className="w-3 h-3" />
+              <SunriseIcon className="w-3 h-3" />
               <span className="font-medium">{formatTime(sunTimes.sunrise)}</span>
             </button>
             {activeTooltip === 'sunrise' && (
@@ -141,7 +141,7 @@ export function WeatherWidget({ data, compact, rainToday }: WeatherWidgetProps) 
               onClick={() => handleTooltipClick('sunset')}
               className="w-full flex items-center justify-between text-[11px] touch-manipulation active:bg-white/5 rounded px-1 py-0.5 transition-colors"
             >
-              <Sunset className="w-3 h-3" />
+              <SunsetIcon className="w-3 h-3" />
               <span className="font-medium">{formatTime(sunTimes.sunset)}</span>
             </button>
             {activeTooltip === 'sunset' && (

@@ -1,5 +1,5 @@
-import { ArrowDownToLine, ArrowUpToLine, AlertCircle, Info } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
+import { AlertCircleIcon, ArrowDownToLineIcon, ArrowUpToLineIcon, InfoIcon } from "./icons";
 
 interface ClimateMetricProps {
   label: string;
@@ -58,7 +58,7 @@ export function ClimateMetric({
           <DialogContent>
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                <AlertCircle className="h-5 w-5 text-[#b3261e]" />
+                <AlertCircleIcon className="h-5 w-5 text-[#b3261e]" />
                 {label} - varsel
               </DialogTitle>
               <DialogDescription className="pt-2 text-base">
@@ -84,13 +84,13 @@ export function ClimateMetric({
       {min !== undefined && max !== undefined && (
         <div className={`flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] ${metaColor}`}>
           <span className="flex items-center gap-1.5">
-            <ArrowDownToLine className="h-3.5 w-3.5 shrink-0" />
+            <ArrowDownToLineIcon className="h-3.5 w-3.5 shrink-0" />
             {min.toFixed(1)}
             {unit}
           </span>
           <span className="h-1 w-1 rounded-full bg-current opacity-70" />
           <span className="flex items-center gap-1.5">
-            <ArrowUpToLine className="h-3.5 w-3.5 shrink-0" />
+            <ArrowUpToLineIcon className="h-3.5 w-3.5 shrink-0" />
             {max.toFixed(1)}
             {unit}
           </span>
@@ -100,7 +100,7 @@ export function ClimateMetric({
                 className="flex items-center transition-opacity hover:opacity-75"
                 aria-label={`Forklaring for ${label.toLowerCase()}`}
               >
-                <Info className="h-4 w-4" />
+                <InfoIcon className="h-4 w-4" />
               </button>
             </DialogTrigger>
             <DialogContent>
@@ -108,11 +108,11 @@ export function ClimateMetric({
                 <DialogTitle>24-timers oversikt</DialogTitle>
                 <DialogDescription className="mt-4 space-y-3 text-base">
                   <div className="flex items-start gap-3">
-                    <ArrowDownToLine className="mt-0.5 h-5 w-5 shrink-0" />
+                    <ArrowDownToLineIcon className="mt-0.5 h-5 w-5 shrink-0" />
                     <span>Viser laveste målte {label.toLowerCase()} siste 24 timer.</span>
                   </div>
                   <div className="flex items-start gap-3">
-                    <ArrowUpToLine className="mt-0.5 h-5 w-5 shrink-0" />
+                    <ArrowUpToLineIcon className="mt-0.5 h-5 w-5 shrink-0" />
                     <span>Viser høyeste målte {label.toLowerCase()} siste 24 timer.</span>
                   </div>
                 </DialogDescription>
