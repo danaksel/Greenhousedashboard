@@ -26,6 +26,7 @@ export default function App() {
   const [rainToday, setRainToday] = useState<number | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [door, setDoor] = useState<"open" | "closed" | null>(null);
+  const [windowCount, setWindowCount] = useState<number | null>(null);
   const [fan, setFan] = useState<"on" | "off" | null>(null);
   const [heating, setHeating] = useState<"on" | "off" | null>(null);
   const [temperatureData, setTemperatureData] = useState<Array<{ time: string; value: number; id: string }>>([]);
@@ -62,6 +63,7 @@ export default function App() {
       setRainToday(latest.rainToday ?? null);
       setLastUpdated(new Date(latest.updatedAt));
       setDoor(latest.door ?? null);
+      setWindowCount(latest.window ?? null);
       setFan(latest.fan ?? null);
       setHeating(latest.heating ?? null);
       // Fetch historical data
@@ -302,6 +304,7 @@ export default function App() {
   const temperatureMinMax = getMinMax(temperatureData24h);
   const humidityMinMax = getMinMax(humidityData24h);
   const bgColor = darkMode ? 'bg-[#2d3a21]' : 'bg-[#e8ede3]';
+  const safeWindowCount = Math.min(Math.max(windowCount ?? 0, 0), 3);
   const statusItems = [
     {
       iconSrc: darkMode
@@ -320,6 +323,12 @@ export default function App() {
             : "Ventilasjon"
           : "Vifte av",
       spinning: fan === "on",
+    },
+    {
+      iconSrc: darkMode
+        ? safeWindowCount > 0 ? "/window-open-dark.svg" : "/window-closed-dark.svg"
+        : safeWindowCount > 0 ? "/window-open-light.svg" : "/window-closed-light.svg",
+      label: safeWindowCount > 0 ? `${safeWindowCount}/3 vindu åpne` : "Vinduer lukket",
     },
   ];
 

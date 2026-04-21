@@ -27,7 +27,7 @@ export function ClimateMetricsSkeleton({ darkMode = false }: ClimateMetricsSkele
       </div>
 
       <div className="mb-8 flex items-start justify-center gap-10 pt-10">
-        {Array.from({ length: 2 }).map((_, index) => (
+        {Array.from({ length: 3 }).map((_, index) => (
           <div key={index} className="flex w-[92px] flex-col items-center gap-2 text-center">
             <div className={`flex h-[72px] w-[72px] items-center justify-center rounded-full ${skeletonClass} animate-pulse`}>
               <div className={`h-9 w-9 rounded-2xl ${subtleSkeletonClass} animate-pulse`} />

@@ -12,6 +12,8 @@ export interface LatestData {
   rainToday?: number;
   door?: "open" | "closed";
   doorUpdatedAt?: string;
+  window?: number;
+  windowUpdatedAt?: string;
   fan?: "on" | "off";
   fanUpdatedAt?: string;
   heating?: "on" | "off";
@@ -51,6 +53,8 @@ export async function fetchLatestGreenhouseData(): Promise<LatestData> {
     rainToday: data.rainToday,
     door: data.door,
     doorUpdatedAt: data.doorUpdatedAt,
+    window: data.window,
+    windowUpdatedAt: data.windowUpdatedAt,
     fan: data.fan,
     fanUpdatedAt: data.fanUpdatedAt,
     heating: data.heating,
