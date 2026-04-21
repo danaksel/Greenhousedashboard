@@ -21,13 +21,11 @@ export function ClimateMetric({
   darkMode = false,
 }: ClimateMetricProps) {
   const hasWarning = Boolean(warningMessage);
+  const normalValueColor = darkMode ? "#D3DECA" : "#4D5D3E";
+  const warningPulseColor = darkMode ? "#FFFFFF" : "#8D9D7E";
   const valueColor = hasWarning
-    ? darkMode
-      ? "text-[#ff8a80]"
-      : "text-[#b3261e]"
-    : darkMode
-      ? "text-white"
-      : "text-[#4D5D3E]";
+    ? "greenhouse-warning-pulse"
+    : "";
   const unitColor = darkMode ? "text-[#b3bea3]" : "text-stone-500";
   const metaColor = darkMode ? "text-white/50" : "text-stone-500";
 
@@ -40,7 +38,16 @@ export function ClimateMetric({
               className="flex items-end gap-1 text-left transition-opacity hover:opacity-85 sm:gap-1.5"
               aria-label={`Vis varsel for ${label.toLowerCase()}`}
             >
-              <span className={`text-[60px] leading-[0.92] font-light tracking-[0] ${valueColor}`}>
+              <span
+                className={`text-[60px] leading-[0.92] font-light tracking-[0] ${valueColor}`}
+                style={
+                  {
+                    color: normalValueColor,
+                    "--warning-base-color": normalValueColor,
+                    "--warning-pulse-color": warningPulseColor,
+                  } as React.CSSProperties
+                }
+              >
                 {value !== null ? value.toFixed(1) : "--"}
               </span>
               <span className={`pb-0.5 text-[30px] leading-none font-light ${unitColor}`}>
@@ -62,7 +69,10 @@ export function ClimateMetric({
         </Dialog>
       ) : (
         <div className="flex items-end gap-1 sm:gap-1.5">
-          <span className={`text-[60px] leading-[0.92] font-light tracking-[0] ${valueColor}`}>
+          <span
+            className={`text-[60px] leading-[0.92] font-light tracking-[0] ${valueColor}`}
+            style={{ color: normalValueColor }}
+          >
             {value !== null ? value.toFixed(1) : "--"}
           </span>
           <span className={`pb-0.5 text-[30px] leading-none font-light ${unitColor}`}>

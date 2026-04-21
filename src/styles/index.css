@@ -14,3 +14,20 @@ body, html {
   overflow-y: auto !important;
   -webkit-overflow-scrolling: touch !important;
 }
+
+@keyframes greenhouse-warning-pulse {
+  0%,
+  100% {
+    color: var(--warning-base-color);
+    opacity: 1;
+  }
+
+  50% {
+    color: var(--warning-pulse-color);
+    opacity: 1;
+  }
+}
+
+.greenhouse-warning-pulse {
+  animation: greenhouse-warning-pulse 4.8s ease-in-out infinite;
+}
