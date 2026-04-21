@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 
 interface DeviceStatusItem {
@@ -13,6 +15,7 @@ interface DeviceStatusRowProps {
 }
 
 export function DeviceStatusRow({ items, darkMode = false }: DeviceStatusRowProps) {
+  const [openTooltip, setOpenTooltip] = useState<string | null>(null);
   const labelColor = darkMode ? "text-white/45" : "text-stone-500";
   const labelClass = `text-[10px] uppercase tracking-[0.02em] leading-[1.15] whitespace-nowrap ${labelColor}`;
 
@@ -21,15 +24,23 @@ export function DeviceStatusRow({ items, darkMode = false }: DeviceStatusRowProp
       {items.map((item) => (
         <div key={item.label} className="flex w-[110px] flex-col items-center text-center">
           {item.tooltip ? (
-            <Tooltip>
+            <Tooltip
+              open={openTooltip === item.label}
+              onOpenChange={(open) => setOpenTooltip(open ? item.label : null)}
+            >
               <TooltipTrigger asChild>
-                <div className="flex h-[72px] w-[72px] items-center justify-center">
+                <button
+                  type="button"
+                  onClick={() => setOpenTooltip(openTooltip === item.label ? null : item.label)}
+                  className="flex h-[72px] w-[72px] items-center justify-center"
+                  aria-label={item.label}
+                >
                   <img
                     src={item.iconSrc}
                     alt={item.label}
                     className={`max-h-full max-w-full object-contain ${item.spinning ? "animate-spin [animation-duration:2.4s]" : ""}`}
                   />
-                </div>
+                </button>
               </TooltipTrigger>
               <TooltipContent side="top" sideOffset={-8}>
                 {item.tooltip}
