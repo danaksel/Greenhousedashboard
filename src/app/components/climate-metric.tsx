@@ -20,12 +20,29 @@ export function ClimateMetric({
   warningMessage,
   darkMode = false,
 }: ClimateMetricProps) {
+  const isTemperatureMetric = label === "Temperatur";
   const hasWarning = Boolean(warningMessage);
-  const normalValueColor = darkMode ? "#D3DECA" : "#4D5D3E";
-  const warningPulseColor = darkMode ? "#FFFFFF" : "#8D9D7E";
-  const valueColor = hasWarning
-    ? "greenhouse-warning-pulse"
-    : "";
+  let normalValueColor = darkMode ? "#D3DECA" : "#4D5D3E";
+  let warningPulseColor = darkMode ? "#FFFFFF" : "#8D9D7E";
+  let valueColor = hasWarning ? "greenhouse-warning-pulse" : "";
+
+  if (isTemperatureMetric && value !== null) {
+    if (value < 12) {
+      normalValueColor = darkMode ? "#5190A1" : "#70ABB6";
+      valueColor = "";
+    } else if (value < 23) {
+      normalValueColor = darkMode ? "#D0DEC8" : "#495F3A";
+      valueColor = "";
+    } else if (value <= 28) {
+      normalValueColor = "#D28C31";
+      valueColor = "";
+    } else {
+      normalValueColor = "#C44747";
+      warningPulseColor = "#FF6363";
+      valueColor = "greenhouse-warning-pulse";
+    }
+  }
+
   const unitColor = darkMode ? "text-[#b3bea3]" : "text-stone-500";
   const metaColor = darkMode ? "text-white/50" : "text-stone-500";
   const labelColor = darkMode ? "text-white/45" : "text-stone-500";
