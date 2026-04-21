@@ -339,14 +339,14 @@ export default function App() {
   const statusItems = [
     {
       iconSrc: darkMode
-        ? door === "open" ? "/door-open.svg" : "/door-closed.svg"
+        ? door === "open" ? "/door-open-dark.svg" : "/door-closed-dark.svg"
         : door === "open" ? "/door-open-light.svg" : "/door-closed-light.svg",
       label: door === "open" ? "Dør åpen" : "Dør lukket",
       tooltip: `${door === "open" ? "Åpnet" : "Lukket"} ${formatStatusTimestamp(doorUpdatedAt) ?? ""}`.trim(),
     },
     {
       iconSrc: darkMode
-        ? heating === "on" ? "/fan-heating.svg" : fan === "on" ? "/fan-cooling.svg" : "/fan-off.svg"
+        ? heating === "on" ? "/fan-heating-dark.svg" : fan === "on" ? "/fan-cooling-dark.svg" : "/fan-off-dark.svg"
         : heating === "on" ? "/fan-heating-light.svg" : fan === "on" ? "/fan-cooling-light.svg" : "/fan-off-light.svg",
       label:
         fan === "on"
