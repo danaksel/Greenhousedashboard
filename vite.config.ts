@@ -4,21 +4,27 @@ import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { visualizer } from 'rollup-plugin-visualizer'
 
-export default defineConfig(({ mode }) => ({
+const isAnalyzeBuild =
+  process.env.npm_lifecycle_event === 'analyze' ||
+  process.argv.includes('analyze')
+
+export default defineConfig({
   plugins: [
     // The React and Tailwind plugins are both required for Make, even if
     // Tailwind is not being actively used – do not remove them
     react(),
     tailwindcss(),
-    mode === 'analyze'
-      ? visualizer({
-          filename: 'dist/bundle-analysis.html',
-          open: false,
-          gzipSize: true,
-          brotliSize: true,
-        })
-      : null,
-  ].filter(Boolean),
+    ...(isAnalyzeBuild
+      ? [
+          visualizer({
+            filename: 'dist/bundle-analysis.html',
+            open: false,
+            gzipSize: true,
+            brotliSize: true,
+          }),
+        ]
+      : []),
+  ],
   resolve: {
     alias: {
       // Alias @ to the src directory
@@ -44,4 +50,4 @@ export default defineConfig(({ mode }) => ({
 
   // File types to support raw imports. Never add .css, .tsx, or .ts files to this.
   assetsInclude: ['**/*.svg', '**/*.csv'],
-}))
+})
