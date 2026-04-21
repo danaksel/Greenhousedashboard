@@ -84,6 +84,19 @@ export async function fetchGreenhouseHistory(): Promise<HistoryData> {
   };
 }
 
+export async function setFanPower(nextState: "on" | "off"): Promise<void> {
+  const res = await fetch(`https://drivhus.dan-aksel.workers.dev/api/fan/${nextState}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+
+  if (!res.ok) {
+    throw new Error(`Fan API error: ${res.status}`);
+  }
+}
+
 // Map Yr symbol codes to Norwegian descriptions
 const weatherDescriptions: Record<string, string> = {
   clearsky_day: "Sol",

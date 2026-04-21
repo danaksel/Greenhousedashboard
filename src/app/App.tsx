@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { ChartSkeleton } from "./components/chart-skeleton";
-import { fetchLatestGreenhouseData, fetchGreenhouseHistory, fetchWeatherData, type WeatherData } from "./utils/api";
+import { fetchLatestGreenhouseData, fetchGreenhouseHistory, fetchWeatherData, setFanPower, type WeatherData } from "./utils/api";
 import { ImageWithFallback } from "./components/figma/ImageWithFallback";
 import { GreenhouseIcon } from "./components/greenhouse-icon";
 import { WeatherWidgetSkeleton } from "./components/weather-widget-skeleton";
@@ -36,6 +36,8 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [fanPending, setFanPending] = useState(false);
+  const [pendingFanState, setPendingFanState] = useState<"on" | "off" | null>(null);
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
   const [darkMode, setDarkMode] = useState(() => {
     const saved = localStorage.getItem("darkMode");
@@ -65,6 +67,7 @@ export default function App() {
       setDoor(latest.door ?? null);
       setWindowCount(latest.window ?? null);
       setFan(latest.fan ?? null);
+      setPendingFanState(null);
       setHeating(latest.heating ?? null);
       // Fetch historical data
       const history = await fetchGreenhouseHistory();
@@ -291,6 +294,24 @@ export default function App() {
     return undefined;
   };
 
+  const handleFanToggle = async () => {
+    if (fanPending || fan === null) return;
+
+    const nextState = fan === "on" ? "off" : "on";
+
+    try {
+      setFanPending(true);
+      setPendingFanState(nextState);
+      await setFanPower(nextState);
+      await loadData(true);
+    } catch (err) {
+      setPendingFanState(null);
+      setError(err instanceof Error ? err.message : "Kunne ikke styre vifte");
+    } finally {
+      setFanPending(false);
+    }
+  };
+
   // Calculate min/max from historical data
   const getMinMax = (data: Array<{ time: string; value: number; id: string }>) => {
     if (data.length === 0) return { min: undefined, max: undefined };
@@ -305,6 +326,7 @@ export default function App() {
   const humidityMinMax = getMinMax(humidityData24h);
   const bgColor = darkMode ? 'bg-[#2d3a21]' : 'bg-[#e8ede3]';
   const safeWindowCount = Math.min(Math.max(windowCount ?? 0, 0), 3);
+  const effectiveFanState = pendingFanState ?? fan;
   const statusItems = [
     {
       iconSrc: darkMode
@@ -314,15 +336,17 @@ export default function App() {
     },
     {
       iconSrc: darkMode
-        ? heating === "on" ? "/fan-heating.svg" : fan === "on" ? "/fan-cooling.svg" : "/fan-off.svg"
-        : heating === "on" ? "/fan-heating-light.svg" : fan === "on" ? "/fan-cooling-light.svg" : "/fan-off-light.svg",
+        ? heating === "on" ? "/fan-heating.svg" : effectiveFanState === "on" ? "/fan-cooling.svg" : "/fan-off.svg"
+        : heating === "on" ? "/fan-heating-light.svg" : effectiveFanState === "on" ? "/fan-cooling-light.svg" : "/fan-off-light.svg",
       label:
-        fan === "on"
+        effectiveFanState === "on"
           ? heating === "on"
             ? "Varmevifte"
             : "Ventilasjon"
           : "Vifte av",
-      spinning: fan === "on",
+      spinning: effectiveFanState === "on",
+      onClick: handleFanToggle,
+      disabled: fanPending || loading,
     },
     {
       iconSrc: darkMode
