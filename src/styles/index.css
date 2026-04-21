@@ -29,5 +29,5 @@ body, html {
 }
 
 .greenhouse-warning-pulse {
-  animation: greenhouse-warning-pulse 4.8s ease-in-out infinite;
+  animation: greenhouse-warning-pulse 1s ease-in-out infinite;
 }

@@ -35,7 +35,7 @@ export function ClimateMetric({
         <Dialog>
           <DialogTrigger asChild>
             <button
-              className="flex items-end gap-1 text-left transition-opacity hover:opacity-85 sm:gap-1.5"
+              className="ml-[10px] flex items-end gap-1 text-left transition-opacity hover:opacity-85 sm:gap-1.5"
               aria-label={`Vis varsel for ${label.toLowerCase()}`}
             >
               <span
@@ -68,7 +68,7 @@ export function ClimateMetric({
           </DialogContent>
         </Dialog>
       ) : (
-        <div className="flex items-end gap-1 sm:gap-1.5">
+        <div className="ml-[10px] flex items-end gap-1 sm:gap-1.5">
           <span
             className={`text-[60px] leading-[0.92] font-light tracking-[0] ${valueColor}`}
             style={{ color: normalValueColor }}
@@ -82,7 +82,7 @@ export function ClimateMetric({
       )}
 
       {min !== undefined && max !== undefined && (
-        <div className={`flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] ${metaColor}`}>
+        <div className={`ml-[10px] flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] ${metaColor}`}>
           <span className="flex items-center gap-1.5">
             <ArrowDownToLineIcon className="h-3.5 w-3.5 shrink-0" />
             {min.toFixed(1)}
