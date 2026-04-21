@@ -1,6 +1,6 @@
 <svg width="54" height="54" viewBox="0 0 54 54" fill="none" xmlns="http://www.w3.org/2000/svg">
-<rect x="1" y="1" width="17" height="52" stroke="white" stroke-opacity="0.5" stroke-width="2"/>
-<rect x="36" y="1" width="17" height="52" stroke="white" stroke-opacity="0.5" stroke-width="2"/>
-<rect x="2" y="7" width="12" height="31" fill="#D9D9D9" fill-opacity="0.5"/>
-<rect x="40" y="7" width="12" height="31" fill="#D9D9D9" fill-opacity="0.5"/>
+<rect x="1" y="1" width="17" height="52" stroke="#D0DEC8" stroke-width="2"/>
+<rect x="36" y="1" width="17" height="52" stroke="#D0DEC8" stroke-width="2"/>
+<path d="M52 10.1045L42.6025 22.5459C42.2698 22.9865 42.3574 23.6134 42.7979 23.9463C43.2385 24.2792 43.8654 24.1917 44.1982 23.751L52 13.4219V20.4277L43.6025 31.5459C43.2698 31.9865 43.3574 32.6134 43.7979 32.9463C44.2385 33.2792 44.8654 33.1917 45.1982 32.751L52 23.7451V38H40V7H52V10.1045Z" fill="#ADBCA2"/>
+<path d="M14 38H2V31.3936L10.2031 20.5342C10.5099 20.128 10.4015 19.5292 9.96094 19.1963C9.52025 18.8634 8.91423 18.9229 8.60742 19.3291L2 28.0762V20.0703L8.2959 11.7354C8.58223 11.3563 8.45727 10.7792 8.0166 10.4463C7.57591 10.1134 6.98655 10.1512 6.7002 10.5303L2 16.752V7H14V38Z" fill="#ADBCA2"/>
 </svg>
