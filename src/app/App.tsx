@@ -1,24 +1,26 @@
 import { useState, useEffect } from "react";
-import { MetricCard } from "./components/metric-card";
-import { MetricCardSkeleton } from "./components/metric-card-skeleton";
 import { ChartSkeleton } from "./components/chart-skeleton";
 import { TrendChart } from "./components/trend-chart";
-import { Thermometer, Droplets, RefreshCw, Moon, Sun, WifiOff, Info, ChevronDown } from "lucide-react";
+import { RefreshCw, Moon, Sun, WifiOff, Info, ChevronDown } from "lucide-react";
 import { fetchLatestGreenhouseData, fetchGreenhouseHistory, fetchWeatherData, type WeatherData } from "./utils/api";
 import { ImageWithFallback } from "./components/figma/ImageWithFallback";
 import { GreenhouseIcon } from "./components/greenhouse-icon";
 import { WeatherWidget } from "./components/weather-widget";
 import { WeatherWidgetSkeleton } from "./components/weather-widget-skeleton";
 import { motion, AnimatePresence } from "motion/react";
-import { thresholds, warningMessages } from "../config/thresholds";
+import { thresholds } from "../config/thresholds";
+import { ClimateMetric } from "./components/climate-metric";
+import { ClimateMetricsSkeleton } from "./components/climate-metrics-skeleton";
+import { DeviceStatusRow } from "./components/device-status-row";
 
 export default function App() {
   const [temperature, setTemperature] = useState<number | null>(null);
   const [humidity, setHumidity] = useState<number | null>(null);
   const [rainToday, setRainToday] = useState<number | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [temperatureUpdatedAt, setTemperatureUpdatedAt] = useState<Date | null>(null);
-  const [humidityUpdatedAt, setHumidityUpdatedAt] = useState<Date | null>(null);
+  const [door, setDoor] = useState<"open" | "closed" | null>(null);
+  const [fan, setFan] = useState<"on" | "off" | null>(null);
+  const [heating, setHeating] = useState<"on" | "off" | null>(null);
   const [temperatureData, setTemperatureData] = useState<Array<{ time: string; value: number; id: string }>>([]);
   const [humidityData, setHumidityData] = useState<Array<{ time: string; value: number; id: string }>>([]);
   const [temperatureData24h, setTemperatureData24h] = useState<Array<{ time: string; value: number; id: string }>>([]);
@@ -52,9 +54,9 @@ export default function App() {
       setHumidity(latest.humidity);
       setRainToday(latest.rainToday ?? null);
       setLastUpdated(new Date(latest.updatedAt));
-      setTemperatureUpdatedAt(new Date(latest.temperatureUpdatedAt));
-      setHumidityUpdatedAt(new Date(latest.humidityUpdatedAt));
-
+      setDoor(latest.door ?? null);
+      setFan(latest.fan ?? null);
+      setHeating(latest.heating ?? null);
       // Fetch historical data
       const history = await fetchGreenhouseHistory();
       
@@ -258,16 +260,6 @@ export default function App() {
     });
   };
 
-  const getTemperatureStatus = (temp: number) => {
-    if (temp < thresholds.temperature.min || temp > thresholds.temperature.max) return "warning";
-    return "normal";
-  };
-
-  const getHumidityStatus = (humidity: number) => {
-    if (humidity < thresholds.humidity.min || humidity > thresholds.humidity.max) return "warning";
-    return "normal";
-  };
-
   const getTemperatureWarningMessage = (temp: number | null) => {
     if (temp === null) return undefined;
     if (temp < thresholds.temperature.min) {
@@ -300,30 +292,29 @@ export default function App() {
     };
   };
 
-  // Calculate trend by comparing current value with recent history
-  const getTrend = (currentValue: number | null, historicalData: Array<{ time: string; value: number; id: string }>): "up" | "down" | "stable" | undefined => {
-    if (currentValue === null || historicalData.length < 3) return undefined;
-    
-    // Get last 3 data points
-    const recentData = historicalData.slice(-3).map(d => d.value);
-    const average = recentData.reduce((sum, val) => sum + val, 0) / recentData.length;
-    
-    // If current value differs by more than 0.5 from average, show trend
-    const diff = currentValue - average;
-    if (Math.abs(diff) < 0.5) return "stable";
-    return diff > 0 ? "up" : "down";
-  };
-
   const temperatureMinMax = getMinMax(temperatureData24h);
   const humidityMinMax = getMinMax(humidityData24h);
-  const temperatureTrend = getTrend(temperature, temperatureData);
-  const humidityTrend = getTrend(humidity, humidityData);
-
   const bgColor = darkMode ? 'bg-[#2d3a21]' : 'bg-[#e8ede3]';
-  const textColor = darkMode ? 'text-white/80' : 'text-gray-800';
-  
-  // Icon colors with better contrast in dark mode
-  const humidityIconColor = darkMode ? 'text-[#8fbc5f]' : 'text-[#5d7342]';
+  const statusItems = [
+    {
+      iconSrc: darkMode
+        ? door === "open" ? "/door-open.svg" : "/door-closed.svg"
+        : door === "open" ? "/door-open-light.svg" : "/door-closed-light.svg",
+      label: door === "open" ? "Dør åpen" : "Dør lukket",
+    },
+    {
+      iconSrc: darkMode
+        ? heating === "on" ? "/fan-heating.svg" : fan === "on" ? "/fan-cooling.svg" : "/fan-off.svg"
+        : heating === "on" ? "/fan-heating-light.svg" : fan === "on" ? "/fan-cooling-light.svg" : "/fan-off-light.svg",
+      label:
+        fan === "on"
+          ? heating === "on"
+            ? "Varmevifte"
+            : "Ventilasjon"
+          : "Vifte av",
+      spinning: fan === "on",
+    },
+  ];
 
   return (
     <div className={`min-h-screen transition-colors duration-300 ${bgColor}`}>
@@ -431,59 +422,41 @@ export default function App() {
         </div>
 
         <div className="px-4 pb-6">
-          {/* Metric Cards with Animation */}
-          <div className="space-y-4 mb-6">
+          {/* Climate Metrics */}
+          <div className="mb-7 pt-1">
             {loading ? (
-              <MetricCardSkeleton darkMode={darkMode} />
+              <ClimateMetricsSkeleton darkMode={darkMode} />
             ) : (
               <motion.div
-                key={`temp-${temperature}`}
+                key={`climate-${temperature}-${humidity}`}
                 initial={{ opacity: 0.5 }}
                 animate={{ opacity: 1 }}
                 transition={{ duration: 0.3 }}
+                className="grid grid-cols-2 gap-3 sm:gap-4"
               >
-                <MetricCard
-                  icon={<Thermometer className="w-8 h-8" />}
+                <ClimateMetric
                   label="Temperatur"
                   value={temperature}
                   unit="°C"
-                  status={temperature !== null ? getTemperatureStatus(temperature) : "normal"}
-                  iconColor="text-[#d28c31]"
                   warningMessage={getTemperatureWarningMessage(temperature)}
                   min={temperatureMinMax.min}
                   max={temperatureMinMax.max}
-                  trend={temperatureTrend}
-                  updatedAt={temperatureUpdatedAt}
                   darkMode={darkMode}
                 />
-              </motion.div>
-            )}
-            {loading ? (
-              <MetricCardSkeleton darkMode={darkMode} />
-            ) : (
-              <motion.div
-                key={`hum-${humidity}`}
-                initial={{ opacity: 0.5 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.3 }}
-              >
-                <MetricCard
-                  icon={<Droplets className="w-8 h-8" />}
+                <ClimateMetric
                   label="Luftfuktighet"
                   value={humidity}
                   unit="%"
-                  status={humidity !== null ? getHumidityStatus(humidity) : "normal"}
-                  iconColor={humidityIconColor}
                   warningMessage={getHumidityWarningMessage(humidity)}
                   min={humidityMinMax.min}
                   max={humidityMinMax.max}
-                  trend={humidityTrend}
-                  updatedAt={humidityUpdatedAt}
                   darkMode={darkMode}
                 />
               </motion.div>
             )}
           </div>
+
+          {!loading && <DeviceStatusRow items={statusItems} darkMode={darkMode} />}
 
           {/* Trend Charts */}
           <div className="space-y-4">
