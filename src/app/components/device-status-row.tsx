@@ -16,6 +16,7 @@ export function DeviceStatusRow({ items, darkMode = false }: DeviceStatusRowProp
   const interactiveBorder = darkMode ? "border-white/15 hover:border-white/30" : "border-stone-300 hover:border-stone-400";
   const interactiveBg = darkMode ? "bg-white/[0.04] hover:bg-white/[0.08]" : "bg-white/40 hover:bg-white/70";
   const disabledClass = "cursor-not-allowed opacity-60";
+  const labelClass = `text-[10px] uppercase tracking-[0.02em] leading-[1.15] whitespace-nowrap ${labelColor}`;
 
   return (
     <div className="mb-8 flex items-start justify-center gap-7 pt-2">
@@ -36,11 +37,13 @@ export function DeviceStatusRow({ items, darkMode = false }: DeviceStatusRowProp
                   className={`max-h-full max-w-full object-contain ${item.spinning ? "animate-spin [animation-duration:2.4s]" : ""}`}
                 />
               </div>
-              <p className={`mt-3 text-[10px] uppercase tracking-[0.02em] ${labelColor}`}>{item.label}</p>
+              <div className="mt-2 flex h-[28px] items-start justify-center">
+                <p className={labelClass}>{item.label}</p>
+              </div>
             </button>
           </div>
         ) : (
-          <div key={item.label} className="flex w-[110px] flex-col items-center gap-2 text-center">
+          <div key={item.label} className="flex w-[110px] flex-col items-center text-center">
             <div className="flex h-[72px] w-[72px] items-center justify-center">
               <img
                 src={item.iconSrc}
@@ -48,7 +51,9 @@ export function DeviceStatusRow({ items, darkMode = false }: DeviceStatusRowProp
                 className={`max-h-full max-w-full object-contain ${item.spinning ? "animate-spin [animation-duration:2.4s]" : ""}`}
               />
             </div>
-            <p className={`text-[10px] uppercase tracking-[0.02em] ${labelColor}`}>{item.label}</p>
+            <div className="mt-2 flex h-[28px] items-start justify-center">
+              <p className={labelClass}>{item.label}</p>
+            </div>
           </div>
         )
       ))}

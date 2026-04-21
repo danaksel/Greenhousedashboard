@@ -10,6 +10,8 @@ import { ClimateMetricsSkeleton } from "./components/climate-metrics-skeleton";
 import { DeviceStatusRow } from "./components/device-status-row";
 import { ChevronDownIcon, InfoIcon, MoonIcon, RefreshCwIcon, SunIcon, WifiOffIcon } from "./components/icons";
 
+const FAN_TRANSITION_MS = 30_000;
+
 const TrendChart = lazy(async () => {
   const module = await import("./components/trend-chart");
   return { default: module.TrendChart };
@@ -36,8 +38,10 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [fanPending, setFanPending] = useState(false);
-  const [pendingFanState, setPendingFanState] = useState<"on" | "off" | null>(null);
+  const [fanTransition, setFanTransition] = useState<{
+    target: "on" | "off";
+    label: "Starter" | "Stopper";
+  } | null>(null);
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
   const [darkMode, setDarkMode] = useState(() => {
     const saved = localStorage.getItem("darkMode");
@@ -49,7 +53,7 @@ export default function App() {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [aboutExpanded, setAboutExpanded] = useState(false);
 
-  const loadData = async (isRefresh = false) => {
+  const loadData = async (isRefresh = false, ignoreFanTransition = false) => {
     try {
       if (isRefresh) {
         setRefreshing(true);
@@ -66,8 +70,9 @@ export default function App() {
       setLastUpdated(new Date(latest.updatedAt));
       setDoor(latest.door ?? null);
       setWindowCount(latest.window ?? null);
-      setFan(latest.fan ?? null);
-      setPendingFanState(null);
+      if (!fanTransition || ignoreFanTransition) {
+        setFan(latest.fan ?? null);
+      }
       setHeating(latest.heating ?? null);
       // Fetch historical data
       const history = await fetchGreenhouseHistory();
@@ -295,22 +300,30 @@ export default function App() {
   };
 
   const handleFanToggle = async () => {
-    if (fanPending || fan === null) return;
+    if (fanTransition || fan === null) return;
 
     const nextState = fan === "on" ? "off" : "on";
+    const nextLabel = nextState === "on" ? "Starter" : "Stopper";
 
     try {
-      setFanPending(true);
-      setPendingFanState(nextState);
+      setFanTransition({ target: nextState, label: nextLabel });
       await setFanPower(nextState);
-      await loadData(true);
     } catch (err) {
-      setPendingFanState(null);
+      setFanTransition(null);
       setError(err instanceof Error ? err.message : "Kunne ikke styre vifte");
-    } finally {
-      setFanPending(false);
     }
   };
+
+  useEffect(() => {
+    if (!fanTransition) return;
+
+    const timeoutId = window.setTimeout(() => {
+      setFanTransition(null);
+      void loadData(true, true);
+    }, FAN_TRANSITION_MS);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [fanTransition]);
 
   // Calculate min/max from historical data
   const getMinMax = (data: Array<{ time: string; value: number; id: string }>) => {
@@ -326,7 +339,7 @@ export default function App() {
   const humidityMinMax = getMinMax(humidityData24h);
   const bgColor = darkMode ? 'bg-[#2d3a21]' : 'bg-[#e8ede3]';
   const safeWindowCount = Math.min(Math.max(windowCount ?? 0, 0), 3);
-  const effectiveFanState = pendingFanState ?? fan;
+  const effectiveFanState = fanTransition?.target ?? fan;
   const statusItems = [
     {
       iconSrc: darkMode
@@ -338,15 +351,16 @@ export default function App() {
       iconSrc: darkMode
         ? heating === "on" ? "/fan-heating.svg" : effectiveFanState === "on" ? "/fan-cooling.svg" : "/fan-off.svg"
         : heating === "on" ? "/fan-heating-light.svg" : effectiveFanState === "on" ? "/fan-cooling-light.svg" : "/fan-off-light.svg",
-      label:
-        effectiveFanState === "on"
+      label: fanTransition
+        ? fanTransition.label
+        : effectiveFanState === "on"
           ? heating === "on"
             ? "Varmevifte"
             : "Ventilasjon"
           : "Vifte av",
-      spinning: effectiveFanState === "on",
+      spinning: fanTransition ? true : effectiveFanState === "on",
       onClick: handleFanToggle,
-      disabled: fanPending || loading,
+      disabled: Boolean(fanTransition) || loading,
     },
     {
       iconSrc: darkMode
