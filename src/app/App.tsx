@@ -336,6 +336,16 @@ export default function App() {
   const humidityMinMax = getMinMax(humidityData24h);
   const bgColor = darkMode ? 'bg-[#2d3a21]' : 'bg-[#e8ede3]';
   const safeWindowCount = Math.min(Math.max(windowCount ?? 0, 0), 3);
+  const heroImageSrc =
+    temperature === null
+      ? "/drivhus.png"
+      : temperature < 12
+        ? "/cold.jpg"
+        : temperature < 23
+          ? "/drivhus.png"
+          : temperature <= 28
+            ? "/warm.jpg"
+            : "/hot.jpg";
   const statusItems = [
     {
       iconSrc: darkMode
@@ -442,7 +452,7 @@ export default function App() {
         {/* Hero Image */}
         <div className="relative w-full h-[200px] overflow-hidden mb-6">
           <ImageWithFallback
-            src="/drivhus.png" 
+            src={heroImageSrc}
             alt="Drivhus" 
             className="w-full h-full object-cover object-center"
           />
