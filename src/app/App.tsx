@@ -628,6 +628,8 @@ export default function App() {
                   unit="°C"
                   darkMode={darkMode}
                   xAxisInterval={chartXAxisInterval}
+                  referenceMin={temperatureMinMax.min}
+                  referenceMax={temperatureMinMax.max}
                 />
               </Suspense>
             )}
@@ -642,6 +644,8 @@ export default function App() {
                   unit="%"
                   darkMode={darkMode}
                   xAxisInterval={chartXAxisInterval}
+                  referenceMin={humidityMinMax.min}
+                  referenceMax={humidityMinMax.max}
                 />
               </Suspense>
             )}

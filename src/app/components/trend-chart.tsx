@@ -1,5 +1,5 @@
 import { Card } from "./ui/card";
-import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Area, CartesianGrid, ComposedChart, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 type ChartPoint = {
   time: string;
@@ -17,9 +17,20 @@ interface TrendChartProps {
   unit: string;
   darkMode?: boolean;
   xAxisInterval?: number;
+  referenceMin?: number;
+  referenceMax?: number;
 }
 
-export function TrendChart({ title, data, color, unit, darkMode = false, xAxisInterval = 0 }: TrendChartProps) {
+export function TrendChart({
+  title,
+  data,
+  color,
+  unit,
+  darkMode = false,
+  xAxisInterval = 0,
+  referenceMin,
+  referenceMax,
+}: TrendChartProps) {
   const bgClass = darkMode ? 'bg-[#2d3a21]' : 'bg-[#ebeee8]';
   const titleColor = darkMode ? 'text-white/80' : 'text-stone-700';
   const borderClass = darkMode ? 'border-white/10' : 'border-stone-200';
@@ -42,6 +53,8 @@ export function TrendChart({ title, data, color, unit, darkMode = false, xAxisIn
 
   // Calculate domain with whole numbers, including the true min/max range.
   const values = data.flatMap((d) => [d.value, d.min ?? d.value, d.max ?? d.value]);
+  if (typeof referenceMin === "number" && !Number.isNaN(referenceMin)) values.push(referenceMin);
+  if (typeof referenceMax === "number" && !Number.isNaN(referenceMax)) values.push(referenceMax);
   const rawMin = Math.min(...values);
   const rawMax = Math.max(...values);
   
@@ -109,6 +122,36 @@ export function TrendChart({ title, data, color, unit, darkMode = false, xAxisIn
               return [`${value}${unit}`, "verdi"];
             }}
           />
+          {typeof referenceMax === "number" && !Number.isNaN(referenceMax) && (
+            <ReferenceLine
+              y={referenceMax}
+              stroke={color}
+              strokeDasharray="4 4"
+              strokeOpacity={0.65}
+              ifOverflow="extendDomain"
+              label={{
+                value: `maks ${referenceMax.toFixed(1)}${unit}`,
+                position: "insideTopRight",
+                fill: tickColor,
+                fontSize: 11,
+              }}
+            />
+          )}
+          {typeof referenceMin === "number" && !Number.isNaN(referenceMin) && (
+            <ReferenceLine
+              y={referenceMin}
+              stroke={darkMode ? "#adbca2" : "#5d7342"}
+              strokeDasharray="4 4"
+              strokeOpacity={0.55}
+              ifOverflow="extendDomain"
+              label={{
+                value: `min ${referenceMin.toFixed(1)}${unit}`,
+                position: "insideBottomRight",
+                fill: tickColor,
+                fontSize: 11,
+              }}
+            />
+          )}
           <Area
             type="monotone"
             dataKey="range"
