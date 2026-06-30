@@ -9,6 +9,7 @@ import { ClimateMetric } from "./components/climate-metric";
 import { ClimateMetricsSkeleton } from "./components/climate-metrics-skeleton";
 import { DeviceStatusRow } from "./components/device-status-row";
 import { ChevronDownIcon, InfoIcon, MoonIcon, RefreshCwIcon, SunIcon, WifiOffIcon } from "./components/icons";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./components/ui/select";
 
 const TrendChart = lazy(async () => {
   const module = await import("./components/trend-chart");
@@ -23,6 +24,7 @@ const WeatherWidget = lazy(async () => {
 type ChartPoint = { time: string; value: number; id: string };
 type HistoryPoint = { time: string; value: number | null; timestamp: string | null; bucketStart: string | null };
 type MetricMinMax = { min: number | undefined; max: number | undefined };
+type ChartRange = "12h" | "24h";
 
 export default function App() {
   const [temperature, setTemperature] = useState<number | null>(null);
@@ -36,8 +38,10 @@ export default function App() {
   const [fan, setFan] = useState<"on" | "off" | null>(null);
   const [fanUpdatedAt, setFanUpdatedAt] = useState<string | null>(null);
   const [heating, setHeating] = useState<"on" | "off" | null>(null);
-  const [temperatureData, setTemperatureData] = useState<ChartPoint[]>([]);
-  const [humidityData, setHumidityData] = useState<ChartPoint[]>([]);
+  const [temperatureData12h, setTemperatureData12h] = useState<ChartPoint[]>([]);
+  const [humidityData12h, setHumidityData12h] = useState<ChartPoint[]>([]);
+  const [temperatureData24h, setTemperatureData24h] = useState<ChartPoint[]>([]);
+  const [humidityData24h, setHumidityData24h] = useState<ChartPoint[]>([]);
   const [temperatureMinMax, setTemperatureMinMax] = useState<MetricMinMax>({ min: undefined, max: undefined });
   const [humidityMinMax, setHumidityMinMax] = useState<MetricMinMax>({ min: undefined, max: undefined });
   const [loading, setLoading] = useState(true);
@@ -53,6 +57,7 @@ export default function App() {
   });
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [aboutExpanded, setAboutExpanded] = useState(false);
+  const [chartRange, setChartRange] = useState<ChartRange>("12h");
 
   const loadData = async (isRefresh = false) => {
     try {
@@ -88,6 +93,12 @@ export default function App() {
       for (let i = 0; i < 7; i++) { // 7 points * 2 hours = 12 hours span
         const hour = (currentHour - (i * 2) + 24) % 24;
         hoursToShow12.unshift(hour); // Add to beginning so oldest is first
+      }
+
+      const hoursToShow24: number[] = [];
+      for (let i = 0; i < 24; i++) {
+        const hour = (currentHour - i + 24) % 24;
+        hoursToShow24.unshift(hour);
       }
       
       // Fill forward function: carry last known value forward, but keep leading nulls
@@ -190,11 +201,15 @@ export default function App() {
       };
 
       // Transform temperature and humidity history data (for graphs - 12 hours)
-      const tempData = processHistoryData(history.temperature || [], 'temp', hoursToShow12);
-      const humData = processHistoryData(history.humidity || [], 'hum', hoursToShow12);
+      const tempData12h = processHistoryData(history.temperature || [], 'temp12', hoursToShow12);
+      const humData12h = processHistoryData(history.humidity || [], 'hum12', hoursToShow12);
+      const tempData24h = processHistoryData(history.temperature || [], 'temp24', hoursToShow24);
+      const humData24h = processHistoryData(history.humidity || [], 'hum24', hoursToShow24);
 
-      setTemperatureData(tempData);
-      setHumidityData(humData);
+      setTemperatureData12h(tempData12h);
+      setHumidityData12h(humData12h);
+      setTemperatureData24h(tempData24h);
+      setHumidityData24h(humData24h);
 
       setTemperatureMinMax(
         statsToMinMax(latest.stats24h?.temperature) ?? getMinMaxForLast24Hours(history.temperature || [], latest.temperature)
@@ -396,6 +411,19 @@ export default function App() {
       tooltip: `${safeWindowCount > 0 ? "Åpnet" : "Lukket"} ${formatStatusTimestamp(windowUpdatedAt) ?? ""}`.trim(),
     },
   ];
+  const selectedTemperatureData = chartRange === "12h" ? temperatureData12h : temperatureData24h;
+  const selectedHumidityData = chartRange === "12h" ? humidityData12h : humidityData24h;
+  const chartRangeLabel = chartRange === "12h" ? "siste 12 timer" : "siste 24 timer";
+  const chartXAxisInterval = chartRange === "12h" ? 0 : 2;
+  const chartSelectTriggerClass = darkMode
+    ? "h-9 w-[132px] rounded-full border-white/10 bg-white/10 px-3 text-xs text-white shadow-none hover:bg-white/15 focus-visible:ring-white/20"
+    : "h-9 w-[132px] rounded-full border-[#cbd3c2] bg-white/75 px-3 text-xs text-[#4d5d3e] shadow-sm hover:bg-white focus-visible:ring-[#8d9d7e]/30";
+  const chartSelectContentClass = darkMode
+    ? "rounded-xl border-white/10 bg-[#2d3a21] text-white shadow-xl"
+    : "rounded-xl border-[#d8ded1] bg-[#f7f8f5] text-[#3f4d32] shadow-xl";
+  const chartSelectItemClass = darkMode
+    ? "rounded-lg text-xs focus:bg-white/10 focus:text-white data-[state=checked]:text-[#d28c31]"
+    : "rounded-lg text-xs focus:bg-[#e7ece0] focus:text-[#2d3a21] data-[state=checked]:text-[#5d7342]";
 
   return (
     <div className={`min-h-screen transition-colors duration-300 ${bgColor}`}>
@@ -528,16 +556,37 @@ export default function App() {
 
           {/* Trend Charts */}
           <div className="space-y-4">
+            {!loading && (
+              <div className="flex items-center justify-between px-1">
+                <h2 className={`text-xs uppercase leading-none tracking-[0.04em] ${darkMode ? "text-white/45" : "text-stone-500"}`}>
+                  Grafer
+                </h2>
+                <Select value={chartRange} onValueChange={(value) => setChartRange(value as ChartRange)}>
+                  <SelectTrigger className={chartSelectTriggerClass} aria-label="Velg tidsrom for grafer">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent align="end" className={chartSelectContentClass}>
+                    <SelectItem value="12h" className={chartSelectItemClass}>
+                      12 timer
+                    </SelectItem>
+                    <SelectItem value="24h" className={chartSelectItemClass}>
+                      24 timer
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             {loading ? (
               <ChartSkeleton darkMode={darkMode} />
             ) : (
               <Suspense fallback={<ChartSkeleton darkMode={darkMode} />}>
                 <TrendChart
-                  title="Temperatur siste 12 timer"
-                  data={temperatureData}
+                  title={`Temperatur ${chartRangeLabel}`}
+                  data={selectedTemperatureData}
                   color="#d28c31"
                   unit="°C"
                   darkMode={darkMode}
+                  xAxisInterval={chartXAxisInterval}
                 />
               </Suspense>
             )}
@@ -546,11 +595,12 @@ export default function App() {
             ) : (
               <Suspense fallback={<ChartSkeleton darkMode={darkMode} />}>
                 <TrendChart
-                  title="Luftfuktighet siste 12 timer"
-                  data={humidityData}
+                  title={`Luftfuktighet ${chartRangeLabel}`}
+                  data={selectedHumidityData}
                   color={darkMode ? "#8fbc5f" : "#5d7342"}
                   unit="%"
                   darkMode={darkMode}
+                  xAxisInterval={chartXAxisInterval}
                 />
               </Suspense>
             )}

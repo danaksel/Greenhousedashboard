@@ -7,9 +7,10 @@ interface TrendChartProps {
   color: string;
   unit: string;
   darkMode?: boolean;
+  xAxisInterval?: number;
 }
 
-export function TrendChart({ title, data, color, unit, darkMode = false }: TrendChartProps) {
+export function TrendChart({ title, data, color, unit, darkMode = false, xAxisInterval = 0 }: TrendChartProps) {
   // Calculate domain with whole numbers
   const values = data.map(d => d.value);
   const rawMin = Math.min(...values);
@@ -62,7 +63,7 @@ export function TrendChart({ title, data, color, unit, darkMode = false }: Trend
             dataKey="time" 
             tick={{ fontSize: 12, fill: tickColor }} 
             stroke={axisColor}
-            interval={0}
+            interval={xAxisInterval}
           />
           <YAxis 
             tick={{ fontSize: 12, fill: tickColor }} 
