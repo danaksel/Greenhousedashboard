@@ -31,3 +31,27 @@ body, html {
 .greenhouse-warning-pulse {
   animation: greenhouse-warning-pulse 1s ease-in-out infinite;
 }
+
+@keyframes chart-line-scan {
+  0% {
+    stroke-dashoffset: 330;
+  }
+
+  55% {
+    stroke-dashoffset: 0;
+  }
+
+  100% {
+    stroke-dashoffset: -330;
+  }
+}
+
+@keyframes chart-sheen {
+  0% {
+    transform: translateX(-70%);
+  }
+
+  100% {
+    transform: translateX(170%);
+  }
+}
