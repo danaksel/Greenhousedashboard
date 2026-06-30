@@ -62,100 +62,62 @@ function CollapsedChartPreview({
   loading: boolean;
   onClick: () => void;
 }) {
-  const width = 320;
-  const height = 58;
-  const tempPath = buildPreviewPath(temperatureData, width, height, 8);
-  const humidityPath = buildPreviewPath(humidityData, width, height, 8);
-  const hasData = tempPath || humidityPath;
+  const width = 96;
+  const height = 22;
+  const tempPath = buildPreviewPath(temperatureData, width, height, 3);
+  const humidityPath = buildPreviewPath(humidityData, width, height, 3);
+  const previewChipClass = darkMode
+    ? "border-white/8 bg-white/[0.045] text-white/50"
+    : "border-[#dbe2d4] bg-white/45 text-[#65725d]";
 
   return (
     <button
       type="button"
-      className={`group relative h-[66px] w-full overflow-hidden rounded-xl border px-4 py-2 text-left transition-all ${
+      className={`group grid h-12 w-full grid-cols-2 gap-2 rounded-xl border p-1.5 text-left transition-all ${
         darkMode
-          ? "border-white/10 bg-white/5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] hover:bg-white/8"
-          : "border-[#d8ded1] bg-white/55 shadow-sm hover:bg-white/70"
+          ? "border-white/8 bg-white/[0.035] hover:bg-white/[0.055]"
+          : "border-[#dde4d6] bg-white/35 shadow-sm hover:bg-white/55"
       }`}
       onClick={onClick}
       aria-label="Åpne grafer"
     >
-      <div
-        className={`pointer-events-none absolute inset-x-0 bottom-0 h-8 ${
-          darkMode
-            ? "bg-linear-to-t from-[#2d3a21]/70 to-transparent"
-            : "bg-linear-to-t from-[#e8ede3]/80 to-transparent"
-        }`}
-      />
-      <svg
-        viewBox={`0 0 ${width} ${height}`}
-        preserveAspectRatio="none"
-        className={`absolute inset-x-3 top-1 h-[58px] w-[calc(100%-1.5rem)] ${loading ? "animate-pulse" : ""}`}
-        aria-hidden="true"
-      >
-        <path
-          d="M 8 44 C 55 18, 88 24, 126 30 S 195 46, 238 28 S 292 20, 312 32"
-          fill="none"
-          stroke={darkMode ? "rgba(255,255,255,0.09)" : "rgba(93,115,66,0.13)"}
-          strokeWidth="10"
-          strokeLinecap="round"
-        />
-        {hasData ? (
-          <>
-            {humidityPath && (
-              <path
-                d={humidityPath}
-                fill="none"
-                stroke={darkMode ? "#8fbc5f" : "#5d7342"}
-                strokeWidth="3"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                opacity={darkMode ? 0.75 : 0.65}
-              />
-            )}
-            {tempPath && (
-              <path
-                d={tempPath}
-                fill="none"
-                stroke="#d28c31"
-                strokeWidth="3"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                opacity={0.85}
-              />
-            )}
-          </>
-        ) : (
-          <>
-            <path
-              d="M 8 38 C 58 22, 96 18, 142 28 S 224 42, 312 20"
-              fill="none"
-              stroke="#d28c31"
-              strokeWidth="3"
-              strokeLinecap="round"
-              opacity="0.65"
-            />
-            <path
-              d="M 8 24 C 64 36, 112 40, 156 30 S 232 16, 312 28"
-              fill="none"
-              stroke={darkMode ? "#8fbc5f" : "#5d7342"}
-              strokeWidth="3"
-              strokeLinecap="round"
-              opacity="0.55"
-            />
-          </>
-        )}
-      </svg>
-      <div className="relative z-10 flex h-full items-end">
-        <div className={`flex items-center gap-3 text-[11px] font-medium ${darkMode ? "text-white/55" : "text-[#66735d]"}`}>
-          <span className="flex items-center gap-1.5">
-            <span className="size-1.5 rounded-full bg-[#d28c31]" />
-            Temp
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className={`size-1.5 rounded-full ${darkMode ? "bg-[#8fbc5f]" : "bg-[#5d7342]"}`} />
-            Fukt
-          </span>
-        </div>
+      <div className={`flex min-w-0 items-center gap-2 rounded-lg border px-2 ${previewChipClass}`}>
+        <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.04em]">Temp</span>
+        <svg
+          viewBox={`0 0 ${width} ${height}`}
+          preserveAspectRatio="none"
+          className={`h-6 min-w-0 flex-1 ${loading ? "animate-pulse" : ""}`}
+          aria-hidden="true"
+        >
+          <path
+            d={tempPath || "M 3 15 C 20 8, 35 7, 51 11 S 78 16, 93 8"}
+            fill="none"
+            stroke="#d28c31"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            opacity="0.75"
+          />
+        </svg>
+      </div>
+      <div className={`flex min-w-0 items-center gap-2 rounded-lg border px-2 ${previewChipClass}`}>
+        <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.04em]">Fukt</span>
+        <svg
+          viewBox={`0 0 ${width} ${height}`}
+          preserveAspectRatio="none"
+          className={`h-6 min-w-0 flex-1 ${loading ? "animate-pulse" : ""}`}
+          aria-hidden="true"
+        >
+          <path
+            d={humidityPath || "M 3 9 C 18 13, 34 16, 50 12 S 76 6, 93 11"}
+            fill="none"
+            stroke={darkMode ? "#8fbc5f" : "#5d7342"}
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            opacity={darkMode ? 0.68 : 0.62}
+          />
+        </svg>
       </div>
     </button>
   );
