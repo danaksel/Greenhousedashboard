@@ -1,13 +1,28 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "drivhuset",
-  "compatibility_date": "2026-04-21",
+  "name": "drivhus",
+  "main": "src/worker/index.js",
+  "compatibility_date": "2026-03-09",
   "observability": {
     "enabled": true
   },
   "assets": {
+    "binding": "ASSETS",
     "directory": "./dist",
-    "not_found_handling": "single-page-application"
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true
   },
+  "kv_namespaces": [
+    {
+      "binding": "GREENHOUSE_DATA",
+      "id": "624e218efc3444eb92d78eba02c6a3d7"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "GREENHOUSE_HISTORY",
+      "bucket_name": "greenhouse-history"
+    }
+  ],
   "compatibility_flags": ["nodejs_compat"]
 }

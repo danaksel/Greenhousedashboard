@@ -3,6 +3,11 @@ export interface HistoryData {
   humidity: Array<{ time: string; value: number | null; timestamp: string | null; bucketStart: string | null }>;
 }
 
+export interface MetricStats {
+  min: number | null;
+  max: number | null;
+}
+
 export interface LatestData {
   temperature: number;
   humidity: number;
@@ -18,6 +23,10 @@ export interface LatestData {
   fanUpdatedAt?: string;
   heating?: "on" | "off";
   heatingUpdatedAt?: string;
+  stats24h?: {
+    temperature?: MetricStats;
+    humidity?: MetricStats;
+  };
 }
 
 export interface WeatherData {
@@ -28,8 +37,17 @@ export interface WeatherData {
   uvIndex?: number;
 }
 
+const GREENHOUSE_API_BASE =
+  typeof window !== "undefined" && window.location.hostname === "127.0.0.1"
+    ? "https://drivhus.dan-aksel.workers.dev"
+    : "";
+
+function greenhouseApiUrl(path: string) {
+  return `${GREENHOUSE_API_BASE}${path}`;
+}
+
 export async function fetchLatestGreenhouseData(): Promise<LatestData> {
-  const res = await fetch("https://drivhus.dan-aksel.workers.dev/api/latest", {
+  const res = await fetch(greenhouseApiUrl("/api/latest"), {
     method: "GET",
     headers: {
       "Content-Type": "application/json"
@@ -59,11 +77,12 @@ export async function fetchLatestGreenhouseData(): Promise<LatestData> {
     fanUpdatedAt: data.fanUpdatedAt,
     heating: data.heating,
     heatingUpdatedAt: data.heatingUpdatedAt,
+    stats24h: data.stats24h,
   };
 }
 
 export async function fetchGreenhouseHistory(): Promise<HistoryData> {
-  const res = await fetch("https://drivhus.dan-aksel.workers.dev/api/history", {
+  const res = await fetch(greenhouseApiUrl("/api/history"), {
     method: "GET",
     headers: {
       "Content-Type": "application/json"

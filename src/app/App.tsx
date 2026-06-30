@@ -20,6 +20,10 @@ const WeatherWidget = lazy(async () => {
   return { default: module.WeatherWidget };
 });
 
+type ChartPoint = { time: string; value: number; id: string };
+type HistoryPoint = { time: string; value: number | null; timestamp: string | null; bucketStart: string | null };
+type MetricMinMax = { min: number | undefined; max: number | undefined };
+
 export default function App() {
   const [temperature, setTemperature] = useState<number | null>(null);
   const [humidity, setHumidity] = useState<number | null>(null);
@@ -32,10 +36,10 @@ export default function App() {
   const [fan, setFan] = useState<"on" | "off" | null>(null);
   const [fanUpdatedAt, setFanUpdatedAt] = useState<string | null>(null);
   const [heating, setHeating] = useState<"on" | "off" | null>(null);
-  const [temperatureData, setTemperatureData] = useState<Array<{ time: string; value: number; id: string }>>([]);
-  const [humidityData, setHumidityData] = useState<Array<{ time: string; value: number; id: string }>>([]);
-  const [temperatureData24h, setTemperatureData24h] = useState<Array<{ time: string; value: number; id: string }>>([]);
-  const [humidityData24h, setHumidityData24h] = useState<Array<{ time: string; value: number; id: string }>>([]);
+  const [temperatureData, setTemperatureData] = useState<ChartPoint[]>([]);
+  const [humidityData, setHumidityData] = useState<ChartPoint[]>([]);
+  const [temperatureMinMax, setTemperatureMinMax] = useState<MetricMinMax>({ min: undefined, max: undefined });
+  const [humidityMinMax, setHumidityMinMax] = useState<MetricMinMax>({ min: undefined, max: undefined });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -86,13 +90,6 @@ export default function App() {
         hoursToShow12.unshift(hour); // Add to beginning so oldest is first
       }
       
-      // Generate list of hours for min/max calculation (every hour going back 24 hours)
-      const hoursToShow24: number[] = [];
-      for (let i = 0; i < 24; i++) { // 24 hours
-        const hour = (currentHour - i + 24) % 24;
-        hoursToShow24.unshift(hour); // Add to beginning so oldest is first
-      }
-      
       // Fill forward function: carry last known value forward, but keep leading nulls
       const fillForward = (values: Array<number | null>): Array<number | null> => {
         let lastKnown: number | null = null;
@@ -114,7 +111,7 @@ export default function App() {
       };
 
       // Process data for a given metric
-      const processHistoryData = (historyItems: Array<{ time: string; value: number | null }>, prefix: string, hoursToShow: number[]) => {
+      const processHistoryData = (historyItems: HistoryPoint[], prefix: string, hoursToShow: number[]) => {
         const times = historyItems.map(item => item.time);
         const rawValues = historyItems.map(item => item.value);
         const filledValues = fillForward(rawValues);
@@ -156,6 +153,42 @@ export default function App() {
         return result;
       };
 
+      const getMinMaxForLast24Hours = (historyItems: HistoryPoint[], latestValue: number | null): MetricMinMax => {
+        const cutoff = now.getTime() - 24 * 60 * 60 * 1000;
+        const values = historyItems
+          .filter((item) => {
+            const timestamp = item.timestamp ?? item.bucketStart;
+            if (!timestamp) return true;
+
+            const time = new Date(timestamp).getTime();
+            return !Number.isNaN(time) && time >= cutoff;
+          })
+          .map((item) => item.value)
+          .filter((value): value is number => typeof value === "number" && !Number.isNaN(value));
+
+        if (typeof latestValue === "number" && !Number.isNaN(latestValue)) {
+          values.push(latestValue);
+        }
+
+        if (values.length === 0) return { min: undefined, max: undefined };
+
+        return {
+          min: Math.min(...values),
+          max: Math.max(...values),
+        };
+      };
+
+      const statsToMinMax = (stats?: { min: number | null; max: number | null }): MetricMinMax | null => {
+        if (!stats || typeof stats.min !== "number" || typeof stats.max !== "number") {
+          return null;
+        }
+
+        return {
+          min: stats.min,
+          max: stats.max,
+        };
+      };
+
       // Transform temperature and humidity history data (for graphs - 12 hours)
       const tempData = processHistoryData(history.temperature || [], 'temp', hoursToShow12);
       const humData = processHistoryData(history.humidity || [], 'hum', hoursToShow12);
@@ -163,12 +196,12 @@ export default function App() {
       setTemperatureData(tempData);
       setHumidityData(humData);
 
-      // Transform temperature and humidity history data (for min/max - 24 hours)
-      const tempData24h = processHistoryData(history.temperature || [], 'temp24', hoursToShow24);
-      const humData24h = processHistoryData(history.humidity || [], 'hum24', hoursToShow24);
-
-      setTemperatureData24h(tempData24h);
-      setHumidityData24h(humData24h);
+      setTemperatureMinMax(
+        statsToMinMax(latest.stats24h?.temperature) ?? getMinMaxForLast24Hours(history.temperature || [], latest.temperature)
+      );
+      setHumidityMinMax(
+        statsToMinMax(latest.stats24h?.humidity) ?? getMinMaxForLast24Hours(history.humidity || [], latest.humidity)
+      );
 
       // Fetch weather data
       try {
@@ -322,18 +355,6 @@ export default function App() {
     });
   };
 
-  // Calculate min/max from historical data
-  const getMinMax = (data: Array<{ time: string; value: number; id: string }>) => {
-    if (data.length === 0) return { min: undefined, max: undefined };
-    const values = data.map(d => d.value);
-    return {
-      min: Math.min(...values),
-      max: Math.max(...values)
-    };
-  };
-
-  const temperatureMinMax = getMinMax(temperatureData24h);
-  const humidityMinMax = getMinMax(humidityData24h);
   const bgColor = darkMode ? 'bg-[#2d3a21]' : 'bg-[#e8ede3]';
   const safeWindowCount = Math.min(Math.max(windowCount ?? 0, 0), 3);
   const heroImageSrc =

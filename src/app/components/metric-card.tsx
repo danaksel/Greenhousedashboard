@@ -95,11 +95,11 @@ export function MetricCard({
                         <DialogDescription className="text-base mt-4 space-y-3">
                           <div className="flex items-start gap-3">
                             <ArrowDownToLine className="w-5 h-5 mt-0.5 flex-shrink-0" />
-                            <span>Viser laveste målte {label.toLowerCase()} siste 24 timer.</span>
+                            <span>Viser laveste registrerte {label.toLowerCase()} siste 24 timer.</span>
                           </div>
                           <div className="flex items-start gap-3">
                             <ArrowUpToLine className="w-5 h-5 mt-0.5 flex-shrink-0" />
-                            <span>Viser høyeste målte {label.toLowerCase()} siste 24 timer.</span>
+                            <span>Viser høyeste registrerte {label.toLowerCase()} siste 24 timer.</span>
                           </div>
                         </DialogDescription>
                       </DialogHeader>

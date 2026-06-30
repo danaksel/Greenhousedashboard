@@ -6,7 +6,8 @@
   "scripts": {
     "build": "vite build",
     "analyze": "vite build --mode analyze",
-    "dev": "vite"
+    "dev": "vite",
+    "deploy": "npm run build && wrangler deploy"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",

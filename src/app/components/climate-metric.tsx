@@ -130,11 +130,11 @@ export function ClimateMetric({
                 <DialogDescription className="mt-4 space-y-3 text-base">
                   <div className="flex items-start gap-3">
                     <ArrowDownToLineIcon className="mt-0.5 h-5 w-5 shrink-0" />
-                    <span>Viser laveste målte {label.toLowerCase()} siste 24 timer.</span>
+                    <span>Viser laveste registrerte {label.toLowerCase()} siste 24 timer.</span>
                   </div>
                   <div className="flex items-start gap-3">
                     <ArrowUpToLineIcon className="mt-0.5 h-5 w-5 shrink-0" />
-                    <span>Viser høyeste målte {label.toLowerCase()} siste 24 timer.</span>
+                    <span>Viser høyeste registrerte {label.toLowerCase()} siste 24 timer.</span>
                   </div>
                 </DialogDescription>
               </DialogHeader>
