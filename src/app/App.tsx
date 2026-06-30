@@ -659,7 +659,7 @@ export default function App() {
                     className="w-full"
                     aria-label="Grafer for temperatur og luftfuktighet"
                   >
-                    <CarouselContent className="-ml-3">
+                    <CarouselContent className="-ml-3 pb-4">
                       <CarouselItem className="pl-3">
                         <TrendChart
                           title={`Temperatur ${chartRangeLabel}`}
