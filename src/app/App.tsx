@@ -659,8 +659,8 @@ export default function App() {
                     className="w-full"
                     aria-label="Grafer for temperatur og luftfuktighet"
                   >
-                    <CarouselContent className="-ml-3 pb-4">
-                      <CarouselItem className="pl-3">
+                    <CarouselContent className="ml-0 pb-5 pt-1">
+                      <CarouselItem className="px-3">
                         <TrendChart
                           title={`Temperatur ${chartRangeLabel}`}
                           data={selectedTemperatureData}
@@ -670,7 +670,7 @@ export default function App() {
                           xAxisInterval={chartXAxisInterval}
                         />
                       </CarouselItem>
-                      <CarouselItem className="pl-3">
+                      <CarouselItem className="px-3">
                         <TrendChart
                           title={`Luftfuktighet ${chartRangeLabel}`}
                           data={selectedHumidityData}
