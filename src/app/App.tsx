@@ -29,6 +29,138 @@ type HistoryPoint = { time: string; value: number | null; min?: number | null; m
 type MetricMinMax = { min: number | undefined; max: number | undefined };
 type ChartRange = "12h" | "24h";
 
+function buildPreviewPath(data: ChartPoint[], width: number, height: number, padding: number) {
+  const points = data.filter((point) => Number.isFinite(point.value));
+  if (points.length < 2) return "";
+
+  const values = points.map((point) => point.value);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const innerWidth = width - padding * 2;
+  const innerHeight = height - padding * 2;
+
+  return points
+    .map((point, index) => {
+      const x = padding + (index / (points.length - 1)) * innerWidth;
+      const y = padding + (1 - (point.value - min) / range) * innerHeight;
+      return `${index === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`;
+    })
+    .join(" ");
+}
+
+function CollapsedChartPreview({
+  temperatureData,
+  humidityData,
+  darkMode,
+  loading,
+  onClick,
+}: {
+  temperatureData: ChartPoint[];
+  humidityData: ChartPoint[];
+  darkMode: boolean;
+  loading: boolean;
+  onClick: () => void;
+}) {
+  const width = 320;
+  const height = 58;
+  const tempPath = buildPreviewPath(temperatureData, width, height, 8);
+  const humidityPath = buildPreviewPath(humidityData, width, height, 8);
+  const hasData = tempPath || humidityPath;
+
+  return (
+    <button
+      type="button"
+      className={`group relative h-[66px] w-full overflow-hidden rounded-xl border px-4 py-2 text-left transition-all ${
+        darkMode
+          ? "border-white/10 bg-white/5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] hover:bg-white/8"
+          : "border-[#d8ded1] bg-white/55 shadow-sm hover:bg-white/70"
+      }`}
+      onClick={onClick}
+      aria-label="Åpne grafer"
+    >
+      <div
+        className={`pointer-events-none absolute inset-x-0 bottom-0 h-8 ${
+          darkMode
+            ? "bg-linear-to-t from-[#2d3a21]/70 to-transparent"
+            : "bg-linear-to-t from-[#e8ede3]/80 to-transparent"
+        }`}
+      />
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        preserveAspectRatio="none"
+        className={`absolute inset-x-3 top-1 h-[58px] w-[calc(100%-1.5rem)] ${loading ? "animate-pulse" : ""}`}
+        aria-hidden="true"
+      >
+        <path
+          d="M 8 44 C 55 18, 88 24, 126 30 S 195 46, 238 28 S 292 20, 312 32"
+          fill="none"
+          stroke={darkMode ? "rgba(255,255,255,0.09)" : "rgba(93,115,66,0.13)"}
+          strokeWidth="10"
+          strokeLinecap="round"
+        />
+        {hasData ? (
+          <>
+            {humidityPath && (
+              <path
+                d={humidityPath}
+                fill="none"
+                stroke={darkMode ? "#8fbc5f" : "#5d7342"}
+                strokeWidth="3"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                opacity={darkMode ? 0.75 : 0.65}
+              />
+            )}
+            {tempPath && (
+              <path
+                d={tempPath}
+                fill="none"
+                stroke="#d28c31"
+                strokeWidth="3"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                opacity={0.85}
+              />
+            )}
+          </>
+        ) : (
+          <>
+            <path
+              d="M 8 38 C 58 22, 96 18, 142 28 S 224 42, 312 20"
+              fill="none"
+              stroke="#d28c31"
+              strokeWidth="3"
+              strokeLinecap="round"
+              opacity="0.65"
+            />
+            <path
+              d="M 8 24 C 64 36, 112 40, 156 30 S 232 16, 312 28"
+              fill="none"
+              stroke={darkMode ? "#8fbc5f" : "#5d7342"}
+              strokeWidth="3"
+              strokeLinecap="round"
+              opacity="0.55"
+            />
+          </>
+        )}
+      </svg>
+      <div className="relative z-10 flex h-full items-end">
+        <div className={`flex items-center gap-3 text-[11px] font-medium ${darkMode ? "text-white/55" : "text-[#66735d]"}`}>
+          <span className="flex items-center gap-1.5">
+            <span className="size-1.5 rounded-full bg-[#d28c31]" />
+            Temp
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className={`size-1.5 rounded-full ${darkMode ? "bg-[#8fbc5f]" : "bg-[#5d7342]"}`} />
+            Fukt
+          </span>
+        </div>
+      </div>
+    </button>
+  );
+}
+
 export default function App() {
   const [temperature, setTemperature] = useState<number | null>(null);
   const [humidity, setHumidity] = useState<number | null>(null);
@@ -666,6 +798,16 @@ export default function App() {
                   </SelectContent>
                 </Select>
               </div>
+
+              {!chartsExpanded && (
+                <CollapsedChartPreview
+                  temperatureData={selectedTemperatureData}
+                  humidityData={selectedHumidityData}
+                  darkMode={darkMode}
+                  loading={historyLoading}
+                  onClick={() => setChartsExpanded(true)}
+                />
+              )}
 
               <div
                 id="chart-panel"
