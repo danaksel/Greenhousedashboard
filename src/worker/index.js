@@ -719,28 +719,55 @@ function getLast24OsloHourSlots() {
 
 function aggregateLatestByHour(entries, sensor) {
   const slots = getLast24OsloHourSlots();
-  const latestPerHour = new Map();
+  const perHour = new Map();
 
   for (const entry of entries) {
     const entryDate = new Date(entry.bucketStart);
     const hourKey = getOsloHourKey(entryDate);
-    const existing = latestPerHour.get(hourKey);
+    const existing = perHour.get(hourKey);
+    const entryMin = numberOrNull(entry.min ?? entry.value);
+    const entryMax = numberOrNull(entry.max ?? entry.value);
 
-    if (!existing || new Date(entry.timestamp) > new Date(existing.timestamp)) {
-      latestPerHour.set(hourKey, entry);
+    if (!existing) {
+      perHour.set(hourKey, {
+        latest: entry,
+        min: entryMin,
+        max: entryMax,
+      });
+      continue;
+    }
+
+    if (entryMin !== null) {
+      existing.min = existing.min === null ? entryMin : Math.min(existing.min, entryMin);
+    }
+
+    if (entryMax !== null) {
+      existing.max = existing.max === null ? entryMax : Math.max(existing.max, entryMax);
+    }
+
+    if (new Date(entry.timestamp) > new Date(existing.latest.timestamp)) {
+      existing.latest = entry;
     }
   }
 
   let lastKnown = null;
 
   return slots.map((slot) => {
-    const entry = latestPerHour.get(slot.key);
+    const hour = perHour.get(slot.key);
 
-    if (entry) {
-      lastKnown = entry;
+    if (hour) {
+      const entry = hour.latest;
+      const value = formatHistoryValue(sensor, entry.value);
+      lastKnown = {
+        value,
+        timestamp: entry.timestamp,
+        bucketStart: entry.bucketStart,
+      };
       return {
         time: slot.time,
-        value: formatHistoryValue(sensor, entry.value),
+        value,
+        min: formatHistoryValue(sensor, hour.min),
+        max: formatHistoryValue(sensor, hour.max),
         timestamp: entry.timestamp,
         bucketStart: entry.bucketStart,
       };
@@ -749,7 +776,9 @@ function aggregateLatestByHour(entries, sensor) {
     if (lastKnown) {
       return {
         time: slot.time,
-        value: formatHistoryValue(sensor, lastKnown.value),
+        value: lastKnown.value,
+        min: lastKnown.value,
+        max: lastKnown.value,
         timestamp: lastKnown.timestamp,
         bucketStart: lastKnown.bucketStart,
       };
@@ -758,6 +787,8 @@ function aggregateLatestByHour(entries, sensor) {
     return {
       time: slot.time,
       value: null,
+      min: null,
+      max: null,
       timestamp: null,
       bucketStart: null,
     };

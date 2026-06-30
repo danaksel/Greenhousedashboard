@@ -21,8 +21,8 @@ const WeatherWidget = lazy(async () => {
   return { default: module.WeatherWidget };
 });
 
-type ChartPoint = { time: string; value: number; id: string };
-type HistoryPoint = { time: string; value: number | null; timestamp: string | null; bucketStart: string | null };
+type ChartPoint = { time: string; value: number; min?: number; max?: number; range?: [number, number]; id: string };
+type HistoryPoint = { time: string; value: number | null; min?: number | null; max?: number | null; timestamp: string | null; bucketStart: string | null };
 type MetricMinMax = { min: number | undefined; max: number | undefined };
 type ChartRange = "12h" | "24h";
 
@@ -142,14 +142,19 @@ export default function App() {
             const filledValues = fillForward(rawValues);
             
             // Create a map to store the last occurrence of each hour
-            const hourMap = new Map<number, { time: string; value: number | null; originalIndex: number }>();
+            const hourMap = new Map<number, { time: string; value: number | null; min: number | null; max: number | null; originalIndex: number }>();
             
             times.forEach((time, index) => {
               const hour = parseInt(time.split(':')[0]);
+              const value = filledValues[index];
+              const min = historyItems[index].min;
+              const max = historyItems[index].max;
               // Always update with the latest occurrence of this hour
               hourMap.set(hour, {
                 time: time,
-                value: filledValues[index],
+                value,
+                min: typeof min === "number" && !Number.isNaN(min) ? min : value,
+                max: typeof max === "number" && !Number.isNaN(max) ? max : value,
                 originalIndex: index
               });
             });
@@ -159,21 +164,29 @@ export default function App() {
               .map(hour => {
                 const item = hourMap.get(hour);
                 if (item && item.value !== null) {
-                  return {
-                    hour,
-                    time: item.time,
-                    value: item.value,
-                    originalIndex: item.originalIndex
-                  };
-                }
+              return {
+                hour,
+                time: item.time,
+                value: item.value,
+                min: item.min,
+                max: item.max,
+                originalIndex: item.originalIndex
+              };
+            }
                 return null;
               })
               .filter(item => item !== null)
-              .map((item, finalIndex) => (({
-                time: item!.time,
-                value: item!.value as number,
-                id: `${prefix}-${finalIndex}-${item!.hour}`
-              })));
+          .map((item, finalIndex) => (({
+            time: item!.time,
+            value: item!.value as number,
+            min: item!.min ?? item!.value as number,
+            max: item!.max ?? item!.value as number,
+            range: [
+              item!.min ?? item!.value as number,
+              item!.max ?? item!.value as number,
+            ] as [number, number],
+            id: `${prefix}-${finalIndex}-${item!.hour}`
+          })));
             
             return result;
           };

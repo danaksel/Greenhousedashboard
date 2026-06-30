@@ -1,6 +1,6 @@
 export interface HistoryData {
-  temperature: Array<{ time: string; value: number | null; timestamp: string | null; bucketStart: string | null }>;
-  humidity: Array<{ time: string; value: number | null; timestamp: string | null; bucketStart: string | null }>;
+  temperature: Array<{ time: string; value: number | null; min?: number | null; max?: number | null; timestamp: string | null; bucketStart: string | null }>;
+  humidity: Array<{ time: string; value: number | null; min?: number | null; max?: number | null; timestamp: string | null; bucketStart: string | null }>;
 }
 
 export interface MetricStats {
