@@ -26,13 +26,17 @@ export default {
 
       if (url.pathname === "/api/latest" && request.method === "GET") {
         const latest = await getLatest(env);
-        const stats24h = await getStats24h(env);
-        return jsonResponse({ ok: true, data: { ...latest, stats24h } }, 200, corsHeaders);
+        return jsonResponse({ ok: true, data: latest }, 200, corsHeaders);
       }
 
       if (url.pathname === "/api/history" && request.method === "GET") {
         const history = await getHistory(env);
         return jsonResponse({ ok: true, data: history }, 200, corsHeaders);
+      }
+
+      if (url.pathname === "/api/stats24h" && request.method === "GET") {
+        const stats24h = await getStats24h(env);
+        return jsonResponse({ ok: true, data: stats24h }, 200, corsHeaders);
       }
 
       if (url.pathname === "/api/fan/on" && request.method === "POST") {

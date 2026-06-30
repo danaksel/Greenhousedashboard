@@ -52,6 +52,17 @@ export function TrendChart({ title, data, color, unit, darkMode = false, xAxisIn
   const tickColor = darkMode ? '#adbca2' : '#78716c';
   const tooltipBg = darkMode ? '#2d3a21' : 'white';
   const tooltipBorder = darkMode ? '#5d6d4e' : '#d6d3d1';
+
+  if (data.length === 0) {
+    return (
+      <Card className={`p-4 ${bgClass} backdrop-blur-sm shadow-lg border ${borderClass} transition-colors duration-300`}>
+        <h3 className={`text-sm mb-3 ${titleColor}`}>{title}</h3>
+        <div className={`flex h-[160px] items-center justify-center text-sm ${darkMode ? "text-white/45" : "text-stone-500"}`}>
+          Ingen historikk tilgjengelig
+        </div>
+      </Card>
+    );
+  }
   
   return (
     <Card className={`p-4 ${bgClass} backdrop-blur-sm shadow-lg border ${borderClass} transition-colors duration-300`}>

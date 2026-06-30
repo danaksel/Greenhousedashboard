@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { ChartSkeleton } from "./components/chart-skeleton";
-import { fetchLatestGreenhouseData, fetchGreenhouseHistory, fetchWeatherData, type WeatherData } from "./utils/api";
+import { fetchLatestGreenhouseData, fetchGreenhouseHistory, fetchGreenhouseStats24h, fetchWeatherData, type WeatherData } from "./utils/api";
 import { ImageWithFallback } from "./components/figma/ImageWithFallback";
 import { GreenhouseIcon } from "./components/greenhouse-icon";
 import { WeatherWidgetSkeleton } from "./components/weather-widget-skeleton";
@@ -45,6 +45,8 @@ export default function App() {
   const [temperatureMinMax, setTemperatureMinMax] = useState<MetricMinMax>({ min: undefined, max: undefined });
   const [humidityMinMax, setHumidityMinMax] = useState<MetricMinMax>({ min: undefined, max: undefined });
   const [loading, setLoading] = useState(true);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [weatherLoading, setWeatherLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
@@ -65,6 +67,8 @@ export default function App() {
         setRefreshing(true);
       } else {
         setLoading(true);
+        setHistoryLoading(true);
+        setWeatherLoading(true);
       }
       setError(null);
 
@@ -81,156 +85,180 @@ export default function App() {
       setFan(latest.fan ?? null);
       setFanUpdatedAt(latest.fanUpdatedAt ?? null);
       setHeating(latest.heating ?? null);
-      // Fetch historical data
-      const history = await fetchGreenhouseHistory();
-      
-      // Get current hour as the endpoint
-      const now = new Date();
-      const currentHour = now.getHours();
-      
-      // Generate list of hours to display for graph (every 2nd hour going back 12 hours)
-      const hoursToShow12: number[] = [];
-      for (let i = 0; i < 7; i++) { // 7 points * 2 hours = 12 hours span
-        const hour = (currentHour - (i * 2) + 24) % 24;
-        hoursToShow12.unshift(hour); // Add to beginning so oldest is first
-      }
+      setLoading(false);
 
-      const hoursToShow24: number[] = [];
-      for (let i = 0; i < 24; i++) {
-        const hour = (currentHour - i + 24) % 24;
-        hoursToShow24.unshift(hour);
-      }
-      
-      // Fill forward function: carry last known value forward, but keep leading nulls
-      const fillForward = (values: Array<number | null>): Array<number | null> => {
-        let lastKnown: number | null = null;
-        let seenFirstValue = false;
+      const historyPromise = (async () => {
+        try {
+          setHistoryLoading(true);
+          const [history, stats24h] = await Promise.all([
+            fetchGreenhouseHistory(),
+            fetchGreenhouseStats24h().catch((statsErr) => {
+              console.error('Failed to fetch 24h stats:', statsErr);
+              return null;
+            }),
+          ]);
 
-        return values.map((value) => {
-          if (typeof value === "number" && !Number.isNaN(value)) {
-            lastKnown = value;
-            seenFirstValue = true;
-            return value;
+          // Get current hour as the endpoint
+          const now = new Date();
+          const currentHour = now.getHours();
+          
+          // Generate list of hours to display for graph (every 2nd hour going back 12 hours)
+          const hoursToShow12: number[] = [];
+          for (let i = 0; i < 7; i++) { // 7 points * 2 hours = 12 hours span
+            const hour = (currentHour - (i * 2) + 24) % 24;
+            hoursToShow12.unshift(hour); // Add to beginning so oldest is first
           }
 
-          if (seenFirstValue && lastKnown !== null) {
-            return lastKnown;
+          const hoursToShow24: number[] = [];
+          for (let i = 0; i < 24; i++) {
+            const hour = (currentHour - i + 24) % 24;
+            hoursToShow24.unshift(hour);
           }
+          
+          // Fill forward function: carry last known value forward, but keep leading nulls
+          const fillForward = (values: Array<number | null>): Array<number | null> => {
+            let lastKnown: number | null = null;
+            let seenFirstValue = false;
 
-          return null;
-        });
-      };
+            return values.map((value) => {
+              if (typeof value === "number" && !Number.isNaN(value)) {
+                lastKnown = value;
+                seenFirstValue = true;
+                return value;
+              }
 
-      // Process data for a given metric
-      const processHistoryData = (historyItems: HistoryPoint[], prefix: string, hoursToShow: number[]) => {
-        const times = historyItems.map(item => item.time);
-        const rawValues = historyItems.map(item => item.value);
-        const filledValues = fillForward(rawValues);
-        
-        // Create a map to store the last occurrence of each hour
-        const hourMap = new Map<number, { time: string; value: number | null; originalIndex: number }>();
-        
-        times.forEach((time, index) => {
-          const hour = parseInt(time.split(':')[0]);
-          // Always update with the latest occurrence of this hour
-          hourMap.set(hour, {
-            time: time,
-            value: filledValues[index],
-            originalIndex: index
-          });
-        });
-        
-        // Build final data array using only the hours we want to show
-        const result = hoursToShow
-          .map(hour => {
-            const item = hourMap.get(hour);
-            if (item && item.value !== null) {
-              return {
-                hour,
-                time: item.time,
-                value: item.value,
-                originalIndex: item.originalIndex
-              };
+              if (seenFirstValue && lastKnown !== null) {
+                return lastKnown;
+              }
+
+              return null;
+            });
+          };
+
+          // Process data for a given metric
+          const processHistoryData = (historyItems: HistoryPoint[], prefix: string, hoursToShow: number[]) => {
+            const times = historyItems.map(item => item.time);
+            const rawValues = historyItems.map(item => item.value);
+            const filledValues = fillForward(rawValues);
+            
+            // Create a map to store the last occurrence of each hour
+            const hourMap = new Map<number, { time: string; value: number | null; originalIndex: number }>();
+            
+            times.forEach((time, index) => {
+              const hour = parseInt(time.split(':')[0]);
+              // Always update with the latest occurrence of this hour
+              hourMap.set(hour, {
+                time: time,
+                value: filledValues[index],
+                originalIndex: index
+              });
+            });
+            
+            // Build final data array using only the hours we want to show
+            const result = hoursToShow
+              .map(hour => {
+                const item = hourMap.get(hour);
+                if (item && item.value !== null) {
+                  return {
+                    hour,
+                    time: item.time,
+                    value: item.value,
+                    originalIndex: item.originalIndex
+                  };
+                }
+                return null;
+              })
+              .filter(item => item !== null)
+              .map((item, finalIndex) => (({
+                time: item!.time,
+                value: item!.value as number,
+                id: `${prefix}-${finalIndex}-${item!.hour}`
+              })));
+            
+            return result;
+          };
+
+          const getMinMaxForLast24Hours = (historyItems: HistoryPoint[], latestValue: number | null): MetricMinMax => {
+            const cutoff = now.getTime() - 24 * 60 * 60 * 1000;
+            const values = historyItems
+              .filter((item) => {
+                const timestamp = item.timestamp ?? item.bucketStart;
+                if (!timestamp) return true;
+
+                const time = new Date(timestamp).getTime();
+                return !Number.isNaN(time) && time >= cutoff;
+              })
+              .map((item) => item.value)
+              .filter((value): value is number => typeof value === "number" && !Number.isNaN(value));
+
+            if (typeof latestValue === "number" && !Number.isNaN(latestValue)) {
+              values.push(latestValue);
             }
-            return null;
-          })
-          .filter(item => item !== null)
-          .map((item, finalIndex) => (({
-            time: item!.time,
-            value: item!.value as number,
-            id: `${prefix}-${finalIndex}-${item!.hour}`
-          })));
-        
-        return result;
-      };
 
-      const getMinMaxForLast24Hours = (historyItems: HistoryPoint[], latestValue: number | null): MetricMinMax => {
-        const cutoff = now.getTime() - 24 * 60 * 60 * 1000;
-        const values = historyItems
-          .filter((item) => {
-            const timestamp = item.timestamp ?? item.bucketStart;
-            if (!timestamp) return true;
+            if (values.length === 0) return { min: undefined, max: undefined };
 
-            const time = new Date(timestamp).getTime();
-            return !Number.isNaN(time) && time >= cutoff;
-          })
-          .map((item) => item.value)
-          .filter((value): value is number => typeof value === "number" && !Number.isNaN(value));
+            return {
+              min: Math.min(...values),
+              max: Math.max(...values),
+            };
+          };
 
-        if (typeof latestValue === "number" && !Number.isNaN(latestValue)) {
-          values.push(latestValue);
+          const statsToMinMax = (stats?: { min: number | null; max: number | null }): MetricMinMax | null => {
+            if (!stats || typeof stats.min !== "number" || typeof stats.max !== "number") {
+              return null;
+            }
+
+            return {
+              min: stats.min,
+              max: stats.max,
+            };
+          };
+
+          // Transform temperature and humidity history data
+          const tempData12h = processHistoryData(history.temperature || [], 'temp12', hoursToShow12);
+          const humData12h = processHistoryData(history.humidity || [], 'hum12', hoursToShow12);
+          const tempData24h = processHistoryData(history.temperature || [], 'temp24', hoursToShow24);
+          const humData24h = processHistoryData(history.humidity || [], 'hum24', hoursToShow24);
+
+          setTemperatureData12h(tempData12h);
+          setHumidityData12h(humData12h);
+          setTemperatureData24h(tempData24h);
+          setHumidityData24h(humData24h);
+
+          setTemperatureMinMax(
+            statsToMinMax(stats24h?.temperature) ?? getMinMaxForLast24Hours(history.temperature || [], latest.temperature)
+          );
+          setHumidityMinMax(
+            statsToMinMax(stats24h?.humidity) ?? getMinMaxForLast24Hours(history.humidity || [], latest.humidity)
+          );
+        } catch (historyErr) {
+          console.error('Failed to fetch greenhouse history:', historyErr);
+        } finally {
+          setHistoryLoading(false);
         }
+      })();
 
-        if (values.length === 0) return { min: undefined, max: undefined };
-
-        return {
-          min: Math.min(...values),
-          max: Math.max(...values),
-        };
-      };
-
-      const statsToMinMax = (stats?: { min: number | null; max: number | null }): MetricMinMax | null => {
-        if (!stats || typeof stats.min !== "number" || typeof stats.max !== "number") {
-          return null;
+      const weatherPromise = (async () => {
+        try {
+          setWeatherLoading(true);
+          const weather = await fetchWeatherData();
+          console.log('Weather data fetched:', weather);
+          setWeatherData(weather);
+        } catch (weatherErr) {
+          console.error('Failed to fetch weather data:', weatherErr);
+          // Don't set error state for weather failures - just skip showing weather
+        } finally {
+          setWeatherLoading(false);
         }
+      })();
 
-        return {
-          min: stats.min,
-          max: stats.max,
-        };
-      };
-
-      // Transform temperature and humidity history data (for graphs - 12 hours)
-      const tempData12h = processHistoryData(history.temperature || [], 'temp12', hoursToShow12);
-      const humData12h = processHistoryData(history.humidity || [], 'hum12', hoursToShow12);
-      const tempData24h = processHistoryData(history.temperature || [], 'temp24', hoursToShow24);
-      const humData24h = processHistoryData(history.humidity || [], 'hum24', hoursToShow24);
-
-      setTemperatureData12h(tempData12h);
-      setHumidityData12h(humData12h);
-      setTemperatureData24h(tempData24h);
-      setHumidityData24h(humData24h);
-
-      setTemperatureMinMax(
-        statsToMinMax(latest.stats24h?.temperature) ?? getMinMaxForLast24Hours(history.temperature || [], latest.temperature)
-      );
-      setHumidityMinMax(
-        statsToMinMax(latest.stats24h?.humidity) ?? getMinMaxForLast24Hours(history.humidity || [], latest.humidity)
-      );
-
-      // Fetch weather data
-      try {
-        const weather = await fetchWeatherData();
-        console.log('Weather data fetched:', weather);
-        setWeatherData(weather);
-      } catch (weatherErr) {
-        console.error('Failed to fetch weather data:', weatherErr);
-        // Don't set error state for weather failures - just skip showing weather
-      }
+      await Promise.allSettled([historyPromise, weatherPromise]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load data");
     } finally {
       setLoading(false);
+      setHistoryLoading(false);
+      setWeatherLoading(false);
       setRefreshing(false);
     }
   };
@@ -507,7 +535,7 @@ export default function App() {
           />
           
           {/* Weather Widget Overlay */}
-          {loading ? (
+          {weatherLoading ? (
             <div className="absolute top-4 right-4 bottom-4">
               <WeatherWidgetSkeleton />
             </div>
@@ -556,7 +584,7 @@ export default function App() {
 
           {/* Trend Charts */}
           <div className="space-y-4">
-            {!loading && (
+            {!loading && !historyLoading && (
               <div className="flex items-center justify-between px-1">
                 <h2 className={`text-xs uppercase leading-none tracking-[0.04em] ${darkMode ? "text-white/45" : "text-stone-500"}`}>
                   Grafer
@@ -576,7 +604,7 @@ export default function App() {
                 </Select>
               </div>
             )}
-            {loading ? (
+            {loading || historyLoading ? (
               <ChartSkeleton darkMode={darkMode} />
             ) : (
               <Suspense fallback={<ChartSkeleton darkMode={darkMode} />}>
@@ -590,7 +618,7 @@ export default function App() {
                 />
               </Suspense>
             )}
-            {loading ? (
+            {loading || historyLoading ? (
               <ChartSkeleton darkMode={darkMode} />
             ) : (
               <Suspense fallback={<ChartSkeleton darkMode={darkMode} />}>

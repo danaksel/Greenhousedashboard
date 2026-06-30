@@ -8,6 +8,11 @@ export interface MetricStats {
   max: number | null;
 }
 
+export interface GreenhouseStats24h {
+  temperature?: MetricStats;
+  humidity?: MetricStats;
+}
+
 export interface LatestData {
   temperature: number;
   humidity: number;
@@ -23,10 +28,6 @@ export interface LatestData {
   fanUpdatedAt?: string;
   heating?: "on" | "off";
   heatingUpdatedAt?: string;
-  stats24h?: {
-    temperature?: MetricStats;
-    humidity?: MetricStats;
-  };
 }
 
 export interface WeatherData {
@@ -77,8 +78,24 @@ export async function fetchLatestGreenhouseData(): Promise<LatestData> {
     fanUpdatedAt: data.fanUpdatedAt,
     heating: data.heating,
     heatingUpdatedAt: data.heatingUpdatedAt,
-    stats24h: data.stats24h,
   };
+}
+
+export async function fetchGreenhouseStats24h(): Promise<GreenhouseStats24h> {
+  const res = await fetch(greenhouseApiUrl("/api/stats24h"), {
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    cache: "no-store"
+  });
+
+  if (!res.ok) {
+    throw new Error(`API error: ${res.status}`);
+  }
+
+  const json = await res.json();
+  return json.data || {};
 }
 
 export async function fetchGreenhouseHistory(): Promise<HistoryData> {
