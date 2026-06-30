@@ -8,14 +8,16 @@ import { thresholds } from "../config/thresholds";
 import { ClimateMetric } from "./components/climate-metric";
 import { ClimateMetricsSkeleton } from "./components/climate-metrics-skeleton";
 import { DeviceStatusRow } from "./components/device-status-row";
-import { ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, InfoIcon, MoonIcon, RefreshCwIcon, SunIcon, WifiOffIcon } from "./components/icons";
+import { ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, MoonIcon, RefreshCwIcon, SunIcon, WifiOffIcon } from "./components/icons";
 import { Carousel, CarouselContent, CarouselItem, type CarouselApi } from "./components/ui/carousel";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./components/ui/select";
 
-const TrendChart = lazy(async () => {
+const loadTrendChart = async () => {
   const module = await import("./components/trend-chart");
   return { default: module.TrendChart };
-});
+};
+
+const TrendChart = lazy(loadTrendChart);
 
 const WeatherWidget = lazy(async () => {
   const module = await import("./components/weather-widget");
@@ -59,8 +61,8 @@ export default function App() {
     return hour >= 20 || hour < 6;
   });
   const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const [aboutExpanded, setAboutExpanded] = useState(false);
   const [chartRange, setChartRange] = useState<ChartRange>("12h");
+  const [chartsExpanded, setChartsExpanded] = useState(false);
   const [chartCarouselApi, setChartCarouselApi] = useState<CarouselApi>();
   const [activeChartSlide, setActiveChartSlide] = useState(0);
 
@@ -375,6 +377,12 @@ export default function App() {
     };
   }, [chartCarouselApi]);
 
+  useEffect(() => {
+    if (!historyLoading) {
+      void loadTrendChart();
+    }
+  }, [historyLoading]);
+
   // Toggle dark mode
   const toggleDarkMode = () => {
     setDarkMode(prev => {
@@ -627,12 +635,23 @@ export default function App() {
           {!loading && <DeviceStatusRow items={statusItems} darkMode={darkMode} />}
 
           {/* Trend Charts */}
-          <div className="space-y-4">
-            {!loading && !historyLoading && (
-              <div className="flex items-center justify-between px-1">
-                <h2 className={`text-xs uppercase leading-none tracking-[0.04em] ${darkMode ? "text-white/45" : "text-stone-500"}`}>
-                  Grafer
-                </h2>
+          {!loading && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-3 px-1">
+                <button
+                  type="button"
+                  className={`flex min-h-9 items-center gap-2 text-xs uppercase leading-none tracking-[0.04em] transition-colors ${
+                    darkMode ? "text-white/45 hover:text-white/70" : "text-stone-500 hover:text-stone-700"
+                  }`}
+                  onClick={() => setChartsExpanded((expanded) => !expanded)}
+                  aria-expanded={chartsExpanded}
+                  aria-controls="chart-panel"
+                >
+                  <span>Grafer</span>
+                  <ChevronDownIcon
+                    className={`size-4 transition-transform duration-300 ${chartsExpanded ? "rotate-180" : "rotate-0"}`}
+                  />
+                </button>
                 <Select value={chartRange} onValueChange={(value) => setChartRange(value as ChartRange)}>
                   <SelectTrigger className={chartSelectTriggerClass} aria-label="Velg tidsrom for grafer">
                     <SelectValue />
@@ -647,277 +666,101 @@ export default function App() {
                   </SelectContent>
                 </Select>
               </div>
-            )}
-            {loading || historyLoading ? (
-              <ChartSkeleton darkMode={darkMode} />
-            ) : (
-              <Suspense fallback={<ChartSkeleton darkMode={darkMode} />}>
-                <div className="space-y-3">
-                  <Carousel
-                    setApi={setChartCarouselApi}
-                    opts={{ align: "start", containScroll: "trimSnaps" }}
-                    className="w-full"
-                    aria-label="Grafer for temperatur og luftfuktighet"
-                  >
-                    <CarouselContent className="ml-0 pb-5 pt-1">
-                      <CarouselItem className="px-3">
-                        <TrendChart
-                          title={`Temperatur ${chartRangeLabel}`}
-                          data={selectedTemperatureData}
-                          color="#d28c31"
-                          unit="°C"
-                          darkMode={darkMode}
-                          xAxisInterval={chartXAxisInterval}
-                        />
-                      </CarouselItem>
-                      <CarouselItem className="px-3">
-                        <TrendChart
-                          title={`Luftfuktighet ${chartRangeLabel}`}
-                          data={selectedHumidityData}
-                          color={darkMode ? "#8fbc5f" : "#5d7342"}
-                          unit="%"
-                          darkMode={darkMode}
-                          xAxisInterval={chartXAxisInterval}
-                        />
-                      </CarouselItem>
-                    </CarouselContent>
-                  </Carousel>
-                  <div className="flex items-center justify-center gap-3">
-                    <button
-                      type="button"
-                      className={chartNavButtonClass}
-                      onClick={() => chartCarouselApi?.scrollPrev()}
-                      disabled={!chartCarouselApi?.canScrollPrev()}
-                      aria-label="Vis forrige graf"
-                    >
-                      <ChevronLeftIcon className="size-4" />
-                    </button>
-                    <div className="flex items-center gap-1.5" aria-label="Valgt graf">
-                      {["Temperatur", "Luftfuktighet"].map((label, index) => (
-                        <button
-                          key={label}
-                          type="button"
-                          className={chartDotClass(activeChartSlide === index)}
-                          onClick={() => chartCarouselApi?.scrollTo(index)}
-                          aria-label={`Vis ${label.toLowerCase()}`}
-                          aria-current={activeChartSlide === index ? "true" : undefined}
-                        />
-                      ))}
-                    </div>
-                    <button
-                      type="button"
-                      className={chartNavButtonClass}
-                      onClick={() => chartCarouselApi?.scrollNext()}
-                      disabled={!chartCarouselApi?.canScrollNext()}
-                      aria-label="Vis neste graf"
-                    >
-                      <ChevronRightIcon className="size-4" />
-                    </button>
-                  </div>
-                </div>
-              </Suspense>
-            )}
-          </div>
 
-          {/* Footer with Last Updated and About Section */}
-          {lastUpdated && (
-            <div className="mt-6">
-              <p className={`text-xs text-center ${darkMode ? 'text-white/60' : 'text-gray-500'}`}>
-                Siste data fra drivhuset mottatt {lastUpdated.toLocaleDateString('nb-NO', { 
-                  day: '2-digit', 
-                  month: '2-digit', 
-                  year: 'numeric' 
-                })} {lastUpdated.toLocaleTimeString('nb-NO', { 
-                  hour: '2-digit', 
-                  minute: '2-digit' 
-                })}
-              </p>
-
-              {/* Collapsible About Section */}
-              <div className={`mt-4 rounded-lg overflow-hidden transition-colors ${darkMode ? 'bg-white/5' : 'bg-white/50'}`}>
-                <button
-                  onClick={() => setAboutExpanded(!aboutExpanded)}
-                  className={`w-full px-4 py-3 flex items-center justify-between ${darkMode ? 'hover:bg-white/10' : 'hover:bg-white/70'} transition-colors`}
-                >
-                  <div className="flex items-center gap-2">
-                    <InfoIcon className={`w-4 h-4 ${darkMode ? 'text-white/70' : 'text-gray-600'}`} />
-                    <span className={`text-sm font-medium ${darkMode ? 'text-white/80' : 'text-gray-700'}`}>
-                      Om prosjektet
-                    </span>
-                  </div>
-                  <div className={`transition-transform duration-300 ${aboutExpanded ? 'rotate-180' : 'rotate-0'}`}>
-                    <ChevronDownIcon className={`w-5 h-5 ${darkMode ? 'text-white/70' : 'text-gray-600'}`} />
-                  </div>
-                </button>
-
-                <div
-                  className={`grid overflow-hidden transition-[grid-template-rows,opacity] duration-300 ${
-                    aboutExpanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
-                  }`}
-                >
-                  <div className="overflow-hidden">
-                    <div className={`px-4 pb-4 text-sm ${darkMode ? 'text-white/70' : 'text-gray-700'} space-y-4`}>
-                        <p>
-                          Dette prosjektet er en liten edge-drevet <strong>IoT-løsning</strong> for å overvåke klimaet i et drivhus i sanntid. Systemet samler inn temperatur- og luftfuktighetsdata, styrer oppvarming ved behov, og publiserer dataene til en nettside via en lett skyarkitektur.
-                        </p>
-                        
-                        <p>
-                          Stacken består av <strong>Homey</strong>, <strong>Cloudflare Workers</strong>, <strong>Cloudflare KV</strong>, <strong>GitHub</strong> og <strong>Figma Make</strong>, kombinert med en enkel IoT-sensor i drivhuset.
-                        </p>
-                        
-                        <div>
-                          <p className={`font-semibold mb-2 ${darkMode ? 'text-[#8fbc5f]' : 'text-[#5d7342]'}`}>Arkitektur</p>
-                          <div className={`p-3 rounded-lg font-mono text-xs ${darkMode ? 'bg-black/20' : 'bg-white/50'} overflow-x-auto`}>
-                            <pre className={darkMode ? 'text-white/80' : 'text-gray-700'}>
-{`Mill Smartplug (drivhus)
-        │
-        │
-        ▼
-      Internet
-        │
-        ▼
-     Mill Cloud
-        │
-        ▼
-       Homey
-        │
-        │  (Homey Flow)
-        ▼
-   Cloudflare KV
-        │
-        ▼
- Cloudflare Worker API
-        │
-        ▼
-   Website (Figma Make)`}
-                            </pre>
+              <div
+                id="chart-panel"
+                className={`grid overflow-hidden transition-[grid-template-rows,opacity] duration-300 ${
+                  chartsExpanded ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+                }`}
+              >
+                <div className="min-h-0 overflow-hidden">
+                  {historyLoading ? (
+                    <ChartSkeleton darkMode={darkMode} />
+                  ) : (
+                    <Suspense fallback={<ChartSkeleton darkMode={darkMode} />}>
+                      <div className="space-y-3">
+                        <Carousel
+                          setApi={setChartCarouselApi}
+                          opts={{ align: "start", containScroll: "trimSnaps" }}
+                          className="w-full"
+                          aria-label="Grafer for temperatur og luftfuktighet"
+                        >
+                          <CarouselContent className="ml-0 pb-5 pt-1">
+                            <CarouselItem className="px-3">
+                              <TrendChart
+                                title={`Temperatur ${chartRangeLabel}`}
+                                data={selectedTemperatureData}
+                                color="#d28c31"
+                                unit="°C"
+                                darkMode={darkMode}
+                                xAxisInterval={chartXAxisInterval}
+                              />
+                            </CarouselItem>
+                            <CarouselItem className="px-3">
+                              <TrendChart
+                                title={`Luftfuktighet ${chartRangeLabel}`}
+                                data={selectedHumidityData}
+                                color={darkMode ? "#8fbc5f" : "#5d7342"}
+                                unit="%"
+                                darkMode={darkMode}
+                                xAxisInterval={chartXAxisInterval}
+                              />
+                            </CarouselItem>
+                          </CarouselContent>
+                        </Carousel>
+                        <div className="flex items-center justify-center gap-3">
+                          <button
+                            type="button"
+                            className={chartNavButtonClass}
+                            onClick={() => chartCarouselApi?.scrollPrev()}
+                            disabled={!chartCarouselApi?.canScrollPrev()}
+                            aria-label="Vis forrige graf"
+                          >
+                            <ChevronLeftIcon className="size-4" />
+                          </button>
+                          <div className="flex items-center gap-1.5" aria-label="Valgt graf">
+                            {["Temperatur", "Luftfuktighet"].map((label, index) => (
+                              <button
+                                key={label}
+                                type="button"
+                                className={chartDotClass(activeChartSlide === index)}
+                                onClick={() => chartCarouselApi?.scrollTo(index)}
+                                aria-label={`Vis ${label.toLowerCase()}`}
+                                aria-current={activeChartSlide === index ? "true" : undefined}
+                              />
+                            ))}
                           </div>
+                          <button
+                            type="button"
+                            className={chartNavButtonClass}
+                            onClick={() => chartCarouselApi?.scrollNext()}
+                            disabled={!chartCarouselApi?.canScrollNext()}
+                            aria-label="Vis neste graf"
+                          >
+                            <ChevronRightIcon className="size-4" />
+                          </button>
                         </div>
-                        
-                        <div>
-                          <p className={`font-semibold mb-2 ${darkMode ? 'text-[#8fbc5f]' : 'text-[#5d7342]'}`}>Hardware og nettverk</p>
-                          <p className="mb-2">
-                            I drivhuset står en <strong>Mill Smartplugg</strong> koblet til internett via en <strong>UniFi Mobile Router Ultra</strong>.
-                          </p>
-                          <p className="mb-2">Smartpluggen:</p>
-                          <ul className="list-disc list-inside ml-2 mb-2 space-y-1">
-                            <li>måler temperatur</li>
-                            <li>måler luftfuktighet</li>
-                            <li>kan styre en tilkoblet vifteovn</li>
-                            <li>rapporterer energiforbruket til ovnen</li>
-                          </ul>
-                          <p className="mb-2">
-                            En <strong>Homey</strong> smarthub fungerer som IoT-hub og mottar alle målinger.
-                          </p>
-                          <p>
-                            Smartpluggen og Homey befinner seg på ulike geografiske lokasjoner og separate nettverk, og kommuniserer via internett. Det er ikke nødvendig med VPN mellom nettverkene. Smartpluggen kommuniserer direkte med Mill sine skytjenester, og Homeys Mill-integrasjon kobler seg til samme tjeneste for å hente data.
-                          </p>
-                        </div>
-
-                        <div>
-                          <p className={`font-semibold mb-2 ${darkMode ? 'text-[#8fbc5f]' : 'text-[#5d7342]'}`}>Datainnsamling</p>
-                          <p className="mb-2">
-                            Når målinger i smartpluggen endrer seg, trigges en Homey Flow.
-                          </p>
-                          <p className="mb-2">Denne:</p>
-                          <ol className="list-decimal list-inside ml-2 mb-2 space-y-1">
-                            <li>leser de oppdaterte verdiene</li>
-                            <li>sender data til Cloudflare KV</li>
-                          </ol>
-                          <p>
-                            Cloudflare KV fungerer som enkel nøkkel-verdi database for siste målinger.
-                          </p>
-                        </div>
-
-                        <div>
-                          <p className={`font-semibold mb-2 ${darkMode ? 'text-[#8fbc5f]' : 'text-[#5d7342]'}`}>Backend</p>
-                          <p className="mb-2">
-                            En <strong>Cloudflare Worker</strong> fungerer som backend og eksponerer dataene via et enkelt API.
-                          </p>
-                          <p className="mb-2">API-et leverer blant annet:</p>
-                          <ul className="list-disc list-inside ml-2 mb-2 space-y-1">
-                            <li>temperatur</li>
-                            <li>luftfuktighet</li>
-                            <li>energiforbruk</li>
-                            <li>tidspunkt for siste oppdatering</li>
-                          </ul>
-                          <p>
-                            Siden API-et kjører på Cloudflare Edge, kan dataene hentes raskt fra hvor som helst.
-                          </p>
-                        </div>
-
-                        <div>
-                          <p className={`font-semibold mb-2 ${darkMode ? 'text-[#8fbc5f]' : 'text-[#5d7342]'}`}>Frontend</p>
-                          <p className="mb-2">
-                            Nettsiden er laget med <strong>Figma Make</strong>.
-                          </p>
-                          <p className="mb-2">Den:</p>
-                          <ul className="list-disc list-inside ml-2 mb-2 space-y-1">
-                            <li>henter data fra Worker-API-et</li>
-                            <li>viser målingene i sanntid</li>
-                            <li>oppdaterer visningen fortløpende</li>
-                          </ul>
-                          <p className="mb-2">Koden:</p>
-                          <ul className="list-disc list-inside ml-2 mb-2 space-y-1">
-                            <li>versjoneres i GitHub</li>
-                            <li>publiseres globalt via Cloudflare Workers</li>
-                          </ul>
-                          <p>
-                            Dette gir en svært lett og rask edge-basert hostingmodell.
-                          </p>
-                        </div>
-
-                        <div>
-                          <p className={`font-semibold mb-2 ${darkMode ? 'text-[#8fbc5f]' : 'text-[#5d7342]'}`}>Værintegrasjon</p>
-                          <p className="mb-2">
-                            For å gi kontekst til drivhusdataene hentes også værdata fra <strong>Yr.no</strong> sitt API.
-                          </p>
-                          <p className="mb-2">Dette gjør det mulig å sammenligne:</p>
-                          <ul className="list-disc list-inside ml-2 space-y-1">
-                            <li>temperatur i drivhuset</li>
-                            <li>temperatur utendørs</li>
-                            <li>luftfuktighet</li>
-                            <li>lokale værforhold</li>
-                          </ul>
-                        </div>
-
-                        <div>
-                          <p className={`font-semibold mb-2 ${darkMode ? 'text-[#8fbc5f]' : 'text-[#5d7342]'}`}>Varmestyring</p>
-                          <p className="mb-2">
-                            Tidlig i sesongen kan nettene være kalde i Norge.
-                          </p>
-                          <p className="mb-2">
-                            I denne perioden er en vifteovn koblet til smartpluggen.
-                          </p>
-                          <p className="mb-2">Homey kan automatisk:</p>
-                          <ul className="list-disc list-inside ml-2 space-y-1">
-                            <li>slå ovnen på når temperaturen blir for lav</li>
-                            <li>slå den av når ønsket temperatur er nådd</li>
-                          </ul>
-                        </div>
-
-                        <div>
-                          <p className={`font-semibold mb-2 ${darkMode ? 'text-[#8fbc5f]' : 'text-[#5d7342]'}`}>Varsling</p>
-                          <p className="mb-2">
-                            Systemet fungerer også som enkel IoT-monitor.
-                          </p>
-                          <p className="mb-2">Dersom temperatur eller luftfuktighet passerer definerte grenser:</p>
-                          <ul className="list-disc list-inside ml-2 mb-2 space-y-1">
-                            <li>trigges en Homey Flow</li>
-                            <li>brukeren får pushvarsel på telefon</li>
-                          </ul>
-                          <p>
-                            Dette gjør det mulig å reagere raskt dersom forholdene i drivhuset endrer seg.
-                          </p>
-                        </div>
-
-                        <p className={`pt-2 border-t text-sm ${darkMode ? 'border-white/10' : 'border-gray-200'}`}>
-                          Prosjektet er en liten, men effektiv IoT-stack bygget med edge-infrastruktur, sky-API-er, automatisering via Homey og en god dose vibe-coding. Resultatet er en løsning som gjør det mulig å følge klimaet i drivhuset i sanntid – fra hvor som helst.
-                        </p>
-                    </div>
-                  </div>
+                      </div>
+                    </Suspense>
+                  )}
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Footer with Last Updated */}
+          {lastUpdated && (
+            <div className="mt-4">
+              <p className={`text-xs text-center ${darkMode ? 'text-white/60' : 'text-gray-500'}`}>
+                Siste data fra drivhuset mottatt {lastUpdated.toLocaleDateString('nb-NO', {
+                  day: '2-digit',
+                  month: '2-digit',
+                  year: 'numeric'
+                })} {lastUpdated.toLocaleTimeString('nb-NO', {
+                  hour: '2-digit',
+                  minute: '2-digit'
+                })}
+              </p>
             </div>
           )}
         </div>
