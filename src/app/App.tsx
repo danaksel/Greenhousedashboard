@@ -8,7 +8,8 @@ import { thresholds } from "../config/thresholds";
 import { ClimateMetric } from "./components/climate-metric";
 import { ClimateMetricsSkeleton } from "./components/climate-metrics-skeleton";
 import { DeviceStatusRow } from "./components/device-status-row";
-import { ChevronDownIcon, InfoIcon, MoonIcon, RefreshCwIcon, SunIcon, WifiOffIcon } from "./components/icons";
+import { ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, InfoIcon, MoonIcon, RefreshCwIcon, SunIcon, WifiOffIcon } from "./components/icons";
+import { Carousel, CarouselContent, CarouselItem, type CarouselApi } from "./components/ui/carousel";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./components/ui/select";
 
 const TrendChart = lazy(async () => {
@@ -60,6 +61,8 @@ export default function App() {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [aboutExpanded, setAboutExpanded] = useState(false);
   const [chartRange, setChartRange] = useState<ChartRange>("12h");
+  const [chartCarouselApi, setChartCarouselApi] = useState<CarouselApi>();
+  const [activeChartSlide, setActiveChartSlide] = useState(0);
 
   const loadData = async (isRefresh = false) => {
     try {
@@ -355,6 +358,23 @@ export default function App() {
     };
   }, [darkMode]);
 
+  useEffect(() => {
+    if (!chartCarouselApi) return;
+
+    const updateActiveSlide = () => {
+      setActiveChartSlide(chartCarouselApi.selectedScrollSnap());
+    };
+
+    updateActiveSlide();
+    chartCarouselApi.on("select", updateActiveSlide);
+    chartCarouselApi.on("reInit", updateActiveSlide);
+
+    return () => {
+      chartCarouselApi.off("select", updateActiveSlide);
+      chartCarouselApi.off("reInit", updateActiveSlide);
+    };
+  }, [chartCarouselApi]);
+
   // Toggle dark mode
   const toggleDarkMode = () => {
     setDarkMode(prev => {
@@ -465,6 +485,17 @@ export default function App() {
   const chartSelectItemClass = darkMode
     ? "rounded-lg text-xs focus:bg-white/10 focus:text-white data-[state=checked]:text-[#d28c31]"
     : "rounded-lg text-xs focus:bg-[#e7ece0] focus:text-[#2d3a21] data-[state=checked]:text-[#5d7342]";
+  const chartNavButtonClass = darkMode
+    ? "grid size-8 place-items-center rounded-full border border-white/10 bg-white/8 text-white/70 transition hover:bg-white/14 hover:text-white disabled:opacity-30"
+    : "grid size-8 place-items-center rounded-full border border-[#cbd3c2] bg-white/70 text-[#4d5d3e] shadow-sm transition hover:bg-white disabled:opacity-35";
+  const chartDotClass = (active: boolean) =>
+    active
+      ? darkMode
+        ? "h-1.5 w-5 rounded-full bg-[#d28c31] transition-all"
+        : "h-1.5 w-5 rounded-full bg-[#5d7342] transition-all"
+      : darkMode
+        ? "h-1.5 w-1.5 rounded-full bg-white/25 transition-all"
+        : "h-1.5 w-1.5 rounded-full bg-[#9daa8f]/55 transition-all";
 
   return (
     <div className={`min-h-screen transition-colors duration-300 ${bgColor}`}>
@@ -621,28 +652,69 @@ export default function App() {
               <ChartSkeleton darkMode={darkMode} />
             ) : (
               <Suspense fallback={<ChartSkeleton darkMode={darkMode} />}>
-                <TrendChart
-                  title={`Temperatur ${chartRangeLabel}`}
-                  data={selectedTemperatureData}
-                  color="#d28c31"
-                  unit="°C"
-                  darkMode={darkMode}
-                  xAxisInterval={chartXAxisInterval}
-                />
-              </Suspense>
-            )}
-            {loading || historyLoading ? (
-              <ChartSkeleton darkMode={darkMode} />
-            ) : (
-              <Suspense fallback={<ChartSkeleton darkMode={darkMode} />}>
-                <TrendChart
-                  title={`Luftfuktighet ${chartRangeLabel}`}
-                  data={selectedHumidityData}
-                  color={darkMode ? "#8fbc5f" : "#5d7342"}
-                  unit="%"
-                  darkMode={darkMode}
-                  xAxisInterval={chartXAxisInterval}
-                />
+                <div className="space-y-3">
+                  <Carousel
+                    setApi={setChartCarouselApi}
+                    opts={{ align: "start", containScroll: "trimSnaps" }}
+                    className="w-full"
+                    aria-label="Grafer for temperatur og luftfuktighet"
+                  >
+                    <CarouselContent className="-ml-3">
+                      <CarouselItem className="pl-3">
+                        <TrendChart
+                          title={`Temperatur ${chartRangeLabel}`}
+                          data={selectedTemperatureData}
+                          color="#d28c31"
+                          unit="°C"
+                          darkMode={darkMode}
+                          xAxisInterval={chartXAxisInterval}
+                        />
+                      </CarouselItem>
+                      <CarouselItem className="pl-3">
+                        <TrendChart
+                          title={`Luftfuktighet ${chartRangeLabel}`}
+                          data={selectedHumidityData}
+                          color={darkMode ? "#8fbc5f" : "#5d7342"}
+                          unit="%"
+                          darkMode={darkMode}
+                          xAxisInterval={chartXAxisInterval}
+                        />
+                      </CarouselItem>
+                    </CarouselContent>
+                  </Carousel>
+                  <div className="flex items-center justify-center gap-3">
+                    <button
+                      type="button"
+                      className={chartNavButtonClass}
+                      onClick={() => chartCarouselApi?.scrollPrev()}
+                      disabled={!chartCarouselApi?.canScrollPrev()}
+                      aria-label="Vis forrige graf"
+                    >
+                      <ChevronLeftIcon className="size-4" />
+                    </button>
+                    <div className="flex items-center gap-1.5" aria-label="Valgt graf">
+                      {["Temperatur", "Luftfuktighet"].map((label, index) => (
+                        <button
+                          key={label}
+                          type="button"
+                          className={chartDotClass(activeChartSlide === index)}
+                          onClick={() => chartCarouselApi?.scrollTo(index)}
+                          aria-label={`Vis ${label.toLowerCase()}`}
+                          aria-current={activeChartSlide === index ? "true" : undefined}
+                        />
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      className={chartNavButtonClass}
+                      onClick={() => chartCarouselApi?.scrollNext()}
+                      disabled={!chartCarouselApi?.canScrollNext()}
+                      aria-label="Vis neste graf"
+                    >
+                      <ChevronRightIcon className="size-4" />
+                    </button>
+                  </div>
+                </div>
               </Suspense>
             )}
           </div>
