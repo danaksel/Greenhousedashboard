@@ -207,7 +207,9 @@ export function AdminPage() {
     }
   };
 
-  const selectedImages = images.filter((image) => image.slot === selectedSlot || image.slot === "general");
+  const selectedImages = images.filter(
+    (image) => (image.slot === selectedSlot || image.slot === "general") && image.format === selectedFormat
+  );
 
   return (
     <div className="min-h-screen bg-[#e8ede3] text-[#2d3a21]">
@@ -425,7 +427,9 @@ export function AdminPage() {
               {loading ? (
                 <div className="rounded-lg bg-[#f7f8f5] p-5 text-sm text-stone-500">Laster bilder</div>
               ) : selectedImages.length === 0 ? (
-                <div className="rounded-lg bg-[#f7f8f5] p-5 text-sm text-stone-500">Ingen bilder funnet for valgt område ennå.</div>
+                <div className="rounded-lg bg-[#f7f8f5] p-5 text-sm text-stone-500">
+                  Ingen {selectedFormat === "desktop" ? "desktopbilder" : "mobilbilder"} funnet for {config.headerImages[selectedSlot].label.toLowerCase()} ennå.
+                </div>
               ) : (
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                   {selectedImages.map((image) => (
