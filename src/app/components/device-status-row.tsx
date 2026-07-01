@@ -21,7 +21,7 @@ export function DeviceStatusRow({ items, darkMode = false, desktopCardLayout = f
   const labelColor = darkMode ? "text-white/45" : "text-stone-500";
   const labelClass = `text-[10px] uppercase tracking-[0.02em] leading-[1.15] whitespace-nowrap ${labelColor}`;
   const rowClass = desktopCardLayout
-    ? "mb-8 flex items-start justify-center gap-7 pt-2 md:mb-0 md:gap-10 md:pt-0"
+    ? "mb-8 flex items-start justify-center gap-7 pt-2 md:mb-0 md:gap-6 md:pt-0 xl:gap-10"
     : "mb-8 flex items-start justify-center gap-7 pt-2 md:mb-0 md:justify-start md:gap-6 md:pt-0";
 
   return (

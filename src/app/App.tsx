@@ -720,7 +720,7 @@ export default function App() {
                 {/* Hero Image */}
                 <div className="relative mb-6 h-[200px] w-full overflow-hidden md:mb-0 md:aspect-[3/1] md:h-auto md:rounded-2xl md:shadow-xl md:shadow-black/15">
                   <picture>
-                    <source media="(min-width: 1024px)" srcSet={heroDesktopImageSrc} />
+                    <source media="(min-width: 768px)" srcSet={heroDesktopImageSrc} />
                     <ImageWithFallback
                       src={heroMobileImageSrc}
                       alt="Drivhus" 
@@ -760,7 +760,7 @@ export default function App() {
                 ) : (
                   <div
                     key={`climate-${temperature}-${humidity}`}
-                    className="grid w-full grid-cols-2 gap-3 opacity-100 transition-opacity duration-300 sm:gap-4 md:gap-6"
+                    className="grid w-full grid-cols-2 gap-3 opacity-100 transition-opacity duration-300 sm:gap-4 xl:gap-6"
                   >
                     <ClimateMetric
                       label="Temperatur"
