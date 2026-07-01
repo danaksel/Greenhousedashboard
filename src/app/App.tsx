@@ -20,7 +20,7 @@ import { thresholds } from "../config/thresholds";
 import { ClimateMetric } from "./components/climate-metric";
 import { ClimateMetricsSkeleton } from "./components/climate-metrics-skeleton";
 import { DeviceStatusRow } from "./components/device-status-row";
-import { ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, MoonIcon, RefreshCwIcon, SunIcon, WifiOffIcon } from "./components/icons";
+import { AlertTriangleIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, MoonIcon, RefreshCwIcon, SunIcon, WifiOffIcon } from "./components/icons";
 import { Carousel, CarouselContent, CarouselItem, type CarouselApi } from "./components/ui/carousel";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./components/ui/select";
 
@@ -40,6 +40,16 @@ type ChartPoint = { time: string; value: number; min?: number; max?: number; ran
 type HistoryPoint = { time: string; value: number | null; min?: number | null; max?: number | null; timestamp: string | null; bucketStart: string | null };
 type MetricMinMax = { min: number | undefined; max: number | undefined };
 type ChartRange = "12h" | "24h";
+type TemperatureAlert = {
+  tone: "hot" | "cold";
+  color: string;
+  label: string;
+  reading: string;
+  comparisonLabel: string;
+  thresholdLabel: string;
+  action: string;
+  threshold: number;
+};
 
 function buildPreviewPath(data: ChartPoint[], width: number, height: number, padding: number) {
   const points = data.filter((point) => Number.isFinite(point.value));
@@ -653,6 +663,32 @@ export default function App() {
   const heroDesktopImageSrc = resolveGreenhouseAssetUrl(heroImageConfig.desktop);
   const customLogoSrc = siteConfigReady && siteConfig.branding.logo.url ? resolveGreenhouseAssetUrl(siteConfig.branding.logo.url) : "";
   const logoSize = siteConfig.branding.logo.size;
+  const temperatureAlert: TemperatureAlert | null =
+    temperature === null
+      ? null
+      : temperature > thresholds.temperature.max
+        ? {
+            tone: "hot",
+            color: "#C44747",
+            label: "Høy temperatur",
+            reading: `${temperature.toFixed(1)}°C`,
+            comparisonLabel: "er over anbefalt maksimum på",
+            thresholdLabel: `${thresholds.temperature.max}°C`,
+            action: "Sjekk dør, vinduer og vifte",
+            threshold: thresholds.temperature.max,
+          }
+        : temperature < thresholds.temperature.min
+          ? {
+              tone: "cold",
+              color: darkMode ? "#5190A1" : "#70ABB6",
+              label: "Lav temperatur",
+              reading: `${temperature.toFixed(1)}°C`,
+              comparisonLabel: "er under anbefalt minimum på",
+              thresholdLabel: `${thresholds.temperature.min}°C`,
+              action: "Sjekk dør, vinduer og varme",
+              threshold: thresholds.temperature.min,
+            }
+          : null;
   const statusItems = [
     {
       id: "door",
@@ -828,6 +864,35 @@ export default function App() {
                       className="h-full w-full object-cover object-center"
                     />
                   </picture>
+                  {temperatureAlert && (
+                    <div
+                      className="pointer-events-none absolute inset-0 opacity-45"
+                      style={{
+                        background: `linear-gradient(135deg, ${temperatureAlert.color}44 0%, transparent 42%, ${temperatureAlert.color}26 100%)`,
+                      }}
+                    />
+                  )}
+                  {temperatureAlert && (
+                    <div
+                      className="greenhouse-alert-ticker pointer-events-none absolute inset-x-0 bottom-0 z-20 overflow-hidden py-2 text-white"
+                      style={{ "--alert-color": temperatureAlert.color } as React.CSSProperties}
+                    >
+                      <div className="greenhouse-alert-ticker-track flex w-max whitespace-nowrap text-xs font-semibold uppercase tracking-[0.08em] md:text-sm">
+                        {[0, 1].map((group) => (
+                          <span key={group} className="flex items-center gap-6 pr-6">
+                            <AlertTriangleIcon className="h-4 w-4 shrink-0" />
+                            <span>{temperatureAlert.label.toUpperCase()}</span>
+                            <AlertTriangleIcon className="h-4 w-4 shrink-0" />
+                            <span>
+                              {temperatureAlert.reading} {temperatureAlert.comparisonLabel.toUpperCase()} {temperatureAlert.thresholdLabel}
+                            </span>
+                            <AlertTriangleIcon className="h-4 w-4 shrink-0" />
+                            <span>{temperatureAlert.action}</span>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   
                   {/* Weather Widget Overlay */}
                   {weatherLoading ? (
@@ -968,6 +1033,15 @@ export default function App() {
                                 unit="°C"
                                 darkMode={darkMode}
                                 xAxisInterval={chartXAxisInterval}
+                                thresholdLine={
+                                  temperatureAlert
+                                    ? {
+                                        value: temperatureAlert.threshold,
+                                        label: temperatureAlert.tone === "hot" ? "For varmt" : "For kaldt",
+                                        color: temperatureAlert.color,
+                                      }
+                                    : undefined
+                                }
                               />
                             </CarouselItem>
                             <CarouselItem className="px-3 md:min-w-0 md:px-0">

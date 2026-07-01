@@ -29,6 +29,15 @@ const statusLabels: Array<{ key: keyof SiteConfig["visibleStatuses"]; label: str
   { key: "window", label: "Vindu" },
 ];
 
+type AdminSection = "logo" | "visibility" | "metadata" | "header";
+
+const adminSections: Array<{ key: AdminSection; label: string }> = [
+  { key: "logo", label: "Logo" },
+  { key: "visibility", label: "Visning" },
+  { key: "metadata", label: "Metadata" },
+  { key: "header", label: "Headerbilde" },
+];
+
 function getActiveSlot(temperature: number | null | undefined): HeaderImageSlot {
   if (temperature == null) return "normal";
   if (temperature < 12) return "cold";
@@ -93,8 +102,10 @@ async function svgFileToPngFile(file: File, size: number, filename: string): Pro
 
 export function AdminPage() {
   const [config, setConfig] = useState<SiteConfig>(defaultSiteConfig);
+  const [savedConfigSnapshot, setSavedConfigSnapshot] = useState(() => JSON.stringify(defaultSiteConfig));
   const [images, setImages] = useState<AdminImage[]>([]);
   const [latest, setLatest] = useState<LatestData | null>(null);
+  const [activeSection, setActiveSection] = useState<AdminSection>("logo");
   const [selectedSlot, setSelectedSlot] = useState<HeaderImageSlot>("normal");
   const [selectedFormat, setSelectedFormat] = useState<HeaderImageFormat>("desktop");
   const selectedSlotRef = useRef<HeaderImageSlot>("normal");
@@ -108,6 +119,8 @@ export function AdminPage() {
   const [error, setError] = useState<string | null>(null);
 
   const activeSlot = useMemo(() => getActiveSlot(latest?.temperature), [latest?.temperature]);
+  const configSnapshot = useMemo(() => JSON.stringify(config), [config]);
+  const hasUnsavedChanges = !loading && configSnapshot !== savedConfigSnapshot;
 
   const loadAdminData = async () => {
     setError(null);
@@ -121,6 +134,7 @@ export function AdminPage() {
       ]);
 
       setConfig(siteConfig);
+      setSavedConfigSnapshot(JSON.stringify(siteConfig));
       setImages(r2Images);
       setLatest(latestData);
     } catch (err) {
@@ -133,6 +147,17 @@ export function AdminPage() {
   useEffect(() => {
     void loadAdminData();
   }, []);
+
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!hasUnsavedChanges) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [hasUnsavedChanges]);
 
   const updateConfig = (updater: (current: SiteConfig) => SiteConfig) => {
     setConfig((current) => updater(current));
@@ -201,6 +226,7 @@ export function AdminPage() {
     try {
       const saved = await saveAdminSiteConfig(config);
       setConfig(saved);
+      setSavedConfigSnapshot(JSON.stringify(saved));
       setMessage("Lagret");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Kunne ikke lagre");
@@ -361,6 +387,7 @@ export function AdminPage() {
     next.branding = {
       ...current.branding,
       logo: {
+        ...current.branding.logo,
         url:
           current.branding.logo.url === deletedUrl
             ? defaultSiteConfig.branding.logo.url
@@ -410,6 +437,17 @@ export function AdminPage() {
     }
   };
 
+  const handleReloadAdminData = () => {
+    if (
+      hasUnsavedChanges &&
+      !window.confirm("Du har ulagrede endringer. Vil du forkaste dem og laste admin-data på nytt?")
+    ) {
+      return;
+    }
+
+    void loadAdminData();
+  };
+
   const headerAssets = images.filter((image) => (image.assetType ?? "header") === "header");
   const selectedImages = headerAssets.filter(
     (image) => (image.slot === selectedSlot || image.slot === "general") && image.format === selectedFormat
@@ -419,7 +457,7 @@ export function AdminPage() {
 
   return (
     <div className="min-h-screen bg-[#e8ede3] text-[#2d3a21]">
-      <header className="sticky top-0 z-20 bg-[#5d7342] px-5 py-4 text-white shadow-lg shadow-black/10">
+      <header className="sticky top-0 z-30 bg-[#5d7342] px-5 py-4 text-white shadow-lg shadow-black/10">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
           <div>
             <h1 className="text-xl font-medium">Admin</h1>
@@ -428,10 +466,14 @@ export function AdminPage() {
           <button
             type="button"
             onClick={handleSave}
-            disabled={saving || loading}
-            className="rounded-full bg-white px-5 py-2 text-sm font-semibold text-[#2d3a21] shadow-sm transition hover:bg-white/90 disabled:opacity-50"
+            disabled={saving || loading || !hasUnsavedChanges}
+            className={`rounded-full px-5 py-2 text-sm font-semibold shadow-sm transition disabled:cursor-not-allowed ${
+              hasUnsavedChanges
+                ? "bg-red-600 text-white hover:bg-red-700 disabled:opacity-60"
+                : "bg-white/55 text-white/75 disabled:opacity-100"
+            }`}
           >
-            {saving ? "Lagrer" : "Lagre"}
+            {saving ? "Lagrer" : hasUnsavedChanges ? "Lagre endringer" : "Lagret"}
           </button>
         </div>
       </header>
@@ -443,104 +485,135 @@ export function AdminPage() {
           </div>
         )}
 
-        <section className="grid gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
+        <section className="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
+          <aside className="lg:sticky lg:top-28 lg:self-start">
+            <nav className="rounded-lg border border-[#d8ded1] bg-white/70 p-2 shadow-sm">
+              {adminSections.map((section) => {
+                const active = activeSection === section.key;
+
+                return (
+                  <button
+                    key={section.key}
+                    type="button"
+                    onClick={() => setActiveSection(section.key)}
+                    className={`flex w-full items-center justify-between rounded-md px-3 py-2.5 text-left text-sm font-semibold transition ${
+                      active
+                        ? "bg-[#5d7342] text-white"
+                        : "text-[#2d3a21] hover:bg-[#f7f8f5]"
+                    }`}
+                    aria-current={active ? "page" : undefined}
+                  >
+                    {section.label}
+                    {active && <span className="h-2 w-2 rounded-full bg-white" />}
+                  </button>
+                );
+              })}
+            </nav>
+          </aside>
+
           <div className="space-y-6">
-            <div className="rounded-lg border border-[#d8ded1] bg-white/70 p-5 shadow-sm">
-              <h2 className="mb-4 text-base font-semibold">Visning</h2>
-              <label className="flex items-center justify-between gap-4 py-2 text-sm">
-                <span>Headerbilde</span>
-                <input
-                  type="checkbox"
-                  checked={config.showHeroImage}
-                  onChange={(event) =>
-                    updateConfig((current) => ({ ...current, showHeroImage: event.target.checked }))
-                  }
-                  className="h-5 w-5 accent-[#5d7342]"
-                />
-              </label>
-              <div className="mt-4 border-t border-[#d8ded1] pt-4">
-                <p className="mb-2 text-xs uppercase tracking-[0.04em] text-stone-500">Statuser</p>
-                {statusLabels.map((status) => (
-                  <label key={status.key} className="flex items-center justify-between gap-4 py-2 text-sm">
-                    <span>{status.label}</span>
+            {activeSection === "visibility" && (
+              <>
+                <section className="rounded-lg border border-[#d8ded1] bg-white/70 p-5 shadow-sm">
+                  <h2 className="mb-4 text-base font-semibold">Visning</h2>
+                  <label className="flex items-center justify-between gap-4 py-2 text-sm">
+                    <span>Headerbilde</span>
                     <input
                       type="checkbox"
-                      checked={config.visibleStatuses[status.key]}
+                      checked={config.showHeroImage}
                       onChange={(event) =>
-                        updateConfig((current) => ({
-                          ...current,
-                          visibleStatuses: {
-                            ...current.visibleStatuses,
-                            [status.key]: event.target.checked,
-                          },
-                        }))
+                        updateConfig((current) => ({ ...current, showHeroImage: event.target.checked }))
                       }
                       className="h-5 w-5 accent-[#5d7342]"
                     />
                   </label>
-                ))}
-              </div>
-            </div>
+                  <div className="mt-4 border-t border-[#d8ded1] pt-4">
+                    <p className="mb-2 text-xs uppercase tracking-[0.04em] text-stone-500">Statuser</p>
+                    {statusLabels.map((status) => (
+                      <label key={status.key} className="flex items-center justify-between gap-4 py-2 text-sm">
+                        <span>{status.label}</span>
+                        <input
+                          type="checkbox"
+                          checked={config.visibleStatuses[status.key]}
+                          onChange={(event) =>
+                            updateConfig((current) => ({
+                              ...current,
+                              visibleStatuses: {
+                                ...current.visibleStatuses,
+                                [status.key]: event.target.checked,
+                              },
+                            }))
+                          }
+                          className="h-5 w-5 accent-[#5d7342]"
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </section>
 
-            <div className="rounded-lg border border-[#d8ded1] bg-white/70 p-5 shadow-sm">
-              <h2 className="mb-2 text-base font-semibold">Aktivt nå</h2>
-              <p className="text-sm text-stone-600">
-                {latest?.temperature == null
-                  ? "Ingen temperaturdata. Normalbildet brukes."
-                  : `${latest.temperature.toFixed(1)}°C bruker ${config.headerImages[activeSlot].label.toLowerCase()}.`}
-              </p>
-            </div>
+                <section className="rounded-lg border border-[#d8ded1] bg-white/70 p-5 shadow-sm">
+                  <h2 className="mb-2 text-base font-semibold">Aktivt nå</h2>
+                  <p className="text-sm text-stone-600">
+                    {latest?.temperature == null
+                      ? "Ingen temperaturdata. Normalbildet brukes."
+                      : `${latest.temperature.toFixed(1)}°C bruker ${config.headerImages[activeSlot].label.toLowerCase()}.`}
+                  </p>
+                </section>
+              </>
+            )}
 
-            <div className="rounded-lg border border-[#d8ded1] bg-white/70 p-5 shadow-sm">
-              <h2 className="mb-4 text-base font-semibold">Sidens metadata</h2>
-              <div className="space-y-4">
-                <label className="block text-sm">
-                  <span className="mb-1 block font-medium">Navn</span>
-                  <input
-                    type="text"
-                    value={config.branding.siteName}
-                    onChange={(event) => setBrandingText("siteName", event.target.value)}
-                    className="w-full rounded-lg border border-[#cbd3c2] bg-white px-3 py-2 text-sm"
-                    maxLength={80}
-                  />
-                </label>
-                <label className="block text-sm">
-                  <span className="mb-1 block font-medium">Kort navn</span>
-                  <input
-                    type="text"
-                    value={config.branding.shortName}
-                    onChange={(event) => setBrandingText("shortName", event.target.value)}
-                    className="w-full rounded-lg border border-[#cbd3c2] bg-white px-3 py-2 text-sm"
-                    maxLength={32}
-                  />
-                </label>
-                <label className="block text-sm">
-                  <span className="mb-1 block font-medium">Title</span>
-                  <input
-                    type="text"
-                    value={config.branding.title}
-                    onChange={(event) => setBrandingText("title", event.target.value)}
-                    className="w-full rounded-lg border border-[#cbd3c2] bg-white px-3 py-2 text-sm"
-                    maxLength={80}
-                  />
-                </label>
-                <label className="block text-sm">
-                  <span className="mb-1 block font-medium">Meta-beskrivelse</span>
-                  <textarea
-                    value={config.branding.description}
-                    onChange={(event) => setBrandingText("description", event.target.value)}
-                    className="min-h-24 w-full resize-y rounded-lg border border-[#cbd3c2] bg-white px-3 py-2 text-sm"
-                    maxLength={180}
-                  />
-                </label>
-                <p className="text-xs leading-relaxed text-stone-500">
-                  Navn og kort navn brukes i manifest. Title og meta-beskrivelse brukes i fanen og delingsmetadata.
-                </p>
-              </div>
-            </div>
-          </div>
+            {activeSection === "metadata" && (
+              <section className="rounded-lg border border-[#d8ded1] bg-white/70 p-5 shadow-sm">
+                <h2 className="mb-4 text-base font-semibold">Sidens metadata</h2>
+                <div className="space-y-4">
+                  <label className="block text-sm">
+                    <span className="mb-1 block font-medium">Navn</span>
+                    <input
+                      type="text"
+                      value={config.branding.siteName}
+                      onChange={(event) => setBrandingText("siteName", event.target.value)}
+                      className="w-full rounded-lg border border-[#cbd3c2] bg-white px-3 py-2 text-sm"
+                      maxLength={80}
+                    />
+                  </label>
+                  <label className="block text-sm">
+                    <span className="mb-1 block font-medium">Kort navn</span>
+                    <input
+                      type="text"
+                      value={config.branding.shortName}
+                      onChange={(event) => setBrandingText("shortName", event.target.value)}
+                      className="w-full rounded-lg border border-[#cbd3c2] bg-white px-3 py-2 text-sm"
+                      maxLength={32}
+                    />
+                  </label>
+                  <label className="block text-sm">
+                    <span className="mb-1 block font-medium">Title</span>
+                    <input
+                      type="text"
+                      value={config.branding.title}
+                      onChange={(event) => setBrandingText("title", event.target.value)}
+                      className="w-full rounded-lg border border-[#cbd3c2] bg-white px-3 py-2 text-sm"
+                      maxLength={80}
+                    />
+                  </label>
+                  <label className="block text-sm">
+                    <span className="mb-1 block font-medium">Meta-beskrivelse</span>
+                    <textarea
+                      value={config.branding.description}
+                      onChange={(event) => setBrandingText("description", event.target.value)}
+                      className="min-h-24 w-full resize-y rounded-lg border border-[#cbd3c2] bg-white px-3 py-2 text-sm"
+                      maxLength={180}
+                    />
+                  </label>
+                  <p className="text-xs leading-relaxed text-stone-500">
+                    Navn og kort navn brukes i manifest. Title og meta-beskrivelse brukes i fanen og delingsmetadata.
+                  </p>
+                </div>
+              </section>
+            )}
 
-          <div className="space-y-6">
+            {activeSection === "logo" && (
+              <>
             <section className="rounded-lg border border-[#d8ded1] bg-white/70 p-5 shadow-sm">
               <div className="mb-4">
                 <h2 className="text-base font-semibold">Logo</h2>
@@ -719,7 +792,6 @@ export function AdminPage() {
                 </div>
               </div>
             </section>
-
             <section className="rounded-lg border border-[#d8ded1] bg-white/70 p-5 shadow-sm">
               <div className="mb-4">
                 <h2 className="text-base font-semibold">Favicon</h2>
@@ -805,18 +877,22 @@ export function AdminPage() {
                 </div>
               </div>
             </section>
+              </>
+            )}
 
+            {activeSection === "header" && (
+              <>
             <section className="rounded-lg border border-[#d8ded1] bg-white/70 p-5 shadow-sm">
               <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h2 className="text-base font-semibold">Headerbilder</h2>
                   <p className="text-sm text-stone-600">Desktop bruker 3:1. Mobil bruker dagens headerflate, ca. 390:200.</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => void loadAdminData()}
-                  className="rounded-full border border-[#cbd3c2] px-4 py-2 text-sm text-[#4d5d3e] transition hover:bg-white"
-                >
+                  <button
+                    type="button"
+                    onClick={handleReloadAdminData}
+                    className="rounded-full border border-[#cbd3c2] px-4 py-2 text-sm text-[#4d5d3e] transition hover:bg-white"
+                  >
                   Oppdater
                 </button>
               </div>
@@ -1004,6 +1080,8 @@ export function AdminPage() {
                 </div>
               )}
             </section>
+              </>
+            )}
           </div>
         </section>
       </main>

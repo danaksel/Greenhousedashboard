@@ -1,5 +1,5 @@
 import { Card } from "./ui/card";
-import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Area, CartesianGrid, ComposedChart, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 type ChartPoint = {
   time: string;
@@ -17,6 +17,11 @@ interface TrendChartProps {
   unit: string;
   darkMode?: boolean;
   xAxisInterval?: number;
+  thresholdLine?: {
+    value: number;
+    label: string;
+    color: string;
+  };
 }
 
 export function TrendChart({
@@ -26,6 +31,7 @@ export function TrendChart({
   unit,
   darkMode = false,
   xAxisInterval = 0,
+  thresholdLine,
 }: TrendChartProps) {
   const bgClass = darkMode ? 'bg-[#2d3a21]' : 'bg-[#ebeee8]';
   const titleColor = darkMode ? 'text-white/80' : 'text-stone-700';
@@ -48,7 +54,10 @@ export function TrendChart({
   }
 
   // Calculate domain with whole numbers, including the true min/max range.
-  const values = data.flatMap((d) => [d.value, d.min ?? d.value, d.max ?? d.value]);
+  const values = [
+    ...data.flatMap((d) => [d.value, d.min ?? d.value, d.max ?? d.value]),
+    ...(thresholdLine ? [thresholdLine.value] : []),
+  ];
   const rawMin = Math.min(...values);
   const rawMax = Math.max(...values);
   
@@ -116,6 +125,22 @@ export function TrendChart({
               return [`${value}${unit}`, "verdi"];
             }}
           />
+          {thresholdLine && (
+            <ReferenceLine
+              y={thresholdLine.value}
+              stroke={thresholdLine.color}
+              strokeDasharray="5 5"
+              strokeOpacity={0.85}
+              ifOverflow="extendDomain"
+              label={{
+                value: thresholdLine.label,
+                position: "insideTopRight",
+                fill: thresholdLine.color,
+                fontSize: 11,
+                fontWeight: 600,
+              }}
+            />
+          )}
           <Area
             type="monotone"
             dataKey="range"

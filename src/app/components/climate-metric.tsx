@@ -29,7 +29,8 @@ export function ClimateMetric({
   if (isTemperatureMetric && value !== null) {
     if (value < 12) {
       normalValueColor = darkMode ? "#5190A1" : "#70ABB6";
-      valueColor = "";
+      warningPulseColor = darkMode ? "#8fd6e2" : "#9bc7cf";
+      valueColor = "greenhouse-warning-pulse";
     } else if (value < 23) {
       normalValueColor = darkMode ? "#D0DEC8" : "#495F3A";
       valueColor = "";
