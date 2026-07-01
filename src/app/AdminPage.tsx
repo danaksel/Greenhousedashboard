@@ -236,7 +236,21 @@ export function AdminPage() {
       branding: {
         ...current.branding,
         logo: {
+          ...current.branding.logo,
           url,
+        },
+      },
+    }));
+  };
+
+  const setLogoSize = (size: number) => {
+    updateConfig((current) => ({
+      ...current,
+      branding: {
+        ...current.branding,
+        logo: {
+          ...current.branding.logo,
+          size,
         },
       },
     }));
@@ -540,8 +554,10 @@ export function AdminPage() {
                   <div className="flex h-28 items-center justify-center rounded-lg bg-[#e8ede3]">
                     {config.branding.logo.url ? (
                       <span
-                        className="block h-16 w-16 bg-[#2d3a21]"
+                        className="block bg-[#2d3a21]"
                         style={{
+                          width: config.branding.logo.size,
+                          height: config.branding.logo.size,
                           WebkitMask: `url("${resolveGreenhouseAssetUrl(config.branding.logo.url)}") center / contain no-repeat`,
                           mask: `url("${resolveGreenhouseAssetUrl(config.branding.logo.url)}") center / contain no-repeat`,
                         }}
@@ -560,6 +576,35 @@ export function AdminPage() {
                   >
                     Bruk standardlogo
                   </button>
+                  <div className="mt-4 border-t border-[#d8ded1] pt-4">
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <label htmlFor="logo-size" className="text-sm font-semibold">
+                        Logostørrelse
+                      </label>
+                      <span className="text-xs text-stone-500">{config.branding.logo.size}px</span>
+                    </div>
+                    <input
+                      id="logo-size"
+                      type="range"
+                      min={20}
+                      max={72}
+                      step={1}
+                      value={config.branding.logo.size}
+                      onChange={(event) => setLogoSize(Number(event.target.value))}
+                      className="w-full accent-[#5d7342]"
+                    />
+                    <div className="mt-1 flex justify-between text-[11px] text-stone-500">
+                      <span>20px</span>
+                      <span>72px</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setLogoSize(defaultSiteConfig.branding.logo.size)}
+                      className="mt-3 rounded-full border border-[#cbd3c2] px-3 py-1.5 text-xs font-semibold text-[#4d5d3e]"
+                    >
+                      Standard størrelse
+                    </button>
+                  </div>
                 </div>
 
                 <div className="space-y-4">

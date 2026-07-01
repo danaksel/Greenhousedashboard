@@ -155,6 +155,7 @@ const DEFAULT_SITE_CONFIG = {
     },
     logo: {
       url: "",
+      size: 36,
     },
     favicon: {
       svg: "/favicon.svg",
@@ -444,6 +445,7 @@ function normalizeSiteConfig(config) {
       },
       logo: {
         url: normalizeImageReference(logo.url, DEFAULT_SITE_CONFIG.branding.logo.url),
+        size: normalizeNumber(logo.size, DEFAULT_SITE_CONFIG.branding.logo.size, 20, 72),
       },
       favicon: {
         svg: normalizeImageReference(favicon.svg, DEFAULT_SITE_CONFIG.branding.favicon.svg),
@@ -482,6 +484,12 @@ function normalizeImageReference(value, fallback) {
 function normalizeText(value, fallback, maxLength) {
   const raw = String(value || "").replace(/\s+/g, " ").trim();
   return raw ? raw.slice(0, maxLength) : fallback;
+}
+
+function normalizeNumber(value, fallback, min, max) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.min(Math.max(Math.round(number), min), max);
 }
 
 function isAllowedImageKey(key) {

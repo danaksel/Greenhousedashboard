@@ -81,6 +81,7 @@ export interface SiteConfig {
     };
     logo: {
       url: string;
+      size: number;
     };
     favicon: {
       svg: string;
@@ -165,6 +166,7 @@ export const defaultSiteConfig: SiteConfig = {
     },
     logo: {
       url: "",
+      size: 36,
     },
     favicon: {
       svg: "/favicon.svg",
@@ -230,6 +232,10 @@ function normalizeSiteConfig(data: Partial<SiteConfig> | null | undefined): Site
       },
       logo: {
         url: typeof logo.url === "string" ? logo.url : defaultSiteConfig.branding.logo.url,
+        size:
+          typeof logo.size === "number" && Number.isFinite(logo.size)
+            ? Math.min(Math.max(Math.round(logo.size), 20), 72)
+            : defaultSiteConfig.branding.logo.size,
       },
       favicon: {
         svg: typeof favicon.svg === "string" && favicon.svg ? favicon.svg : defaultSiteConfig.branding.favicon.svg,

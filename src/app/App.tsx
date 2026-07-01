@@ -164,6 +164,7 @@ export default function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
   const [siteConfig, setSiteConfig] = useState<SiteConfig>(defaultSiteConfig);
+  const [siteConfigReady, setSiteConfigReady] = useState(false);
   const [darkMode, setDarkMode] = useState(() => {
     const saved = localStorage.getItem("darkMode");
     if (saved !== null) return saved === "true";
@@ -452,6 +453,8 @@ export default function App() {
   }, [darkMode]);
 
   useEffect(() => {
+    if (!siteConfigReady) return;
+
     const setHeadLink = (selector: string, attributes: Record<string, string>) => {
       let link = document.querySelector(selector) as HTMLLinkElement | null;
       if (!link) {
@@ -494,9 +497,11 @@ export default function App() {
       rel: "manifest",
       href: resolveGreenhouseAssetUrl("/manifest.webmanifest"),
     });
-  }, [siteConfig.branding.favicon]);
+  }, [siteConfig.branding.favicon, siteConfigReady]);
 
   useEffect(() => {
+    if (!siteConfigReady) return;
+
     const setMeta = (selector: string, attributes: Record<string, string>) => {
       let meta = document.querySelector(selector) as HTMLMetaElement | null;
       if (!meta) {
@@ -526,17 +531,21 @@ export default function App() {
       property: "og:description",
       content: siteConfig.branding.description,
     });
-  }, [siteConfig.branding.description, siteConfig.branding.shortName, siteConfig.branding.siteName, siteConfig.branding.title]);
+  }, [siteConfig.branding.description, siteConfig.branding.shortName, siteConfig.branding.siteName, siteConfig.branding.title, siteConfigReady]);
 
   useEffect(() => {
     let cancelled = false;
 
     fetchSiteConfig()
       .then((config) => {
-        if (!cancelled) setSiteConfig(config);
+        if (!cancelled) {
+          setSiteConfig(config);
+          setSiteConfigReady(true);
+        }
       })
       .catch((configErr) => {
         console.error("Failed to fetch site config:", configErr);
+        if (!cancelled) setSiteConfigReady(true);
       });
 
     return () => {
@@ -642,7 +651,8 @@ export default function App() {
   const heroImageConfig = siteConfig.headerImages[heroImageSlot] ?? defaultSiteConfig.headerImages[heroImageSlot];
   const heroMobileImageSrc = resolveGreenhouseAssetUrl(heroImageConfig.mobile);
   const heroDesktopImageSrc = resolveGreenhouseAssetUrl(heroImageConfig.desktop);
-  const customLogoSrc = siteConfig.branding.logo.url ? resolveGreenhouseAssetUrl(siteConfig.branding.logo.url) : "";
+  const customLogoSrc = siteConfigReady && siteConfig.branding.logo.url ? resolveGreenhouseAssetUrl(siteConfig.branding.logo.url) : "";
+  const logoSize = siteConfig.branding.logo.size;
   const statusItems = [
     {
       id: "door",
@@ -675,7 +685,9 @@ export default function App() {
       tooltip: `${safeWindowCount > 0 ? "Åpnet" : "Lukket"} ${formatStatusTimestamp(windowUpdatedAt) ?? ""}`.trim(),
     },
   ];
-  const visibleStatusItems = statusItems.filter((item) => siteConfig.visibleStatuses[item.id as keyof SiteConfig["visibleStatuses"]]);
+  const visibleStatusItems = siteConfigReady
+    ? statusItems.filter((item) => siteConfig.visibleStatuses[item.id as keyof SiteConfig["visibleStatuses"]])
+    : [];
   const hasVisibleStatuses = visibleStatusItems.length > 0;
   const selectedTemperatureData = chartRange === "12h" ? temperatureData12h : temperatureData24h;
   const selectedHumidityData = chartRange === "12h" ? humidityData12h : humidityData24h;
@@ -727,25 +739,34 @@ export default function App() {
         <div className="sticky top-0 z-30 px-4 py-4 md:px-8 md:py-5">
           <div className="flex items-center justify-between gap-5">
             <div className="flex items-center gap-3">
-              {customLogoSrc ? (
-                <span
-                  className={`block h-9 w-9 md:h-[22px] md:w-[22px] ${darkMode ? "bg-[#e8ede3]" : "bg-[#2d3a21]"}`}
-                  style={{
-                    WebkitMask: `url("${customLogoSrc}") center / contain no-repeat`,
-                    mask: `url("${customLogoSrc}") center / contain no-repeat`,
-                  }}
-                  aria-hidden="true"
-                />
-              ) : (
-                <GreenhouseIcon className={`h-9 w-9 md:h-[22px] md:w-[22px] ${headerTextClass}`} />
-              )}
-              {siteConfig.branding.logoText.visible && (
-                <h1
-                  className={`text-xl ${headerTextClass}`}
-                  style={{ fontFamily: `'${siteConfig.branding.logoText.font}', serif`, fontWeight: 400 }}
-                >
-                  {siteConfig.branding.logoText.text}
-                </h1>
+              {siteConfigReady && (
+                <>
+                  {customLogoSrc ? (
+                    <span
+                      className={`block shrink-0 ${darkMode ? "bg-[#e8ede3]" : "bg-[#2d3a21]"}`}
+                      style={{
+                        width: logoSize,
+                        height: logoSize,
+                        WebkitMask: `url("${customLogoSrc}") center / contain no-repeat`,
+                        mask: `url("${customLogoSrc}") center / contain no-repeat`,
+                      }}
+                      aria-hidden="true"
+                    />
+                  ) : (
+                    <GreenhouseIcon
+                      className={`shrink-0 ${headerTextClass}`}
+                      style={{ width: logoSize, height: logoSize }}
+                    />
+                  )}
+                  {siteConfig.branding.logoText.visible && (
+                    <h1
+                      className={`text-xl ${headerTextClass}`}
+                      style={{ fontFamily: `'${siteConfig.branding.logoText.font}', serif`, fontWeight: 400 }}
+                    >
+                      {siteConfig.branding.logoText.text}
+                    </h1>
+                  )}
+                </>
               )}
             </div>
             <div className="flex items-center gap-2">
@@ -753,7 +774,7 @@ export default function App() {
               <button
                 onClick={() => loadData(true)}
                 disabled={refreshing}
-                className={`rounded-full p-2 transition-colors disabled:opacity-50 ${headerButtonClass}`}
+                className={`rounded-full p-2 transition-colors disabled:opacity-50 md:hidden ${headerButtonClass}`}
                 aria-label="Oppdater data"
               >
                 <RefreshCwIcon className={`h-5 w-5 ${headerTextClass} ${refreshing ? 'animate-spin' : ''}`} />
@@ -795,7 +816,7 @@ export default function App() {
 
         <main className="md:px-8 md:py-8">
           <div className="md:space-y-8">
-            {siteConfig.showHeroImage && (
+            {siteConfigReady && siteConfig.showHeroImage && (
               <section>
                 {/* Hero Image */}
                 <div className="relative mb-6 h-[200px] w-full overflow-hidden md:mb-0 md:aspect-[3/1] md:h-auto md:rounded-2xl md:shadow-xl md:shadow-black/15">
@@ -826,7 +847,7 @@ export default function App() {
 
             <section
               className={`px-4 pb-6 md:grid md:gap-8 md:px-0 md:pb-0 md:pt-0 ${
-                siteConfig.showHeroImage ? "" : "pt-5"
+                siteConfigReady && !siteConfig.showHeroImage ? "pt-5" : ""
               } ${hasVisibleStatuses ? "md:grid-cols-2" : "md:grid-cols-1"}`}
             >
               {/* Climate Metrics */}
