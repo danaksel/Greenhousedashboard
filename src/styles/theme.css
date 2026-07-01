@@ -126,7 +126,13 @@
 
   body {
     @apply bg-background text-foreground;
-    background-color: #2d3a21;
+    background-color: #e8ede3;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    body {
+      background-color: #2d3a21;
+    }
   }
 
   /**

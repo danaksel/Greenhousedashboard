@@ -5,11 +5,24 @@
       <meta charset="UTF-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1.0" />
       <meta name="description" content="Live dashboard for Kristins drivhus." />
-      <meta name="theme-color" content="#2d3a21" />
+      <meta name="theme-color" content="#e8ede3" />
       <meta name="color-scheme" content="light dark" />
       <meta name="apple-mobile-web-app-capable" content="yes" />
-      <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+      <meta name="apple-mobile-web-app-status-bar-style" content="default" />
       <meta name="apple-mobile-web-app-title" content="Kristins drivhus" />
+      <script>
+        (() => {
+          try {
+            const storedMode = localStorage.getItem("darkMode");
+            const hour = new Date().getHours();
+            const isDark = storedMode === null ? hour >= 20 || hour < 6 : storedMode === "true";
+            document.querySelector('meta[name="theme-color"]')?.setAttribute("content", isDark ? "#2d3a21" : "#e8ede3");
+            document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]')?.setAttribute("content", isDark ? "black-translucent" : "default");
+          } catch {
+            document.querySelector('meta[name="theme-color"]')?.setAttribute("content", "#2d3a21");
+          }
+        })();
+      </script>
       <meta property="og:title" content="Kristins drivhus" />
       <meta property="og:description" content="Live dashboard for Kristins drivhus." />
       <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -19,10 +32,10 @@
       <link rel="apple-touch-icon" href="/apple-touch-icon.svg" />
       <link rel="manifest" href="/manifest.webmanifest" />
       <title>Kristins drivhus</title>
-      <script type="module" crossorigin src="/assets/index-Dp6Carxc.js"></script>
+      <script type="module" crossorigin src="/assets/index-CuVVIL7k.js"></script>
       <link rel="modulepreload" crossorigin href="/assets/vendor-D-vP2mOg.js">
       <link rel="modulepreload" crossorigin href="/assets/radix-D0NIdAny.js">
-      <link rel="stylesheet" crossorigin href="/assets/index-BNvaGDR3.css">
+      <link rel="stylesheet" crossorigin href="/assets/index-BpNX0nzg.css">
     </head>
 
     <body>

@@ -450,7 +450,7 @@ export default function App() {
       metaThemeColor.setAttribute('name', 'theme-color');
       document.head.appendChild(metaThemeColor);
     }
-    metaThemeColor.setAttribute('content', '#2d3a21');
+    metaThemeColor.setAttribute('content', darkMode ? '#2d3a21' : '#e8ede3');
 
     // Set apple-mobile-web-app-status-bar-style
     let appleStatusBar = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
@@ -459,7 +459,7 @@ export default function App() {
       appleStatusBar.setAttribute('name', 'apple-mobile-web-app-status-bar-style');
       document.head.appendChild(appleStatusBar);
     }
-    appleStatusBar.setAttribute('content', 'black-translucent');
+    appleStatusBar.setAttribute('content', darkMode ? 'black-translucent' : 'default');
   }, [darkMode]);
 
   useEffect(() => {
@@ -872,7 +872,7 @@ export default function App() {
             {siteConfigReady && siteConfig.showHeroImage && (
               <section>
                 {/* Hero Image */}
-                <div className={`relative h-[200px] w-full overflow-hidden md:mb-0 md:aspect-[3/1] md:h-auto md:rounded-2xl md:shadow-xl md:shadow-black/15 ${temperatureAlert ? "mb-0" : "mb-6"}`}>
+                <div className={`relative h-[200px] w-full overflow-hidden md:mb-0 md:aspect-[3/1] md:h-auto md:rounded-2xl ${temperatureAlert ? "mb-0" : "mb-6"}`}>
                   <picture>
                     <source media="(min-width: 768px)" srcSet={heroDesktopImageSrc} />
                     <ImageWithFallback
