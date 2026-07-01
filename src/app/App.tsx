@@ -567,6 +567,10 @@ export default function App() {
   };
 
   const bgColor = darkMode ? 'bg-[#2d3a21]' : 'bg-[#e8ede3]';
+  const headerTextClass = darkMode ? "text-[#e8ede3]" : "text-[#2d3a21]";
+  const headerButtonClass = darkMode
+    ? "bg-[#e8ede3]/12 hover:bg-[#e8ede3]/18"
+    : "bg-[#2d3a21]/10 hover:bg-[#2d3a21]/15";
   const safeWindowCount = Math.min(Math.max(windowCount ?? 0, 0), 3);
   const heroImageSlot: HeaderImageSlot =
     temperature === null
@@ -662,32 +666,32 @@ export default function App() {
         />
 
         {/* Header with Logo, Title, and Controls */}
-        <div className="sticky top-0 z-30 bg-[#5d7342] px-4 py-4 md:rounded-b-2xl md:px-8 md:py-5 md:shadow-lg md:shadow-black/10">
+        <div className="sticky top-0 z-30 px-4 py-4 md:px-8 md:py-5">
           <div className="flex items-center justify-between gap-5">
             <div className="flex items-center gap-3">
-              <GreenhouseIcon className="h-9 w-9 text-white md:h-[22px] md:w-[22px]" />
-              <h1 className="text-xl text-white" style={{ fontFamily: "'Cinzel Decorative', serif", fontWeight: 400 }}>Kristins drivhus</h1>
+              <GreenhouseIcon className={`h-9 w-9 md:h-[22px] md:w-[22px] ${headerTextClass}`} />
+              <h1 className={`text-xl ${headerTextClass}`} style={{ fontFamily: "'Cinzel Decorative', serif", fontWeight: 400 }}>Kristins drivhus</h1>
             </div>
             <div className="flex items-center gap-2">
               {/* Refresh Button */}
               <button
                 onClick={() => loadData(true)}
                 disabled={refreshing}
-                className="p-2 rounded-full bg-white/20 hover:bg-white/30 transition-colors disabled:opacity-50"
+                className={`rounded-full p-2 transition-colors disabled:opacity-50 ${headerButtonClass}`}
                 aria-label="Oppdater data"
               >
-                <RefreshCwIcon className={`w-5 h-5 text-white ${refreshing ? 'animate-spin' : ''}`} />
+                <RefreshCwIcon className={`h-5 w-5 ${headerTextClass} ${refreshing ? 'animate-spin' : ''}`} />
               </button>
               
               {/* Dark Mode Slider */}
               <button
                 onClick={toggleDarkMode}
-                className="relative w-16 h-8 rounded-full bg-white/20 hover:bg-white/30 transition-colors p-1"
+                className={`relative h-8 w-16 rounded-full p-1 transition-colors ${headerButtonClass}`}
                 aria-label="Bytt modus"
               >
                 <div className="flex items-center justify-between px-1 h-full">
-                  <SunIcon className="w-4 h-4 text-white" />
-                  <MoonIcon className="w-4 h-4 text-white" />
+                  <SunIcon className={`h-4 w-4 ${headerTextClass}`} />
+                  <MoonIcon className={`h-4 w-4 ${headerTextClass}`} />
                 </div>
                 <div
                   className={`absolute top-1 left-1 h-6 w-6 rounded-full bg-white shadow-md transition-transform duration-300 ${
