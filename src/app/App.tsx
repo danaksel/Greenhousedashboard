@@ -739,7 +739,14 @@ export default function App() {
               ) : (
                 <GreenhouseIcon className={`h-9 w-9 md:h-[22px] md:w-[22px] ${headerTextClass}`} />
               )}
-              <h1 className={`text-xl ${headerTextClass}`} style={{ fontFamily: "'Cinzel Decorative', serif", fontWeight: 400 }}>Kristins drivhus</h1>
+              {siteConfig.branding.logoText.visible && (
+                <h1
+                  className={`text-xl ${headerTextClass}`}
+                  style={{ fontFamily: `'${siteConfig.branding.logoText.font}', serif`, fontWeight: 400 }}
+                >
+                  {siteConfig.branding.logoText.text}
+                </h1>
+              )}
             </div>
             <div className="flex items-center gap-2">
               {/* Refresh Button */}
@@ -928,7 +935,7 @@ export default function App() {
                         <Carousel
                           setApi={setChartCarouselApi}
                           opts={{ align: "start", containScroll: "trimSnaps" }}
-                          className="w-full md:pointer-events-none"
+                          className="w-full"
                           aria-label="Grafer for temperatur og luftfuktighet"
                         >
                           <CarouselContent className="ml-0 pb-5 pt-1 md:grid md:grid-cols-2 md:gap-4 md:pb-0">

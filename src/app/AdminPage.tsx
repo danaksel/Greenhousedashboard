@@ -5,6 +5,7 @@ import {
   fetchAdminImages,
   fetchAdminSiteConfig,
   fetchLatestGreenhouseData,
+  logoFontOptions,
   resolveGreenhouseAssetUrl,
   saveAdminSiteConfig,
   uploadAdminAsset,
@@ -157,6 +158,19 @@ export function AdminPage() {
       branding: {
         ...current.branding,
         [key]: value,
+      },
+    }));
+  };
+
+  const updateLogoText = (updates: Partial<SiteConfig["branding"]["logoText"]>) => {
+    updateConfig((current) => ({
+      ...current,
+      branding: {
+        ...current.branding,
+        logoText: {
+          ...current.branding.logoText,
+          ...updates,
+        },
       },
     }));
   };
@@ -549,6 +563,56 @@ export function AdminPage() {
                 </div>
 
                 <div className="space-y-4">
+                  <div className="rounded-lg border border-[#d8ded1] bg-[#f7f8f5] p-4">
+                    <div className="mb-4 flex items-center justify-between gap-4">
+                      <div>
+                        <h3 className="text-sm font-semibold">Tekst ved logo</h3>
+                        <p className="text-xs text-stone-500">Vises til høyre for logomark i toppmenyen.</p>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={config.branding.logoText.visible}
+                        onChange={(event) => updateLogoText({ visible: event.target.checked })}
+                        className="h-5 w-5 accent-[#5d7342]"
+                      />
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <label className="block text-sm">
+                        <span className="mb-1 block font-medium">Tekst</span>
+                        <input
+                          type="text"
+                          value={config.branding.logoText.text}
+                          onChange={(event) => updateLogoText({ text: event.target.value })}
+                          className="w-full rounded-lg border border-[#cbd3c2] bg-white px-3 py-2 text-sm"
+                          maxLength={48}
+                        />
+                      </label>
+                      <label className="block text-sm">
+                        <span className="mb-1 block font-medium">Google-font</span>
+                        <select
+                          value={config.branding.logoText.font}
+                          onChange={(event) => updateLogoText({ font: event.target.value as SiteConfig["branding"]["logoText"]["font"] })}
+                          className="w-full rounded-lg border border-[#cbd3c2] bg-white px-3 py-2 text-sm"
+                        >
+                          {logoFontOptions.map((font) => (
+                            <option key={font.value} value={font.value} style={{ fontFamily: `'${font.value}', serif` }}>
+                              {font.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                    <div className="mt-4 rounded-lg border border-[#d8ded1] bg-white p-4">
+                      <p className="mb-1 text-xs font-semibold uppercase tracking-[0.04em] text-stone-500">Forhåndsvisning</p>
+                      <p
+                        className="truncate text-2xl text-[#2d3a21]"
+                        style={{ fontFamily: `'${config.branding.logoText.font}', serif`, fontWeight: 400 }}
+                      >
+                        {config.branding.logoText.text || "Kristins drivhus"}
+                      </p>
+                    </div>
+                  </div>
+
                   <label className="flex cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-[#9daa8f] bg-[#f7f8f5] px-4 py-6 text-center transition hover:bg-white">
                     <span className="text-sm font-semibold">{logoUploading ? "Laster opp" : "Last opp logo"}</span>
                     <span className="mt-1 text-xs text-stone-500">Kun SVG. Fyll/stroke i filen blir ignorert visuelt på siden.</span>

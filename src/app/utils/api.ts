@@ -41,6 +41,19 @@ export interface WeatherData {
 export type HeaderImageSlot = "cold" | "normal" | "warm" | "hot";
 export type HeaderImageFormat = "mobile" | "desktop";
 
+export const logoFontOptions = [
+  { value: "Cinzel Decorative", label: "Cinzel Decorative" },
+  { value: "Cormorant Garamond", label: "Cormorant Garamond" },
+  { value: "Playfair Display", label: "Playfair Display" },
+  { value: "Lora", label: "Lora" },
+  { value: "Libre Baskerville", label: "Libre Baskerville" },
+  { value: "Merriweather", label: "Merriweather" },
+  { value: "Fraunces", label: "Fraunces" },
+  { value: "Inter", label: "Inter" },
+] as const;
+
+export type LogoFont = (typeof logoFontOptions)[number]["value"];
+
 export interface HeaderImageConfig {
   label: string;
   description: string;
@@ -61,6 +74,11 @@ export interface SiteConfig {
     shortName: string;
     title: string;
     description: string;
+    logoText: {
+      visible: boolean;
+      text: string;
+      font: LogoFont;
+    };
     logo: {
       url: string;
     };
@@ -140,6 +158,11 @@ export const defaultSiteConfig: SiteConfig = {
     shortName: "Drivhus",
     title: "Kristins drivhus",
     description: "Live dashboard for Kristins drivhus.",
+    logoText: {
+      visible: true,
+      text: "Kristins drivhus",
+      font: "Cinzel Decorative",
+    },
     logo: {
       url: "",
     },
@@ -158,6 +181,7 @@ function normalizeSiteConfig(data: Partial<SiteConfig> | null | undefined): Site
   const headerImages = data?.headerImages ?? {};
   const branding = data?.branding ?? {};
   const logo = branding.logo ?? {};
+  const logoText = branding.logoText ?? {};
   const favicon = branding.favicon ?? {};
   const siteName = typeof branding.siteName === "string" && branding.siteName.trim()
     ? branding.siteName.trim()
@@ -191,6 +215,19 @@ function normalizeSiteConfig(data: Partial<SiteConfig> | null | undefined): Site
       shortName,
       title,
       description,
+      logoText: {
+        visible:
+          typeof logoText.visible === "boolean"
+            ? logoText.visible
+            : defaultSiteConfig.branding.logoText.visible,
+        text:
+          typeof logoText.text === "string" && logoText.text.trim()
+            ? logoText.text.trim()
+            : defaultSiteConfig.branding.logoText.text,
+        font: logoFontOptions.some((font) => font.value === logoText.font)
+          ? (logoText.font as LogoFont)
+          : defaultSiteConfig.branding.logoText.font,
+      },
       logo: {
         url: typeof logo.url === "string" ? logo.url : defaultSiteConfig.branding.logo.url,
       },

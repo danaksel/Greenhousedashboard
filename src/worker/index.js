@@ -148,6 +148,11 @@ const DEFAULT_SITE_CONFIG = {
     shortName: "Drivhus",
     title: "Kristins drivhus",
     description: "Live dashboard for Kristins drivhus.",
+    logoText: {
+      visible: true,
+      text: "Kristins drivhus",
+      font: "Cinzel Decorative",
+    },
     logo: {
       url: "",
     },
@@ -163,6 +168,16 @@ const DEFAULT_SITE_CONFIG = {
 
 const SITE_CONFIG_KEY = "admin/site-config.json";
 const ADMIN_IMAGE_PREFIX = "admin/images/";
+const LOGO_FONT_OPTIONS = [
+  "Cinzel Decorative",
+  "Cormorant Garamond",
+  "Playfair Display",
+  "Lora",
+  "Libre Baskerville",
+  "Merriweather",
+  "Fraunces",
+  "Inter",
+];
 
 async function getSiteConfig(env) {
   const bucket = getAssetBucket(env);
@@ -397,6 +412,7 @@ function normalizeSiteConfig(config) {
   const headerImages = input.headerImages && typeof input.headerImages === "object" ? input.headerImages : {};
   const branding = input.branding && typeof input.branding === "object" ? input.branding : {};
   const logo = branding.logo && typeof branding.logo === "object" ? branding.logo : {};
+  const logoText = branding.logoText && typeof branding.logoText === "object" ? branding.logoText : {};
   const favicon = branding.favicon && typeof branding.favicon === "object" ? branding.favicon : {};
   const siteName = normalizeText(branding.siteName, DEFAULT_SITE_CONFIG.branding.siteName, 80);
   const shortName = normalizeText(branding.shortName, DEFAULT_SITE_CONFIG.branding.shortName, 32);
@@ -416,6 +432,16 @@ function normalizeSiteConfig(config) {
       shortName,
       title,
       description,
+      logoText: {
+        visible:
+          typeof logoText.visible === "boolean"
+            ? logoText.visible
+            : DEFAULT_SITE_CONFIG.branding.logoText.visible,
+        text: normalizeText(logoText.text, DEFAULT_SITE_CONFIG.branding.logoText.text, 48),
+        font: LOGO_FONT_OPTIONS.includes(logoText.font)
+          ? logoText.font
+          : DEFAULT_SITE_CONFIG.branding.logoText.font,
+      },
       logo: {
         url: normalizeImageReference(logo.url, DEFAULT_SITE_CONFIG.branding.logo.url),
       },
