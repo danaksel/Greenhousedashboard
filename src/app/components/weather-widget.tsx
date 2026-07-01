@@ -86,7 +86,7 @@ export function WeatherWidget({ data, compact, rainToday }: WeatherWidgetProps) 
   if (compact) {
     return (
       <div className="h-full">
-        <div className="hidden h-full w-[176px] flex-col gap-1.5 rounded-2xl bg-black/28 p-2.5 text-white shadow-xl shadow-black/15 backdrop-blur-md md:flex xl:w-[204px] xl:gap-3 xl:p-4">
+        <div className="hidden h-full w-[176px] flex-col gap-1.5 rounded-2xl bg-black/20 p-2.5 text-white shadow-xl shadow-black/15 backdrop-blur-sm md:flex xl:w-[204px] xl:gap-3 xl:p-4">
           <button
             type="button"
             onClick={() => handleTooltipClick('weather')}

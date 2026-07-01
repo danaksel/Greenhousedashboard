@@ -7,6 +7,7 @@ import {
   fetchLatestGreenhouseData,
   resolveGreenhouseAssetUrl,
   saveAdminSiteConfig,
+  uploadAdminAsset,
   uploadAdminImage,
   type AdminImage,
   type HeaderImageFormat,
@@ -54,6 +55,41 @@ function getImagePreviewAspectClass(image: AdminImage) {
   return image.format === "mobile" ? "aspect-[390/200]" : "aspect-[3/1]";
 }
 
+async function svgFileToPngFile(file: File, size: number, filename: string): Promise<File> {
+  const svgText = await file.text();
+  const svgBlob = new Blob([svgText], { type: "image/svg+xml" });
+  const url = URL.createObjectURL(svgBlob);
+
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error("Kunne ikke lese SVG-en"));
+      img.src = url;
+    });
+
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Kunne ikke lage favicon");
+
+    context.clearRect(0, 0, size, size);
+    context.drawImage(image, 0, 0, size, size);
+
+    const pngBlob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error("Kunne ikke eksportere favicon"));
+      }, "image/png");
+    });
+
+    return new File([pngBlob], filename, { type: "image/png" });
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 export function AdminPage() {
   const [config, setConfig] = useState<SiteConfig>(defaultSiteConfig);
   const [images, setImages] = useState<AdminImage[]>([]);
@@ -65,6 +101,8 @@ export function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [faviconUploading, setFaviconUploading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -108,6 +146,19 @@ export function AdminPage() {
   const setSelectedUploadFormat = (format: HeaderImageFormat) => {
     selectedFormatRef.current = format;
     setSelectedFormat(format);
+  };
+
+  const setBrandingText = (
+    key: "siteName" | "shortName" | "title" | "description",
+    value: string
+  ) => {
+    updateConfig((current) => ({
+      ...current,
+      branding: {
+        ...current.branding,
+        [key]: value,
+      },
+    }));
   };
 
   const setImage = (slot: HeaderImageSlot, format: HeaderImageFormat, value: string) => {
@@ -165,6 +216,98 @@ export function AdminPage() {
     }
   };
 
+  const setLogo = (url: string) => {
+    updateConfig((current) => ({
+      ...current,
+      branding: {
+        ...current.branding,
+        logo: {
+          url,
+        },
+      },
+    }));
+  };
+
+  const handleLogoUpload = async (file: File | undefined) => {
+    if (!file) return;
+
+    setLogoUploading(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const logo = await uploadAdminAsset(file, "logo", "svg");
+      setImages((current) => [logo, ...current.filter((item) => item.key !== logo.key)]);
+      setLogo(logo.url);
+      setMessage("Logoen er lastet opp og valgt. Husk å lagre.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Kunne ikke laste opp logo");
+    } finally {
+      setLogoUploading(false);
+    }
+  };
+
+  const setFaviconConfig = (favicon: SiteConfig["branding"]["favicon"]) => {
+    updateConfig((current) => ({
+      ...current,
+      branding: {
+        ...current.branding,
+        favicon,
+      },
+    }));
+  };
+
+  const handleFaviconUpload = async (file: File | undefined) => {
+    if (!file) return;
+
+    setFaviconUploading(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const baseName = file.name.replace(/\.svg$/i, "") || "favicon";
+      const [svg, png32, png180, png192, png512] = await Promise.all([
+        uploadAdminAsset(file, "favicon", "svg"),
+        svgFileToPngFile(file, 32, `${baseName}-32.png`).then((png) => uploadAdminAsset(png, "favicon", "png32")),
+        svgFileToPngFile(file, 180, `${baseName}-180.png`).then((png) => uploadAdminAsset(png, "favicon", "apple-touch-icon")),
+        svgFileToPngFile(file, 192, `${baseName}-192.png`).then((png) => uploadAdminAsset(png, "favicon", "png192")),
+        svgFileToPngFile(file, 512, `${baseName}-512.png`).then((png) => uploadAdminAsset(png, "favicon", "png512")),
+      ]);
+
+      const uploaded = [svg, png32, png180, png192, png512];
+      setImages((current) => [
+        ...uploaded,
+        ...current.filter((item) => !uploaded.some((asset) => asset.key === item.key)),
+      ]);
+      setFaviconConfig({
+        svg: svg.url,
+        png32: png32.url,
+        appleTouchIcon: png180.url,
+        png192: png192.url,
+        png512: png512.url,
+      });
+      setMessage("Favicon er generert i alle størrelser og valgt. Husk å lagre.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Kunne ikke lage favicon");
+    } finally {
+      setFaviconUploading(false);
+    }
+  };
+
+  const handleUseFaviconAsset = async (asset: AdminImage) => {
+    try {
+      const res = await fetch(resolveGreenhouseAssetUrl(asset.url));
+      if (!res.ok) throw new Error("Kunne ikke hente favicon fra R2");
+      const blob = await res.blob();
+      const file = new File([blob], asset.filename.endsWith(".svg") ? asset.filename : `${asset.filename}.svg`, {
+        type: "image/svg+xml",
+      });
+      await handleFaviconUpload(file);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Kunne ikke bruke favicon");
+    }
+  };
+
   const replaceDeletedImageReferences = (current: SiteConfig, deletedUrl: string): SiteConfig => {
     const next: SiteConfig = {
       ...current,
@@ -187,6 +330,38 @@ export function AdminPage() {
       };
     }
 
+    next.branding = {
+      ...current.branding,
+      logo: {
+        url:
+          current.branding.logo.url === deletedUrl
+            ? defaultSiteConfig.branding.logo.url
+            : current.branding.logo.url,
+      },
+      favicon: {
+        svg:
+          current.branding.favicon.svg === deletedUrl
+            ? defaultSiteConfig.branding.favicon.svg
+            : current.branding.favicon.svg,
+        png32:
+          current.branding.favicon.png32 === deletedUrl
+            ? defaultSiteConfig.branding.favicon.png32
+            : current.branding.favicon.png32,
+        appleTouchIcon:
+          current.branding.favicon.appleTouchIcon === deletedUrl
+            ? defaultSiteConfig.branding.favicon.appleTouchIcon
+            : current.branding.favicon.appleTouchIcon,
+        png192:
+          current.branding.favicon.png192 === deletedUrl
+            ? defaultSiteConfig.branding.favicon.png192
+            : current.branding.favicon.png192,
+        png512:
+          current.branding.favicon.png512 === deletedUrl
+            ? defaultSiteConfig.branding.favicon.png512
+            : current.branding.favicon.png512,
+      },
+    };
+
     return next;
   };
 
@@ -207,9 +382,12 @@ export function AdminPage() {
     }
   };
 
-  const selectedImages = images.filter(
+  const headerAssets = images.filter((image) => (image.assetType ?? "header") === "header");
+  const selectedImages = headerAssets.filter(
     (image) => (image.slot === selectedSlot || image.slot === "general") && image.format === selectedFormat
   );
+  const logoAssets = images.filter((image) => image.assetType === "logo");
+  const faviconAssets = images.filter((image) => image.assetType === "favicon");
 
   return (
     <div className="min-h-screen bg-[#e8ede3] text-[#2d3a21]">
@@ -284,9 +462,241 @@ export function AdminPage() {
                   : `${latest.temperature.toFixed(1)}°C bruker ${config.headerImages[activeSlot].label.toLowerCase()}.`}
               </p>
             </div>
+
+            <div className="rounded-lg border border-[#d8ded1] bg-white/70 p-5 shadow-sm">
+              <h2 className="mb-4 text-base font-semibold">Sidens metadata</h2>
+              <div className="space-y-4">
+                <label className="block text-sm">
+                  <span className="mb-1 block font-medium">Navn</span>
+                  <input
+                    type="text"
+                    value={config.branding.siteName}
+                    onChange={(event) => setBrandingText("siteName", event.target.value)}
+                    className="w-full rounded-lg border border-[#cbd3c2] bg-white px-3 py-2 text-sm"
+                    maxLength={80}
+                  />
+                </label>
+                <label className="block text-sm">
+                  <span className="mb-1 block font-medium">Kort navn</span>
+                  <input
+                    type="text"
+                    value={config.branding.shortName}
+                    onChange={(event) => setBrandingText("shortName", event.target.value)}
+                    className="w-full rounded-lg border border-[#cbd3c2] bg-white px-3 py-2 text-sm"
+                    maxLength={32}
+                  />
+                </label>
+                <label className="block text-sm">
+                  <span className="mb-1 block font-medium">Title</span>
+                  <input
+                    type="text"
+                    value={config.branding.title}
+                    onChange={(event) => setBrandingText("title", event.target.value)}
+                    className="w-full rounded-lg border border-[#cbd3c2] bg-white px-3 py-2 text-sm"
+                    maxLength={80}
+                  />
+                </label>
+                <label className="block text-sm">
+                  <span className="mb-1 block font-medium">Meta-beskrivelse</span>
+                  <textarea
+                    value={config.branding.description}
+                    onChange={(event) => setBrandingText("description", event.target.value)}
+                    className="min-h-24 w-full resize-y rounded-lg border border-[#cbd3c2] bg-white px-3 py-2 text-sm"
+                    maxLength={180}
+                  />
+                </label>
+                <p className="text-xs leading-relaxed text-stone-500">
+                  Navn og kort navn brukes i manifest. Title og meta-beskrivelse brukes i fanen og delingsmetadata.
+                </p>
+              </div>
+            </div>
           </div>
 
           <div className="space-y-6">
+            <section className="rounded-lg border border-[#d8ded1] bg-white/70 p-5 shadow-sm">
+              <div className="mb-4">
+                <h2 className="text-base font-semibold">Logo</h2>
+                <p className="text-sm text-stone-600">Last opp SVG. Fargen overstyres av CSS i frontend.</p>
+                <p className="mt-1 text-xs text-stone-500">Anbefalt kvadratisk eller kompakt symbol, ca. 1:1. Hold motivet innenfor viewBox.</p>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-[220px_minmax(0,1fr)]">
+                <div className="rounded-lg border border-[#d8ded1] bg-[#f7f8f5] p-4">
+                  <p className="mb-3 text-xs font-semibold uppercase tracking-[0.04em] text-stone-500">Aktiv logo</p>
+                  <div className="flex h-28 items-center justify-center rounded-lg bg-[#e8ede3]">
+                    {config.branding.logo.url ? (
+                      <span
+                        className="block h-16 w-16 bg-[#2d3a21]"
+                        style={{
+                          WebkitMask: `url("${resolveGreenhouseAssetUrl(config.branding.logo.url)}") center / contain no-repeat`,
+                          mask: `url("${resolveGreenhouseAssetUrl(config.branding.logo.url)}") center / contain no-repeat`,
+                        }}
+                      />
+                    ) : (
+                      <span className="text-sm text-stone-500">Standardlogo</span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLogo(defaultSiteConfig.branding.logo.url);
+                      setMessage("Standardlogo er valgt. Husk å lagre.");
+                    }}
+                    className="mt-3 rounded-full border border-[#cbd3c2] px-3 py-1.5 text-xs font-semibold text-[#4d5d3e]"
+                  >
+                    Bruk standardlogo
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  <label className="flex cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-[#9daa8f] bg-[#f7f8f5] px-4 py-6 text-center transition hover:bg-white">
+                    <span className="text-sm font-semibold">{logoUploading ? "Laster opp" : "Last opp logo"}</span>
+                    <span className="mt-1 text-xs text-stone-500">Kun SVG. Fyll/stroke i filen blir ignorert visuelt på siden.</span>
+                    <input
+                      type="file"
+                      accept="image/svg+xml,.svg"
+                      disabled={logoUploading}
+                      onChange={(event) => {
+                        void handleLogoUpload(event.target.files?.[0]);
+                        event.target.value = "";
+                      }}
+                      className="sr-only"
+                    />
+                  </label>
+
+                  {logoAssets.length === 0 ? (
+                    <div className="rounded-lg bg-[#f7f8f5] p-4 text-sm text-stone-500">Ingen SVG-logoer i R2 ennå.</div>
+                  ) : (
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                      {logoAssets.map((logo) => (
+                        <article key={logo.key} className="rounded-lg border border-[#d8ded1] bg-[#f7f8f5] p-3">
+                          <div className="mb-3 flex h-20 items-center justify-center rounded-lg bg-[#e8ede3]">
+                            <span
+                              className="block h-12 w-12 bg-[#2d3a21]"
+                              style={{
+                                WebkitMask: `url("${resolveGreenhouseAssetUrl(logo.url)}") center / contain no-repeat`,
+                                mask: `url("${resolveGreenhouseAssetUrl(logo.url)}") center / contain no-repeat`,
+                              }}
+                            />
+                          </div>
+                          <p className="truncate text-sm font-semibold">{logo.filename}</p>
+                          <p className="text-xs text-stone-500">{formatBytes(logo.size)}</p>
+                          {config.branding.logo.url === logo.url && (
+                            <span className="mt-2 inline-flex rounded-full border border-[#2d3a21] px-2 py-1 text-[11px] font-semibold text-[#2d3a21]">Valgt</span>
+                          )}
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setLogo(logo.url);
+                                setMessage("Logo er valgt. Husk å lagre.");
+                              }}
+                              className="rounded-full bg-[#5d7342] px-3 py-1.5 text-xs font-semibold text-white"
+                            >
+                              Bruk logo
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleDeleteImage(logo)}
+                              className="rounded-full border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-50"
+                            >
+                              Slett
+                            </button>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </section>
+
+            <section className="rounded-lg border border-[#d8ded1] bg-white/70 p-5 shadow-sm">
+              <div className="mb-4">
+                <h2 className="text-base font-semibold">Favicon</h2>
+                <p className="text-sm text-stone-600">Last opp én SVG, så genereres nødvendige PNG-varianter automatisk.</p>
+                <p className="mt-1 text-xs text-stone-500">Anbefalt kvadratisk SVG, 1:1. Hold motivet lesbart ned til 32 x 32 px.</p>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-[220px_minmax(0,1fr)]">
+                <div className="rounded-lg border border-[#d8ded1] bg-[#f7f8f5] p-4">
+                  <p className="mb-3 text-xs font-semibold uppercase tracking-[0.04em] text-stone-500">Aktiv favicon</p>
+                  <div className="flex h-28 items-center justify-center rounded-lg bg-white">
+                    <img
+                      src={resolveGreenhouseAssetUrl(config.branding.favicon.svg)}
+                      alt="Aktiv favicon"
+                      className="h-14 w-14 object-contain"
+                    />
+                  </div>
+                  <p className="mt-3 text-xs text-stone-500">Genereres som SVG, 32 px, 180 px, 192 px og 512 px.</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFaviconConfig(defaultSiteConfig.branding.favicon);
+                      setMessage("Standardfavicon er valgt. Husk å lagre.");
+                    }}
+                    className="mt-3 rounded-full border border-[#cbd3c2] px-3 py-1.5 text-xs font-semibold text-[#4d5d3e]"
+                  >
+                    Bruk standardfavicon
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  <label className="flex cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-[#9daa8f] bg-[#f7f8f5] px-4 py-6 text-center transition hover:bg-white">
+                    <span className="text-sm font-semibold">{faviconUploading ? "Genererer" : "Last opp favicon"}</span>
+                    <span className="mt-1 text-xs text-stone-500">SVG inn, SVG + PNG-størrelser ut i R2.</span>
+                    <input
+                      type="file"
+                      accept="image/svg+xml,.svg"
+                      disabled={faviconUploading}
+                      onChange={(event) => {
+                        void handleFaviconUpload(event.target.files?.[0]);
+                        event.target.value = "";
+                      }}
+                      className="sr-only"
+                    />
+                  </label>
+
+                  {faviconAssets.length === 0 ? (
+                    <div className="rounded-lg bg-[#f7f8f5] p-4 text-sm text-stone-500">Ingen favicon-filer i R2 ennå.</div>
+                  ) : (
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                      {faviconAssets.map((asset) => (
+                        <article key={asset.key} className="rounded-lg border border-[#d8ded1] bg-[#f7f8f5] p-3">
+                          <div className="mb-3 flex h-16 items-center justify-center rounded-lg bg-white">
+                            <img src={resolveGreenhouseAssetUrl(asset.url)} alt={asset.filename} className="h-10 w-10 object-contain" />
+                          </div>
+                          <p className="truncate text-sm font-semibold">{asset.filename}</p>
+                          <p className="text-xs text-stone-500">{[asset.format, formatBytes(asset.size)].filter(Boolean).join(" · ")}</p>
+                          {Object.values(config.branding.favicon).includes(asset.url) && (
+                            <span className="mt-2 inline-flex rounded-full border border-[#2d3a21] px-2 py-1 text-[11px] font-semibold text-[#2d3a21]">I bruk</span>
+                          )}
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {asset.format === "svg" && (
+                              <button
+                                type="button"
+                                onClick={() => void handleUseFaviconAsset(asset)}
+                                className="rounded-full bg-[#5d7342] px-3 py-1.5 text-xs font-semibold text-white"
+                              >
+                                Bruk favicon
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => void handleDeleteImage(asset)}
+                              className="rounded-full border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-50"
+                            >
+                              Slett
+                            </button>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </section>
+
             <section className="rounded-lg border border-[#d8ded1] bg-white/70 p-5 shadow-sm">
               <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -345,7 +755,7 @@ export function AdminPage() {
                                 <option value={defaultSiteConfig.headerImages[slot][format.key]}>
                                   Standardbilde
                                 </option>
-                                {images.map((image) => (
+                                {headerAssets.map((image) => (
                                   <option key={`${slot}-${format.key}-${image.key}`} value={image.url}>
                                     {image.filename}
                                   </option>

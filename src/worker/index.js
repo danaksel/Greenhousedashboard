@@ -4,7 +4,7 @@ export default {
 
     const corsHeaders = {
       "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type, Authorization",
     };
 
@@ -46,6 +46,10 @@ export default {
 
       if (url.pathname === "/api/site-image" && request.method === "GET") {
         return await handleSiteImage(request, env, corsHeaders);
+      }
+
+      if (url.pathname === "/manifest.webmanifest" && request.method === "GET") {
+        return await handleSiteManifest(env, corsHeaders);
       }
 
       if (url.pathname === "/admin/api/config" && request.method === "GET") {
@@ -139,6 +143,22 @@ const DEFAULT_SITE_CONFIG = {
       desktop: "/hot.jpg",
     },
   },
+  branding: {
+    siteName: "Kristins drivhus",
+    shortName: "Drivhus",
+    title: "Kristins drivhus",
+    description: "Live dashboard for Kristins drivhus.",
+    logo: {
+      url: "",
+    },
+    favicon: {
+      svg: "/favicon.svg",
+      png32: "",
+      appleTouchIcon: "/apple-touch-icon.svg",
+      png192: "",
+      png512: "",
+    },
+  },
 };
 
 const SITE_CONFIG_KEY = "admin/site-config.json";
@@ -181,6 +201,7 @@ async function handleUploadAdminImage(request, env, corsHeaders) {
 
   const formData = await request.formData();
   const file = formData.get("file");
+  const assetType = sanitizeKeyPart(formData.get("assetType") || "header");
   const slot = sanitizeKeyPart(formData.get("slot") || "general");
   const format = sanitizeKeyPart(formData.get("format") || "image");
 
@@ -188,14 +209,14 @@ async function handleUploadAdminImage(request, env, corsHeaders) {
     return jsonResponse({ ok: false, error: "Missing file upload" }, 400, corsHeaders);
   }
 
-  if (!["image/jpeg", "image/png"].includes(file.type)) {
-    return jsonResponse({ ok: false, error: "Only JPG and PNG images are allowed" }, 400, corsHeaders);
+  if (!isAllowedUploadType(assetType, file.type, format)) {
+    return jsonResponse({ ok: false, error: "Unsupported file type for this asset" }, 400, corsHeaders);
   }
 
-  const extension = file.type === "image/png" ? "png" : "jpg";
+  const extension = getUploadExtension(file.type);
   const originalName = sanitizeFilename(file.name || `header.${extension}`);
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const key = `${ADMIN_IMAGE_PREFIX}${slot}/${format}/${timestamp}-${originalName.replace(/\.(jpe?g|png)$/i, "")}.${extension}`;
+  const key = `${ADMIN_IMAGE_PREFIX}${slot}/${format}/${timestamp}-${originalName.replace(/\.(jpe?g|png|svg)$/i, "")}.${extension}`;
 
   await bucket.put(key, file.stream(), {
     httpMetadata: {
@@ -204,6 +225,7 @@ async function handleUploadAdminImage(request, env, corsHeaders) {
     },
     customMetadata: {
       originalName,
+      assetType,
       slot,
       format,
       uploadedAt: new Date().toISOString(),
@@ -280,6 +302,69 @@ async function handleSiteImage(request, env, corsHeaders) {
   });
 }
 
+async function handleSiteManifest(env, corsHeaders) {
+  const config = await getSiteConfig(env);
+  const favicon = config.branding.favicon;
+  const icons = [];
+
+  if (favicon.svg) {
+    icons.push({
+      src: favicon.svg,
+      sizes: "any",
+      type: "image/svg+xml",
+      purpose: "any maskable",
+    });
+  }
+
+  if (favicon.png192) {
+    icons.push({
+      src: favicon.png192,
+      sizes: "192x192",
+      type: "image/png",
+      purpose: "any maskable",
+    });
+  }
+
+  if (favicon.png512) {
+    icons.push({
+      src: favicon.png512,
+      sizes: "512x512",
+      type: "image/png",
+      purpose: "any maskable",
+    });
+  }
+
+  if (favicon.appleTouchIcon) {
+    icons.push({
+      src: favicon.appleTouchIcon,
+      sizes: "180x180",
+      type: favicon.appleTouchIcon.endsWith(".svg") ? "image/svg+xml" : "image/png",
+    });
+  }
+
+  return new Response(
+    JSON.stringify({
+      name: config.branding.siteName,
+      short_name: config.branding.shortName,
+      description: config.branding.description,
+      start_url: "/",
+      scope: "/",
+      display: "standalone",
+      background_color: "#e8ede3",
+      theme_color: "#2d3a21",
+      icons,
+    }),
+    {
+      status: 200,
+      headers: {
+        "Content-Type": "application/manifest+json; charset=utf-8",
+        "Cache-Control": "no-store",
+        ...corsHeaders,
+      },
+    }
+  );
+}
+
 function getAssetBucket(env) {
   return env.GREENHOUSE_ASSETS || env.GREENHOUSE_HISTORY || null;
 }
@@ -302,6 +387,7 @@ async function getImageMetadata(bucket, key, objectInfo = null) {
     updatedAt: object.uploaded?.toISOString?.() || null,
     slot: customMetadata.slot || key.split("/")[2] || "general",
     format: customMetadata.format || key.split("/")[3] || "image",
+    assetType: customMetadata.assetType || "header",
   };
 }
 
@@ -309,6 +395,13 @@ function normalizeSiteConfig(config) {
   const input = config && typeof config === "object" ? config : {};
   const visibleStatuses = input.visibleStatuses && typeof input.visibleStatuses === "object" ? input.visibleStatuses : {};
   const headerImages = input.headerImages && typeof input.headerImages === "object" ? input.headerImages : {};
+  const branding = input.branding && typeof input.branding === "object" ? input.branding : {};
+  const logo = branding.logo && typeof branding.logo === "object" ? branding.logo : {};
+  const favicon = branding.favicon && typeof branding.favicon === "object" ? branding.favicon : {};
+  const siteName = normalizeText(branding.siteName, DEFAULT_SITE_CONFIG.branding.siteName, 80);
+  const shortName = normalizeText(branding.shortName, DEFAULT_SITE_CONFIG.branding.shortName, 32);
+  const title = normalizeText(branding.title, DEFAULT_SITE_CONFIG.branding.title, 80);
+  const description = normalizeText(branding.description, DEFAULT_SITE_CONFIG.branding.description, 180);
 
   const normalized = {
     showHeroImage: typeof input.showHeroImage === "boolean" ? input.showHeroImage : DEFAULT_SITE_CONFIG.showHeroImage,
@@ -318,6 +411,25 @@ function normalizeSiteConfig(config) {
       window: typeof visibleStatuses.window === "boolean" ? visibleStatuses.window : DEFAULT_SITE_CONFIG.visibleStatuses.window,
     },
     headerImages: {},
+    branding: {
+      siteName,
+      shortName,
+      title,
+      description,
+      logo: {
+        url: normalizeImageReference(logo.url, DEFAULT_SITE_CONFIG.branding.logo.url),
+      },
+      favicon: {
+        svg: normalizeImageReference(favicon.svg, DEFAULT_SITE_CONFIG.branding.favicon.svg),
+        png32: normalizeImageReference(favicon.png32, DEFAULT_SITE_CONFIG.branding.favicon.png32),
+        appleTouchIcon: normalizeImageReference(
+          favicon.appleTouchIcon,
+          DEFAULT_SITE_CONFIG.branding.favicon.appleTouchIcon
+        ),
+        png192: normalizeImageReference(favicon.png192, DEFAULT_SITE_CONFIG.branding.favicon.png192),
+        png512: normalizeImageReference(favicon.png512, DEFAULT_SITE_CONFIG.branding.favicon.png512),
+      },
+    },
   };
 
   for (const [key, defaultImage] of Object.entries(DEFAULT_SITE_CONFIG.headerImages)) {
@@ -341,8 +453,25 @@ function normalizeImageReference(value, fallback) {
   return fallback;
 }
 
+function normalizeText(value, fallback, maxLength) {
+  const raw = String(value || "").replace(/\s+/g, " ").trim();
+  return raw ? raw.slice(0, maxLength) : fallback;
+}
+
 function isAllowedImageKey(key) {
   return typeof key === "string" && key.startsWith(ADMIN_IMAGE_PREFIX) && !key.includes("..");
+}
+
+function isAllowedUploadType(assetType, contentType, format) {
+  if (assetType === "logo") return contentType === "image/svg+xml";
+  if (assetType === "favicon") return contentType === "image/svg+xml" || contentType === "image/png";
+  return ["image/jpeg", "image/png"].includes(contentType) && ["desktop", "mobile", "image"].includes(format);
+}
+
+function getUploadExtension(contentType) {
+  if (contentType === "image/svg+xml") return "svg";
+  if (contentType === "image/png") return "png";
+  return "jpg";
 }
 
 function sanitizeKeyPart(value) {

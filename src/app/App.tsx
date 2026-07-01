@@ -177,14 +177,17 @@ export default function App() {
   const [chartCarouselApi, setChartCarouselApi] = useState<CarouselApi>();
   const [activeChartSlide, setActiveChartSlide] = useState(0);
 
-  const loadData = async (isRefresh = false) => {
+  const loadData = async (isRefresh = false, options: { includeHistory?: boolean; includeWeather?: boolean } = {}) => {
+    const includeHistory = options.includeHistory ?? true;
+    const includeWeather = options.includeWeather ?? true;
+
     try {
       if (isRefresh) {
         setRefreshing(true);
       } else {
         setLoading(true);
-        setHistoryLoading(true);
-        setWeatherLoading(true);
+        if (includeHistory) setHistoryLoading(true);
+        if (includeWeather) setWeatherLoading(true);
       }
       setError(null);
 
@@ -203,7 +206,7 @@ export default function App() {
       setHeating(latest.heating ?? null);
       setLoading(false);
 
-      const historyPromise = (async () => {
+      const historyPromise = includeHistory ? (async () => {
         try {
           setHistoryLoading(true);
           const [history, stats24h] = await Promise.all([
@@ -365,9 +368,9 @@ export default function App() {
         } finally {
           setHistoryLoading(false);
         }
-      })();
+      })() : Promise.resolve();
 
-      const weatherPromise = (async () => {
+      const weatherPromise = includeWeather ? (async () => {
         try {
           setWeatherLoading(true);
           const weather = await fetchWeatherData();
@@ -379,15 +382,15 @@ export default function App() {
         } finally {
           setWeatherLoading(false);
         }
-      })();
+      })() : Promise.resolve();
 
       await Promise.allSettled([historyPromise, weatherPromise]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load data");
     } finally {
       setLoading(false);
-      setHistoryLoading(false);
-      setWeatherLoading(false);
+      if (includeHistory) setHistoryLoading(false);
+      if (includeWeather) setWeatherLoading(false);
       setRefreshing(false);
     }
   };
@@ -395,44 +398,21 @@ export default function App() {
   useEffect(() => {
     loadData();
 
-    // Auto-refresh every 5 minutes
-    const interval = setInterval(() => {
-      loadData(true);
+    // Auto-refresh live values/statuses every 5 minutes.
+    const liveInterval = setInterval(() => {
+      loadData(true, { includeHistory: false, includeWeather: false });
     }, 300000);
+
+    // Graph history and weather are less volatile; refresh every 15 minutes.
+    const historyInterval = setInterval(() => {
+      loadData(true, { includeHistory: true, includeWeather: true });
+    }, 900000);
 
     // Online/offline listeners
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
-
-    // Set theme-color meta tag for mobile browser address bar
-    let metaThemeColor = document.querySelector('meta[name="theme-color"]');
-    if (!metaThemeColor) {
-      metaThemeColor = document.createElement('meta');
-      metaThemeColor.setAttribute('name', 'theme-color');
-      document.head.appendChild(metaThemeColor);
-    }
-    metaThemeColor.setAttribute('content', darkMode ? '#2d3a21' : '#5d7342');
-
-    // Set favicon
-    let faviconLink = document.querySelector('link[rel="icon"]') as HTMLLinkElement;
-    if (!faviconLink) {
-      faviconLink = document.createElement('link');
-      faviconLink.setAttribute('rel', 'icon');
-      document.head.appendChild(faviconLink);
-    }
-    faviconLink.setAttribute('type', 'image/svg+xml');
-    faviconLink.setAttribute('href', '/favicon.svg');
-
-    // Set apple-touch-icon for iOS home screen
-    let appleTouchIcon = document.querySelector('link[rel="apple-touch-icon"]') as HTMLLinkElement;
-    if (!appleTouchIcon) {
-      appleTouchIcon = document.createElement('link');
-      appleTouchIcon.setAttribute('rel', 'apple-touch-icon');
-      document.head.appendChild(appleTouchIcon);
-    }
-    appleTouchIcon.setAttribute('href', '/apple-touch-icon.svg');
 
     // Set apple-mobile-web-app-capable for iOS
     let appleCapable = document.querySelector('meta[name="apple-mobile-web-app-capable"]');
@@ -443,6 +423,24 @@ export default function App() {
       document.head.appendChild(appleCapable);
     }
 
+    return () => {
+      clearInterval(liveInterval);
+      clearInterval(historyInterval);
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  useEffect(() => {
+    // Set theme-color meta tag for mobile browser address bar
+    let metaThemeColor = document.querySelector('meta[name="theme-color"]');
+    if (!metaThemeColor) {
+      metaThemeColor = document.createElement('meta');
+      metaThemeColor.setAttribute('name', 'theme-color');
+      document.head.appendChild(metaThemeColor);
+    }
+    metaThemeColor.setAttribute('content', darkMode ? '#2d3a21' : '#e8ede3');
+
     // Set apple-mobile-web-app-status-bar-style
     let appleStatusBar = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
     if (!appleStatusBar) {
@@ -451,25 +449,84 @@ export default function App() {
       document.head.appendChild(appleStatusBar);
     }
     appleStatusBar.setAttribute('content', darkMode ? 'black-translucent' : 'default');
+  }, [darkMode]);
 
-    // Set apple-mobile-web-app-title
-    let appleTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
-    if (!appleTitle) {
-      appleTitle = document.createElement('meta');
-      appleTitle.setAttribute('name', 'apple-mobile-web-app-title');
-      appleTitle.setAttribute('content', 'Kristins drivhus');
-      document.head.appendChild(appleTitle);
+  useEffect(() => {
+    const setHeadLink = (selector: string, attributes: Record<string, string>) => {
+      let link = document.querySelector(selector) as HTMLLinkElement | null;
+      if (!link) {
+        link = document.createElement("link");
+        document.head.appendChild(link);
+      }
+
+      for (const [name, value] of Object.entries(attributes)) {
+        link.setAttribute(name, value);
+      }
+    };
+
+    const favicon = siteConfig.branding.favicon;
+    const svgIcon = resolveGreenhouseAssetUrl(favicon.svg || defaultSiteConfig.branding.favicon.svg);
+    const png32Icon = favicon.png32 ? resolveGreenhouseAssetUrl(favicon.png32) : "";
+    const appleIcon = resolveGreenhouseAssetUrl(favicon.appleTouchIcon || defaultSiteConfig.branding.favicon.appleTouchIcon);
+
+    setHeadLink('link[rel="icon"][type="image/svg+xml"]', {
+      rel: "icon",
+      type: "image/svg+xml",
+      href: svgIcon,
+    });
+
+    if (png32Icon) {
+      setHeadLink('link[rel="icon"][sizes="32x32"]', {
+        rel: "icon",
+        type: "image/png",
+        sizes: "32x32",
+        href: png32Icon,
+      });
     }
 
-    // Set page title
-    document.title = 'Kristins drivhus';
+    setHeadLink('link[rel="apple-touch-icon"]', {
+      rel: "apple-touch-icon",
+      sizes: "180x180",
+      href: appleIcon,
+    });
 
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
+    setHeadLink('link[rel="manifest"]', {
+      rel: "manifest",
+      href: resolveGreenhouseAssetUrl("/manifest.webmanifest"),
+    });
+  }, [siteConfig.branding.favicon]);
+
+  useEffect(() => {
+    const setMeta = (selector: string, attributes: Record<string, string>) => {
+      let meta = document.querySelector(selector) as HTMLMetaElement | null;
+      if (!meta) {
+        meta = document.createElement("meta");
+        document.head.appendChild(meta);
+      }
+
+      for (const [name, value] of Object.entries(attributes)) {
+        meta.setAttribute(name, value);
+      }
     };
-  }, [darkMode]);
+
+    document.title = siteConfig.branding.title;
+    setMeta('meta[name="description"]', {
+      name: "description",
+      content: siteConfig.branding.description,
+    });
+    setMeta('meta[name="apple-mobile-web-app-title"]', {
+      name: "apple-mobile-web-app-title",
+      content: siteConfig.branding.shortName || siteConfig.branding.siteName,
+    });
+    setMeta('meta[property="og:title"]', {
+      property: "og:title",
+      content: siteConfig.branding.title,
+    });
+    setMeta('meta[property="og:description"]', {
+      property: "og:description",
+      content: siteConfig.branding.description,
+    });
+  }, [siteConfig.branding.description, siteConfig.branding.shortName, siteConfig.branding.siteName, siteConfig.branding.title]);
 
   useEffect(() => {
     let cancelled = false;
@@ -585,6 +642,7 @@ export default function App() {
   const heroImageConfig = siteConfig.headerImages[heroImageSlot] ?? defaultSiteConfig.headerImages[heroImageSlot];
   const heroMobileImageSrc = resolveGreenhouseAssetUrl(heroImageConfig.mobile);
   const heroDesktopImageSrc = resolveGreenhouseAssetUrl(heroImageConfig.desktop);
+  const customLogoSrc = siteConfig.branding.logo.url ? resolveGreenhouseAssetUrl(siteConfig.branding.logo.url) : "";
   const statusItems = [
     {
       id: "door",
@@ -669,7 +727,18 @@ export default function App() {
         <div className="sticky top-0 z-30 px-4 py-4 md:px-8 md:py-5">
           <div className="flex items-center justify-between gap-5">
             <div className="flex items-center gap-3">
-              <GreenhouseIcon className={`h-9 w-9 md:h-[22px] md:w-[22px] ${headerTextClass}`} />
+              {customLogoSrc ? (
+                <span
+                  className={`block h-9 w-9 md:h-[22px] md:w-[22px] ${darkMode ? "bg-[#e8ede3]" : "bg-[#2d3a21]"}`}
+                  style={{
+                    WebkitMask: `url("${customLogoSrc}") center / contain no-repeat`,
+                    mask: `url("${customLogoSrc}") center / contain no-repeat`,
+                  }}
+                  aria-hidden="true"
+                />
+              ) : (
+                <GreenhouseIcon className={`h-9 w-9 md:h-[22px] md:w-[22px] ${headerTextClass}`} />
+              )}
               <h1 className={`text-xl ${headerTextClass}`} style={{ fontFamily: "'Cinzel Decorative', serif", fontWeight: 400 }}>Kristins drivhus</h1>
             </div>
             <div className="flex items-center gap-2">

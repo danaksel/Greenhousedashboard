@@ -56,6 +56,22 @@ export interface SiteConfig {
     window: boolean;
   };
   headerImages: Record<HeaderImageSlot, HeaderImageConfig>;
+  branding: {
+    siteName: string;
+    shortName: string;
+    title: string;
+    description: string;
+    logo: {
+      url: string;
+    };
+    favicon: {
+      svg: string;
+      png32: string;
+      appleTouchIcon: string;
+      png192: string;
+      png512: string;
+    };
+  };
 }
 
 export interface AdminImage {
@@ -68,6 +84,7 @@ export interface AdminImage {
   updatedAt: string | null;
   slot: string;
   format: string;
+  assetType?: string;
 }
 
 const GREENHOUSE_API_BASE =
@@ -118,11 +135,42 @@ export const defaultSiteConfig: SiteConfig = {
       desktop: "/hot.jpg",
     },
   },
+  branding: {
+    siteName: "Kristins drivhus",
+    shortName: "Drivhus",
+    title: "Kristins drivhus",
+    description: "Live dashboard for Kristins drivhus.",
+    logo: {
+      url: "",
+    },
+    favicon: {
+      svg: "/favicon.svg",
+      png32: "",
+      appleTouchIcon: "/apple-touch-icon.svg",
+      png192: "",
+      png512: "",
+    },
+  },
 };
 
 function normalizeSiteConfig(data: Partial<SiteConfig> | null | undefined): SiteConfig {
   const visibleStatuses = data?.visibleStatuses ?? {};
   const headerImages = data?.headerImages ?? {};
+  const branding = data?.branding ?? {};
+  const logo = branding.logo ?? {};
+  const favicon = branding.favicon ?? {};
+  const siteName = typeof branding.siteName === "string" && branding.siteName.trim()
+    ? branding.siteName.trim()
+    : defaultSiteConfig.branding.siteName;
+  const shortName = typeof branding.shortName === "string" && branding.shortName.trim()
+    ? branding.shortName.trim()
+    : defaultSiteConfig.branding.shortName;
+  const title = typeof branding.title === "string" && branding.title.trim()
+    ? branding.title.trim()
+    : defaultSiteConfig.branding.title;
+  const description = typeof branding.description === "string" && branding.description.trim()
+    ? branding.description.trim()
+    : defaultSiteConfig.branding.description;
 
   return {
     showHeroImage:
@@ -137,6 +185,25 @@ function normalizeSiteConfig(data: Partial<SiteConfig> | null | undefined): Site
       normal: { ...defaultSiteConfig.headerImages.normal, ...(headerImages.normal ?? {}) },
       warm: { ...defaultSiteConfig.headerImages.warm, ...(headerImages.warm ?? {}) },
       hot: { ...defaultSiteConfig.headerImages.hot, ...(headerImages.hot ?? {}) },
+    },
+    branding: {
+      siteName,
+      shortName,
+      title,
+      description,
+      logo: {
+        url: typeof logo.url === "string" ? logo.url : defaultSiteConfig.branding.logo.url,
+      },
+      favicon: {
+        svg: typeof favicon.svg === "string" && favicon.svg ? favicon.svg : defaultSiteConfig.branding.favicon.svg,
+        png32: typeof favicon.png32 === "string" ? favicon.png32 : defaultSiteConfig.branding.favicon.png32,
+        appleTouchIcon:
+          typeof favicon.appleTouchIcon === "string" && favicon.appleTouchIcon
+            ? favicon.appleTouchIcon
+            : defaultSiteConfig.branding.favicon.appleTouchIcon,
+        png192: typeof favicon.png192 === "string" ? favicon.png192 : defaultSiteConfig.branding.favicon.png192,
+        png512: typeof favicon.png512 === "string" ? favicon.png512 : defaultSiteConfig.branding.favicon.png512,
+      },
     },
   };
 }
@@ -244,6 +311,30 @@ export async function uploadAdminImage(file: File, slot: HeaderImageSlot, format
   const formData = new FormData();
   formData.set("file", file);
   formData.set("slot", slot);
+  formData.set("format", format);
+
+  const res = await fetch(greenhouseApiUrl("/admin/api/images"), {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!res.ok) {
+    throw new Error(`API error: ${res.status}`);
+  }
+
+  const json = await res.json();
+  return json.data;
+}
+
+export async function uploadAdminAsset(
+  file: File,
+  assetType: "logo" | "favicon",
+  format: string
+): Promise<AdminImage> {
+  const formData = new FormData();
+  formData.set("file", file);
+  formData.set("assetType", assetType);
+  formData.set("slot", assetType);
   formData.set("format", format);
 
   const res = await fetch(greenhouseApiUrl("/admin/api/images"), {
