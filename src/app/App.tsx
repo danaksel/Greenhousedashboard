@@ -642,7 +642,7 @@ export default function App() {
 
   return (
     <div className={`min-h-screen transition-colors duration-300 ${bgColor}`}>
-      <div className="relative mx-auto max-w-md lg:max-w-7xl lg:px-8 xl:px-10">
+      <div className="relative mx-auto max-w-md md:max-w-7xl md:px-8 xl:px-10">
         {/* Offline Indicator */}
         <div
           className={`fixed top-0 left-0 right-0 z-50 flex items-center justify-center gap-2 bg-red-600 px-4 py-2 text-center text-sm text-white transition-all duration-300 ${
@@ -662,10 +662,10 @@ export default function App() {
         />
 
         {/* Header with Logo, Title, and Controls */}
-        <div className="sticky top-0 z-30 bg-[#5d7342] px-4 py-4 lg:rounded-b-2xl lg:px-8 lg:py-5 lg:shadow-lg lg:shadow-black/10">
+        <div className="sticky top-0 z-30 bg-[#5d7342] px-4 py-4 md:rounded-b-2xl md:px-8 md:py-5 md:shadow-lg md:shadow-black/10">
           <div className="flex items-center justify-between gap-5">
             <div className="flex items-center gap-3">
-              <GreenhouseIcon className="h-9 w-9 text-white lg:h-[22px] lg:w-[22px]" />
+              <GreenhouseIcon className="h-9 w-9 text-white md:h-[22px] md:w-[22px]" />
               <h1 className="text-xl text-white" style={{ fontFamily: "'Cinzel Decorative', serif", fontWeight: 400 }}>Kristins drivhus</h1>
             </div>
             <div className="flex items-center gap-2">
@@ -701,7 +701,7 @@ export default function App() {
 
         {/* Error Message */}
         <div
-          className={`overflow-hidden bg-red-500 px-4 text-sm text-white transition-all duration-300 lg:mx-8 lg:rounded-b-xl lg:px-6 ${
+          className={`overflow-hidden bg-red-500 px-4 text-sm text-white transition-all duration-300 md:mx-8 md:rounded-b-xl md:px-6 ${
             error ? "max-h-24 py-3 opacity-100" : "max-h-0 py-0 opacity-0"
           }`}
         >
@@ -713,12 +713,12 @@ export default function App() {
           )}
         </div>
 
-        <main className="lg:px-8 lg:py-8">
-          <div className="lg:space-y-8">
+        <main className="md:px-8 md:py-8">
+          <div className="md:space-y-8">
             {siteConfig.showHeroImage && (
               <section>
                 {/* Hero Image */}
-                <div className="relative mb-6 h-[200px] w-full overflow-hidden lg:mb-0 lg:aspect-[3/1] lg:h-auto lg:rounded-2xl lg:shadow-xl lg:shadow-black/15">
+                <div className="relative mb-6 h-[200px] w-full overflow-hidden md:mb-0 md:aspect-[3/1] md:h-auto md:rounded-2xl md:shadow-xl md:shadow-black/15">
                   <picture>
                     <source media="(min-width: 1024px)" srcSet={heroDesktopImageSrc} />
                     <ImageWithFallback
@@ -734,7 +734,7 @@ export default function App() {
                       <WeatherWidgetSkeleton />
                     </div>
                   ) : weatherData ? (
-                    <div className="absolute bottom-4 right-4 top-4 lg:bottom-auto lg:left-auto lg:right-5 lg:top-5">
+                    <div className="absolute bottom-4 right-4 top-4 md:bottom-auto md:left-auto md:right-5 md:top-5">
                       <Suspense fallback={<WeatherWidgetSkeleton />}>
                         <WeatherWidget data={weatherData} compact rainToday={rainToday} />
                       </Suspense>
@@ -745,14 +745,14 @@ export default function App() {
             )}
 
             <section
-              className={`px-4 pb-6 lg:grid lg:gap-8 lg:px-0 lg:pb-0 lg:pt-0 ${
+              className={`px-4 pb-6 md:grid md:gap-8 md:px-0 md:pb-0 md:pt-0 ${
                 siteConfig.showHeroImage ? "" : "pt-5"
-              } ${hasVisibleStatuses ? "lg:grid-cols-2" : "lg:grid-cols-1"}`}
+              } ${hasVisibleStatuses ? "md:grid-cols-2" : "md:grid-cols-1"}`}
             >
               {/* Climate Metrics */}
               <div
-                className={`mb-7 pt-1 lg:mb-0 lg:flex lg:items-center lg:rounded-2xl lg:border lg:p-6 lg:shadow-lg lg:shadow-black/5 lg:backdrop-blur-sm ${
-                  darkMode ? "lg:border-white/10 lg:bg-white/[0.045]" : "lg:border-white/25 lg:bg-white/25"
+                className={`mb-7 pt-1 md:mb-0 md:flex md:items-center md:rounded-2xl md:border md:p-6 md:shadow-lg md:shadow-black/5 md:backdrop-blur-sm ${
+                  darkMode ? "md:border-white/10 md:bg-white/[0.045]" : "md:border-white/25 md:bg-white/25"
                 }`}
               >
                 {loading ? (
@@ -760,7 +760,7 @@ export default function App() {
                 ) : (
                   <div
                     key={`climate-${temperature}-${humidity}`}
-                    className="grid w-full grid-cols-2 gap-3 opacity-100 transition-opacity duration-300 sm:gap-4 lg:gap-6"
+                    className="grid w-full grid-cols-2 gap-3 opacity-100 transition-opacity duration-300 sm:gap-4 md:gap-6"
                   >
                     <ClimateMetric
                       label="Temperatur"
@@ -786,8 +786,8 @@ export default function App() {
 
               {!loading && hasVisibleStatuses && (
                 <div
-                  className={`lg:relative lg:flex lg:flex-col lg:justify-center lg:rounded-2xl lg:border lg:p-6 lg:shadow-lg lg:shadow-black/5 lg:backdrop-blur-sm ${
-                    darkMode ? "lg:border-white/10 lg:bg-white/[0.045]" : "lg:border-white/25 lg:bg-white/25"
+                  className={`md:relative md:flex md:flex-col md:justify-center md:rounded-2xl md:border md:p-6 md:shadow-lg md:shadow-black/5 md:backdrop-blur-sm ${
+                    darkMode ? "md:border-white/10 md:bg-white/[0.045]" : "md:border-white/25 md:bg-white/25"
                   }`}
                 >
                   <DeviceStatusRow items={visibleStatusItems} darkMode={darkMode} desktopCardLayout />
@@ -797,11 +797,11 @@ export default function App() {
 
             {/* Trend Charts */}
             {!loading && (
-              <section className="space-y-3 px-4 pb-6 lg:space-y-4 lg:px-0 lg:pb-0">
+              <section className="space-y-3 px-4 pb-6 md:space-y-4 md:px-0 md:pb-0">
               <div className="flex items-center justify-between gap-3 px-1">
                 <button
                   type="button"
-                  className={`flex min-h-9 items-center gap-2 text-xs uppercase leading-none tracking-[0.04em] transition-colors lg:pointer-events-none ${
+                  className={`flex min-h-9 items-center gap-2 text-xs uppercase leading-none tracking-[0.04em] transition-colors md:pointer-events-none ${
                     darkMode ? "text-white/45 hover:text-white/70" : "text-stone-500 hover:text-stone-700"
                   }`}
                   onClick={() => setChartsExpanded((expanded) => !expanded)}
@@ -810,7 +810,7 @@ export default function App() {
                 >
                   <span>Grafer</span>
                   <ChevronDownIcon
-                    className={`size-4 transition-transform duration-300 lg:hidden ${chartsExpanded ? "rotate-180" : "rotate-0"}`}
+                    className={`size-4 transition-transform duration-300 md:hidden ${chartsExpanded ? "rotate-180" : "rotate-0"}`}
                   />
                 </button>
                 <Select value={chartRange} onValueChange={(value) => setChartRange(value as ChartRange)}>
@@ -829,7 +829,7 @@ export default function App() {
               </div>
 
               {!chartsExpanded && (
-                <div className="lg:hidden">
+                <div className="md:hidden">
                   <CollapsedChartPreview
                     temperatureData={selectedTemperatureData}
                     humidityData={selectedHumidityData}
@@ -842,7 +842,7 @@ export default function App() {
 
               <div
                 id="chart-panel"
-                className={`grid overflow-hidden transition-[grid-template-rows,opacity] duration-300 lg:grid-rows-[1fr] lg:opacity-100 ${
+                className={`grid overflow-hidden transition-[grid-template-rows,opacity] duration-300 md:grid-rows-[1fr] md:opacity-100 ${
                   chartsExpanded ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
                 }`}
               >
@@ -855,11 +855,11 @@ export default function App() {
                         <Carousel
                           setApi={setChartCarouselApi}
                           opts={{ align: "start", containScroll: "trimSnaps" }}
-                          className="w-full lg:pointer-events-none"
+                          className="w-full md:pointer-events-none"
                           aria-label="Grafer for temperatur og luftfuktighet"
                         >
-                          <CarouselContent className="ml-0 pb-5 pt-1 lg:grid lg:grid-cols-2 lg:gap-4 lg:pb-0">
-                            <CarouselItem className="px-3 lg:min-w-0 lg:px-0">
+                          <CarouselContent className="ml-0 pb-5 pt-1 md:grid md:grid-cols-2 md:gap-4 md:pb-0">
+                            <CarouselItem className="px-3 md:min-w-0 md:px-0">
                               <TrendChart
                                 title={`Temperatur ${chartRangeLabel}`}
                                 data={selectedTemperatureData}
@@ -869,7 +869,7 @@ export default function App() {
                                 xAxisInterval={chartXAxisInterval}
                               />
                             </CarouselItem>
-                            <CarouselItem className="px-3 lg:min-w-0 lg:px-0">
+                            <CarouselItem className="px-3 md:min-w-0 md:px-0">
                               <TrendChart
                                 title={`Luftfuktighet ${chartRangeLabel}`}
                                 data={selectedHumidityData}
@@ -881,7 +881,7 @@ export default function App() {
                             </CarouselItem>
                           </CarouselContent>
                         </Carousel>
-                        <div className="flex items-center justify-center gap-3 lg:hidden">
+                        <div className="flex items-center justify-center gap-3 md:hidden">
                           <button
                             type="button"
                             className={chartNavButtonClass}
@@ -923,8 +923,8 @@ export default function App() {
 
             {/* Footer with Last Updated */}
             {lastUpdated && (
-              <div className="mt-4 px-4 pb-6 lg:mt-0 lg:px-0 lg:pb-0">
-                <p className={`text-center text-xs ${darkMode ? 'text-white/60' : 'text-gray-500'} lg:text-right`}>
+              <div className="mt-4 px-4 pb-6 md:mt-0 md:px-0 md:pb-0">
+                <p className={`text-center text-xs ${darkMode ? 'text-white/60' : 'text-gray-500'} md:text-right`}>
                   Siste data fra drivhuset mottatt {lastUpdated.toLocaleDateString('nb-NO', {
                     day: '2-digit',
                     month: '2-digit',

@@ -81,7 +81,7 @@ export function TrendChart({
   }
   
   return (
-    <Card className={`p-4 lg:p-5 ${bgClass} backdrop-blur-sm shadow-lg border ${borderClass} transition-colors duration-300`}>
+    <Card className={`p-4 md:p-5 ${bgClass} backdrop-blur-sm shadow-lg border ${borderClass} transition-colors duration-300`}>
       <h3 className={`text-sm mb-3 ${titleColor}`}>{title}</h3>
       <ResponsiveContainer width="100%" height={220}>
         <ComposedChart data={data} margin={{ right: 20, left: -10, top: 5, bottom: 25 }}>

@@ -18,7 +18,7 @@ export function ChartSkeleton({ darkMode = false }: ChartSkeletonProps) {
         <div className={`h-8 w-[132px] rounded-full ${mutedClass} animate-pulse`} />
       </div>
 
-      <div className="relative h-48 overflow-hidden rounded-md lg:h-[260px]">
+      <div className="relative h-48 overflow-hidden rounded-md md:h-[260px]">
         <div
           className="absolute inset-0 opacity-80"
           style={{

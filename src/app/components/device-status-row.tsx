@@ -21,8 +21,8 @@ export function DeviceStatusRow({ items, darkMode = false, desktopCardLayout = f
   const labelColor = darkMode ? "text-white/45" : "text-stone-500";
   const labelClass = `text-[10px] uppercase tracking-[0.02em] leading-[1.15] whitespace-nowrap ${labelColor}`;
   const rowClass = desktopCardLayout
-    ? "mb-8 flex items-start justify-center gap-7 pt-2 lg:mb-0 lg:gap-10 lg:pt-0"
-    : "mb-8 flex items-start justify-center gap-7 pt-2 lg:mb-0 lg:justify-start lg:gap-6 lg:pt-0";
+    ? "mb-8 flex items-start justify-center gap-7 pt-2 md:mb-0 md:gap-10 md:pt-0"
+    : "mb-8 flex items-start justify-center gap-7 pt-2 md:mb-0 md:justify-start md:gap-6 md:pt-0";
 
   return (
     <div className={rowClass}>
@@ -31,8 +31,8 @@ export function DeviceStatusRow({ items, darkMode = false, desktopCardLayout = f
           key={item.label}
           className={`flex w-[110px] flex-col items-center text-center ${
             desktopCardLayout
-              ? "lg:w-[110px]"
-              : "lg:w-[100px]"
+              ? "md:w-[110px]"
+              : "md:w-[100px]"
           }`}
         >
           {item.tooltip ? (
