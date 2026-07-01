@@ -459,7 +459,7 @@ export default function App() {
       appleStatusBar.setAttribute('name', 'apple-mobile-web-app-status-bar-style');
       document.head.appendChild(appleStatusBar);
     }
-    appleStatusBar.setAttribute('content', darkMode ? 'black-translucent' : 'default');
+    appleStatusBar.setAttribute('content', 'black-translucent');
   }, [darkMode]);
 
   useEffect(() => {
