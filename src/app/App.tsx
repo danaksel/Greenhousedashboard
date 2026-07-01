@@ -1,6 +1,18 @@
 import { lazy, Suspense, useEffect, useState } from "react";
+import { AdminPage } from "./AdminPage";
 import { ChartSkeleton } from "./components/chart-skeleton";
-import { fetchLatestGreenhouseData, fetchGreenhouseHistory, fetchGreenhouseStats24h, fetchWeatherData, type WeatherData } from "./utils/api";
+import {
+  defaultSiteConfig,
+  fetchLatestGreenhouseData,
+  fetchGreenhouseHistory,
+  fetchGreenhouseStats24h,
+  fetchSiteConfig,
+  fetchWeatherData,
+  resolveGreenhouseAssetUrl,
+  type HeaderImageSlot,
+  type SiteConfig,
+  type WeatherData,
+} from "./utils/api";
 import { ImageWithFallback } from "./components/figma/ImageWithFallback";
 import { GreenhouseIcon } from "./components/greenhouse-icon";
 import { WeatherWidgetSkeleton } from "./components/weather-widget-skeleton";
@@ -124,6 +136,10 @@ function CollapsedChartPreview({
 }
 
 export default function App() {
+  if (typeof window !== "undefined" && window.location.pathname.startsWith("/admin")) {
+    return <AdminPage />;
+  }
+
   const [temperature, setTemperature] = useState<number | null>(null);
   const [humidity, setHumidity] = useState<number | null>(null);
   const [rainToday, setRainToday] = useState<number | null>(null);
@@ -147,6 +163,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
+  const [siteConfig, setSiteConfig] = useState<SiteConfig>(defaultSiteConfig);
   const [darkMode, setDarkMode] = useState(() => {
     const saved = localStorage.getItem("darkMode");
     if (saved !== null) return saved === "true";
@@ -455,6 +472,22 @@ export default function App() {
   }, [darkMode]);
 
   useEffect(() => {
+    let cancelled = false;
+
+    fetchSiteConfig()
+      .then((config) => {
+        if (!cancelled) setSiteConfig(config);
+      })
+      .catch((configErr) => {
+        console.error("Failed to fetch site config:", configErr);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!chartCarouselApi) return;
 
     const updateActiveSlide = () => {
@@ -535,18 +568,22 @@ export default function App() {
 
   const bgColor = darkMode ? 'bg-[#2d3a21]' : 'bg-[#e8ede3]';
   const safeWindowCount = Math.min(Math.max(windowCount ?? 0, 0), 3);
-  const heroImageSrc =
+  const heroImageSlot: HeaderImageSlot =
     temperature === null
-      ? "/drivhus.png"
+      ? "normal"
       : temperature < 12
-        ? "/cold.jpg"
+        ? "cold"
         : temperature < 23
-          ? "/drivhus.png"
+          ? "normal"
           : temperature <= 28
-            ? "/warm.jpg"
-            : "/hot.jpg";
+            ? "warm"
+            : "hot";
+  const heroImageConfig = siteConfig.headerImages[heroImageSlot] ?? defaultSiteConfig.headerImages[heroImageSlot];
+  const heroMobileImageSrc = resolveGreenhouseAssetUrl(heroImageConfig.mobile);
+  const heroDesktopImageSrc = resolveGreenhouseAssetUrl(heroImageConfig.desktop);
   const statusItems = [
     {
+      id: "door",
       iconSrc: darkMode
         ? door === "open" ? "/door-open-dark.svg" : "/door-closed-dark.svg"
         : door === "open" ? "/door-open-light.svg" : "/door-closed-light.svg",
@@ -554,6 +591,7 @@ export default function App() {
       tooltip: `${door === "open" ? "Åpnet" : "Lukket"} ${formatStatusTimestamp(doorUpdatedAt) ?? ""}`.trim(),
     },
     {
+      id: "fan",
       iconSrc: darkMode
         ? heating === "on" ? "/fan-heating-dark.svg" : fan === "on" ? "/fan-cooling-dark.svg" : "/fan-off-dark.svg"
         : heating === "on" ? "/fan-heating-light.svg" : fan === "on" ? "/fan-cooling-light.svg" : "/fan-off-light.svg",
@@ -567,6 +605,7 @@ export default function App() {
       tooltip: `${fan === "on" ? "Slått på" : "Avslått"} ${formatStatusTimestamp(fanUpdatedAt) ?? ""}`.trim(),
     },
     {
+      id: "window",
       iconSrc: darkMode
         ? safeWindowCount > 0 ? "/window-open-dark.svg" : "/window-closed-dark.svg"
         : safeWindowCount > 0 ? "/window-open-light.svg" : "/window-closed-light.svg",
@@ -574,6 +613,8 @@ export default function App() {
       tooltip: `${safeWindowCount > 0 ? "Åpnet" : "Lukket"} ${formatStatusTimestamp(windowUpdatedAt) ?? ""}`.trim(),
     },
   ];
+  const visibleStatusItems = statusItems.filter((item) => siteConfig.visibleStatuses[item.id as keyof SiteConfig["visibleStatuses"]]);
+  const hasVisibleStatuses = visibleStatusItems.length > 0;
   const selectedTemperatureData = chartRange === "12h" ? temperatureData12h : temperatureData24h;
   const selectedHumidityData = chartRange === "12h" ? humidityData12h : humidityData24h;
   const chartRangeLabel = chartRange === "12h" ? "siste 12 timer" : "siste 24 timer";
@@ -624,8 +665,8 @@ export default function App() {
         <div className="sticky top-0 z-30 bg-[#5d7342] px-4 py-4 lg:rounded-b-2xl lg:px-8 lg:py-5 lg:shadow-lg lg:shadow-black/10">
           <div className="flex items-center justify-between gap-5">
             <div className="flex items-center gap-3">
-              <GreenhouseIcon className="h-9 w-9 text-white lg:h-11 lg:w-11" />
-              <h1 className="text-xl text-white lg:text-3xl" style={{ fontFamily: "'Cinzel Decorative', serif", fontWeight: 400 }}>Kristins drivhus</h1>
+              <GreenhouseIcon className="h-9 w-9 text-white lg:h-[22px] lg:w-[22px]" />
+              <h1 className="text-xl text-white" style={{ fontFamily: "'Cinzel Decorative', serif", fontWeight: 400 }}>Kristins drivhus</h1>
             </div>
             <div className="flex items-center gap-2">
               {/* Refresh Button */}
@@ -674,32 +715,36 @@ export default function App() {
 
         <main className="lg:px-8 lg:py-8">
           <div className="lg:space-y-8">
-            <section>
-              {/* Hero Image */}
-              <div className="relative mb-6 h-[200px] w-full overflow-hidden lg:mb-0 lg:aspect-[3/1] lg:h-auto lg:rounded-2xl lg:shadow-xl lg:shadow-black/15">
-                <ImageWithFallback
-                  src={heroImageSrc}
-                  alt="Drivhus" 
-                  className="h-full w-full object-cover object-center lg:object-top"
-                />
-                
-                {/* Weather Widget Overlay */}
-                {weatherLoading ? (
-                  <div className="absolute bottom-4 right-4 top-4">
-                    <WeatherWidgetSkeleton />
-                  </div>
-                ) : weatherData ? (
-                  <div className="absolute bottom-4 right-4 top-4 lg:bottom-auto lg:left-auto lg:right-5 lg:top-5">
-                    <Suspense fallback={<WeatherWidgetSkeleton />}>
-                      <WeatherWidget data={weatherData} compact rainToday={rainToday} />
-                    </Suspense>
-                  </div>
-                ) : null}
-              </div>
+            {siteConfig.showHeroImage && (
+              <section>
+                {/* Hero Image */}
+                <div className="relative mb-6 h-[200px] w-full overflow-hidden lg:mb-0 lg:aspect-[3/1] lg:h-auto lg:rounded-2xl lg:shadow-xl lg:shadow-black/15">
+                  <picture>
+                    <source media="(min-width: 1024px)" srcSet={heroDesktopImageSrc} />
+                    <ImageWithFallback
+                      src={heroMobileImageSrc}
+                      alt="Drivhus" 
+                      className="h-full w-full object-cover object-center lg:object-top"
+                    />
+                  </picture>
+                  
+                  {/* Weather Widget Overlay */}
+                  {weatherLoading ? (
+                    <div className="absolute bottom-4 right-4 top-4">
+                      <WeatherWidgetSkeleton />
+                    </div>
+                  ) : weatherData ? (
+                    <div className="absolute bottom-4 right-4 top-4 lg:bottom-auto lg:left-auto lg:right-5 lg:top-5">
+                      <Suspense fallback={<WeatherWidgetSkeleton />}>
+                        <WeatherWidget data={weatherData} compact rainToday={rainToday} />
+                      </Suspense>
+                    </div>
+                  ) : null}
+                </div>
+              </section>
+            )}
 
-            </section>
-
-            <section className="px-4 pb-6 lg:grid lg:grid-cols-2 lg:gap-8 lg:px-0 lg:pb-0">
+            <section className={`px-4 pb-6 lg:grid lg:gap-8 lg:px-0 lg:pb-0 ${hasVisibleStatuses ? "lg:grid-cols-2" : "lg:grid-cols-1"}`}>
               {/* Climate Metrics */}
               <div
                 className={`mb-7 pt-1 lg:mb-0 lg:flex lg:items-center lg:rounded-2xl lg:border lg:p-6 lg:shadow-lg lg:shadow-black/5 lg:backdrop-blur-sm ${
@@ -735,13 +780,13 @@ export default function App() {
                 )}
               </div>
 
-              {!loading && (
+              {!loading && hasVisibleStatuses && (
                 <div
                   className={`lg:relative lg:flex lg:flex-col lg:justify-center lg:rounded-2xl lg:border lg:p-6 lg:shadow-lg lg:shadow-black/5 lg:backdrop-blur-sm ${
                     darkMode ? "lg:border-white/10 lg:bg-white/[0.045]" : "lg:border-white/25 lg:bg-white/25"
                   }`}
                 >
-                  <DeviceStatusRow items={statusItems} darkMode={darkMode} desktopCardLayout />
+                  <DeviceStatusRow items={visibleStatusItems} darkMode={darkMode} desktopCardLayout />
                 </div>
               )}
             </section>

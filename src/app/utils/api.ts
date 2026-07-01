@@ -38,6 +38,38 @@ export interface WeatherData {
   uvIndex?: number;
 }
 
+export type HeaderImageSlot = "cold" | "normal" | "warm" | "hot";
+export type HeaderImageFormat = "mobile" | "desktop";
+
+export interface HeaderImageConfig {
+  label: string;
+  description: string;
+  mobile: string;
+  desktop: string;
+}
+
+export interface SiteConfig {
+  showHeroImage: boolean;
+  visibleStatuses: {
+    door: boolean;
+    fan: boolean;
+    window: boolean;
+  };
+  headerImages: Record<HeaderImageSlot, HeaderImageConfig>;
+}
+
+export interface AdminImage {
+  key: string;
+  url: string;
+  filename: string;
+  contentType: string;
+  size: number | null;
+  uploadedAt: string | null;
+  updatedAt: string | null;
+  slot: string;
+  format: string;
+}
+
 const GREENHOUSE_API_BASE =
   typeof window !== "undefined" && window.location.hostname === "127.0.0.1"
     ? "https://drivhus.dan-aksel.workers.dev"
@@ -45,6 +77,68 @@ const GREENHOUSE_API_BASE =
 
 function greenhouseApiUrl(path: string) {
   return `${GREENHOUSE_API_BASE}${path}`;
+}
+
+export function resolveGreenhouseAssetUrl(path: string) {
+  if (!path) return path;
+  if (/^https?:\/\//i.test(path) || path.startsWith("data:")) return path;
+  return greenhouseApiUrl(path);
+}
+
+export const defaultSiteConfig: SiteConfig = {
+  showHeroImage: true,
+  visibleStatuses: {
+    door: true,
+    fan: true,
+    window: true,
+  },
+  headerImages: {
+    cold: {
+      label: "Kaldt",
+      description: "Under 12°C",
+      mobile: "/cold.jpg",
+      desktop: "/cold.jpg",
+    },
+    normal: {
+      label: "Normalt",
+      description: "12-22.9°C",
+      mobile: "/drivhus.png",
+      desktop: "/drivhus.png",
+    },
+    warm: {
+      label: "Varmt",
+      description: "23-28°C",
+      mobile: "/warm.jpg",
+      desktop: "/warm.jpg",
+    },
+    hot: {
+      label: "Svært varmt",
+      description: "Over 28°C",
+      mobile: "/hot.jpg",
+      desktop: "/hot.jpg",
+    },
+  },
+};
+
+function normalizeSiteConfig(data: Partial<SiteConfig> | null | undefined): SiteConfig {
+  const visibleStatuses = data?.visibleStatuses ?? {};
+  const headerImages = data?.headerImages ?? {};
+
+  return {
+    showHeroImage:
+      typeof data?.showHeroImage === "boolean" ? data.showHeroImage : defaultSiteConfig.showHeroImage,
+    visibleStatuses: {
+      door: typeof visibleStatuses.door === "boolean" ? visibleStatuses.door : defaultSiteConfig.visibleStatuses.door,
+      fan: typeof visibleStatuses.fan === "boolean" ? visibleStatuses.fan : defaultSiteConfig.visibleStatuses.fan,
+      window: typeof visibleStatuses.window === "boolean" ? visibleStatuses.window : defaultSiteConfig.visibleStatuses.window,
+    },
+    headerImages: {
+      cold: { ...defaultSiteConfig.headerImages.cold, ...(headerImages.cold ?? {}) },
+      normal: { ...defaultSiteConfig.headerImages.normal, ...(headerImages.normal ?? {}) },
+      warm: { ...defaultSiteConfig.headerImages.warm, ...(headerImages.warm ?? {}) },
+      hot: { ...defaultSiteConfig.headerImages.hot, ...(headerImages.hot ?? {}) },
+    },
+  };
 }
 
 export async function fetchLatestGreenhouseData(): Promise<LatestData> {
@@ -79,6 +173,90 @@ export async function fetchLatestGreenhouseData(): Promise<LatestData> {
     heating: data.heating,
     heatingUpdatedAt: data.heatingUpdatedAt,
   };
+}
+
+export async function fetchSiteConfig(): Promise<SiteConfig> {
+  const res = await fetch(greenhouseApiUrl("/api/site-config"), {
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    cache: "no-store"
+  });
+
+  if (!res.ok) {
+    throw new Error(`API error: ${res.status}`);
+  }
+
+  const json = await res.json();
+  return normalizeSiteConfig(json.data);
+}
+
+export async function fetchAdminSiteConfig(): Promise<SiteConfig> {
+  const res = await fetch(greenhouseApiUrl("/admin/api/config"), {
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    cache: "no-store"
+  });
+
+  if (!res.ok) {
+    throw new Error(`API error: ${res.status}`);
+  }
+
+  const json = await res.json();
+  return normalizeSiteConfig(json.data);
+}
+
+export async function saveAdminSiteConfig(config: SiteConfig): Promise<SiteConfig> {
+  const res = await fetch(greenhouseApiUrl("/admin/api/config"), {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(config),
+  });
+
+  if (!res.ok) {
+    throw new Error(`API error: ${res.status}`);
+  }
+
+  const json = await res.json();
+  return normalizeSiteConfig(json.data);
+}
+
+export async function fetchAdminImages(): Promise<AdminImage[]> {
+  const res = await fetch(greenhouseApiUrl("/admin/api/images"), {
+    method: "GET",
+    cache: "no-store"
+  });
+
+  if (!res.ok) {
+    throw new Error(`API error: ${res.status}`);
+  }
+
+  const json = await res.json();
+  return Array.isArray(json.data) ? json.data : [];
+}
+
+export async function uploadAdminImage(file: File, slot: HeaderImageSlot, format: HeaderImageFormat): Promise<AdminImage> {
+  const formData = new FormData();
+  formData.set("file", file);
+  formData.set("slot", slot);
+  formData.set("format", format);
+
+  const res = await fetch(greenhouseApiUrl("/admin/api/images"), {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!res.ok) {
+    throw new Error(`API error: ${res.status}`);
+  }
+
+  const json = await res.json();
+  return json.data;
 }
 
 export async function fetchGreenhouseStats24h(): Promise<GreenhouseStats24h> {

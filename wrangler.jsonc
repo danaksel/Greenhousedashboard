@@ -22,6 +22,10 @@
     {
       "binding": "GREENHOUSE_HISTORY",
       "bucket_name": "greenhouse-history"
+    },
+    {
+      "binding": "GREENHOUSE_ASSETS",
+      "bucket_name": "greenhouse-history"
     }
   ],
   "compatibility_flags": ["nodejs_compat"]

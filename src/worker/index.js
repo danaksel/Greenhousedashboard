@@ -4,7 +4,7 @@ export default {
 
     const corsHeaders = {
       "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type, Authorization",
     };
 
@@ -39,6 +39,33 @@ export default {
         return jsonResponse({ ok: true, data: stats24h }, 200, corsHeaders);
       }
 
+      if (url.pathname === "/api/site-config" && request.method === "GET") {
+        const config = await getSiteConfig(env);
+        return jsonResponse({ ok: true, data: config }, 200, corsHeaders);
+      }
+
+      if (url.pathname === "/api/site-image" && request.method === "GET") {
+        return await handleSiteImage(request, env, corsHeaders);
+      }
+
+      if (url.pathname === "/admin/api/config" && request.method === "GET") {
+        const config = await getSiteConfig(env);
+        return jsonResponse({ ok: true, data: config }, 200, corsHeaders);
+      }
+
+      if (url.pathname === "/admin/api/config" && request.method === "PUT") {
+        return await handleSaveSiteConfig(request, env, corsHeaders);
+      }
+
+      if (url.pathname === "/admin/api/images" && request.method === "GET") {
+        const images = await listAdminImages(env);
+        return jsonResponse({ ok: true, data: images }, 200, corsHeaders);
+      }
+
+      if (url.pathname === "/admin/api/images" && request.method === "POST") {
+        return await handleUploadAdminImage(request, env, corsHeaders);
+      }
+
       if (url.pathname === "/api/fan/on" && request.method === "POST") {
         return await handleFanCommand(env, "on", corsHeaders);
       }
@@ -52,7 +79,7 @@ export default {
         return widgetResponse(buildWidgetRows(latest), corsHeaders);
       }
 
-      if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/admin/")) {
+      if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/admin/api/")) {
         return jsonResponse({ ok: false, error: "Not found" }, 404, corsHeaders);
       }
 
@@ -74,6 +101,244 @@ export default {
     }
   },
 };
+
+const DEFAULT_SITE_CONFIG = {
+  showHeroImage: true,
+  visibleStatuses: {
+    door: true,
+    fan: true,
+    window: true,
+  },
+  headerImages: {
+    cold: {
+      label: "Kaldt",
+      description: "Under 12°C",
+      mobile: "/cold.jpg",
+      desktop: "/cold.jpg",
+    },
+    normal: {
+      label: "Normalt",
+      description: "12-22.9°C",
+      mobile: "/drivhus.png",
+      desktop: "/drivhus.png",
+    },
+    warm: {
+      label: "Varmt",
+      description: "23-28°C",
+      mobile: "/warm.jpg",
+      desktop: "/warm.jpg",
+    },
+    hot: {
+      label: "Svært varmt",
+      description: "Over 28°C",
+      mobile: "/hot.jpg",
+      desktop: "/hot.jpg",
+    },
+  },
+};
+
+const SITE_CONFIG_KEY = "admin/site-config.json";
+const ADMIN_IMAGE_PREFIX = "admin/images/";
+
+async function getSiteConfig(env) {
+  const bucket = getAssetBucket(env);
+  const stored = bucket ? await readR2Json(bucket, SITE_CONFIG_KEY) : null;
+  return normalizeSiteConfig(stored);
+}
+
+async function handleSaveSiteConfig(request, env, corsHeaders) {
+  const bucket = getAssetBucket(env);
+  if (!bucket) {
+    return jsonResponse({ ok: false, error: "R2 bucket is not configured" }, 500, corsHeaders);
+  }
+
+  const body = await request.json();
+  const config = normalizeSiteConfig(body);
+
+  await bucket.put(SITE_CONFIG_KEY, JSON.stringify(config, null, 2), {
+    httpMetadata: {
+      contentType: "application/json; charset=utf-8",
+    },
+  });
+
+  return jsonResponse({ ok: true, data: config }, 200, corsHeaders);
+}
+
+async function handleUploadAdminImage(request, env, corsHeaders) {
+  const bucket = getAssetBucket(env);
+  if (!bucket) {
+    return jsonResponse({ ok: false, error: "R2 bucket is not configured" }, 500, corsHeaders);
+  }
+
+  const contentType = request.headers.get("Content-Type") || "";
+  if (!contentType.includes("multipart/form-data")) {
+    return jsonResponse({ ok: false, error: "Content-Type must be multipart/form-data" }, 400, corsHeaders);
+  }
+
+  const formData = await request.formData();
+  const file = formData.get("file");
+  const slot = sanitizeKeyPart(formData.get("slot") || "general");
+  const format = sanitizeKeyPart(formData.get("format") || "image");
+
+  if (!file || typeof file === "string") {
+    return jsonResponse({ ok: false, error: "Missing file upload" }, 400, corsHeaders);
+  }
+
+  if (!["image/jpeg", "image/png"].includes(file.type)) {
+    return jsonResponse({ ok: false, error: "Only JPG and PNG images are allowed" }, 400, corsHeaders);
+  }
+
+  const extension = file.type === "image/png" ? "png" : "jpg";
+  const originalName = sanitizeFilename(file.name || `header.${extension}`);
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const key = `${ADMIN_IMAGE_PREFIX}${slot}/${format}/${timestamp}-${originalName.replace(/\.(jpe?g|png)$/i, "")}.${extension}`;
+
+  await bucket.put(key, file.stream(), {
+    httpMetadata: {
+      contentType: file.type,
+      cacheControl: "public, max-age=31536000, immutable",
+    },
+    customMetadata: {
+      originalName,
+      slot,
+      format,
+      uploadedAt: new Date().toISOString(),
+    },
+  });
+
+  const image = await getImageMetadata(bucket, key);
+  return jsonResponse({ ok: true, data: image }, 201, corsHeaders);
+}
+
+async function listAdminImages(env) {
+  const bucket = getAssetBucket(env);
+  if (!bucket) return [];
+
+  let cursor = undefined;
+  const objects = [];
+
+  do {
+    const page = await bucket.list({
+      prefix: ADMIN_IMAGE_PREFIX,
+      cursor,
+      limit: 1000,
+    });
+
+    objects.push(...page.objects);
+    cursor = page.truncated ? page.cursor : undefined;
+  } while (cursor);
+
+  const images = await Promise.all(objects.map((object) => getImageMetadata(bucket, object.key, object)));
+  return images
+    .filter(Boolean)
+    .sort((a, b) => new Date(b.uploadedAt || b.updatedAt) - new Date(a.uploadedAt || a.updatedAt));
+}
+
+async function handleSiteImage(request, env, corsHeaders) {
+  const bucket = getAssetBucket(env);
+  const url = new URL(request.url);
+  const key = url.searchParams.get("key") || "";
+
+  if (!bucket || !isAllowedImageKey(key)) {
+    return jsonResponse({ ok: false, error: "Image not found" }, 404, corsHeaders);
+  }
+
+  const object = await bucket.get(key);
+  if (!object) {
+    return jsonResponse({ ok: false, error: "Image not found" }, 404, corsHeaders);
+  }
+
+  return new Response(object.body, {
+    status: 200,
+    headers: {
+      "Content-Type": object.httpMetadata?.contentType || "application/octet-stream",
+      "Cache-Control": object.httpMetadata?.cacheControl || "public, max-age=3600",
+      ...corsHeaders,
+    },
+  });
+}
+
+function getAssetBucket(env) {
+  return env.GREENHOUSE_ASSETS || env.GREENHOUSE_HISTORY || null;
+}
+
+async function getImageMetadata(bucket, key, objectInfo = null) {
+  if (!isAllowedImageKey(key)) return null;
+
+  const object = objectInfo && objectInfo.customMetadata ? objectInfo : await bucket.head(key);
+  if (!object) return null;
+
+  const customMetadata = object.customMetadata || {};
+
+  return {
+    key,
+    url: `/api/site-image?key=${encodeURIComponent(key)}`,
+    filename: customMetadata.originalName || key.split("/").pop(),
+    contentType: object.httpMetadata?.contentType || "",
+    size: object.size || null,
+    uploadedAt: customMetadata.uploadedAt || object.uploaded?.toISOString?.() || null,
+    updatedAt: object.uploaded?.toISOString?.() || null,
+    slot: customMetadata.slot || key.split("/")[2] || "general",
+    format: customMetadata.format || key.split("/")[3] || "image",
+  };
+}
+
+function normalizeSiteConfig(config) {
+  const input = config && typeof config === "object" ? config : {};
+  const visibleStatuses = input.visibleStatuses && typeof input.visibleStatuses === "object" ? input.visibleStatuses : {};
+  const headerImages = input.headerImages && typeof input.headerImages === "object" ? input.headerImages : {};
+
+  const normalized = {
+    showHeroImage: typeof input.showHeroImage === "boolean" ? input.showHeroImage : DEFAULT_SITE_CONFIG.showHeroImage,
+    visibleStatuses: {
+      door: typeof visibleStatuses.door === "boolean" ? visibleStatuses.door : DEFAULT_SITE_CONFIG.visibleStatuses.door,
+      fan: typeof visibleStatuses.fan === "boolean" ? visibleStatuses.fan : DEFAULT_SITE_CONFIG.visibleStatuses.fan,
+      window: typeof visibleStatuses.window === "boolean" ? visibleStatuses.window : DEFAULT_SITE_CONFIG.visibleStatuses.window,
+    },
+    headerImages: {},
+  };
+
+  for (const [key, defaultImage] of Object.entries(DEFAULT_SITE_CONFIG.headerImages)) {
+    const image = headerImages[key] && typeof headerImages[key] === "object" ? headerImages[key] : {};
+    normalized.headerImages[key] = {
+      label: defaultImage.label,
+      description: defaultImage.description,
+      mobile: normalizeImageReference(image.mobile, defaultImage.mobile),
+      desktop: normalizeImageReference(image.desktop, defaultImage.desktop),
+    };
+  }
+
+  return normalized;
+}
+
+function normalizeImageReference(value, fallback) {
+  const raw = String(value || "").trim();
+  if (!raw) return fallback;
+  if (raw.startsWith("/")) return raw;
+  if (isAllowedImageKey(raw)) return `/api/site-image?key=${encodeURIComponent(raw)}`;
+  return fallback;
+}
+
+function isAllowedImageKey(key) {
+  return typeof key === "string" && key.startsWith(ADMIN_IMAGE_PREFIX) && !key.includes("..");
+}
+
+function sanitizeKeyPart(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48) || "general";
+}
+
+function sanitizeFilename(value) {
+  return String(value || "image")
+    .trim()
+    .replace(/[/\\?%*:|"<>]/g, "-")
+    .replace(/\s+/g, "-")
+    .slice(0, 96) || "image";
+}
 
 async function handleCleanupKvHistory(request, env, corsHeaders) {
   const authHeader = request.headers.get("Authorization") || "";
