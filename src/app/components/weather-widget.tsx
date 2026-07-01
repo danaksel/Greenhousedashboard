@@ -10,8 +10,8 @@ interface WeatherWidgetProps {
 }
 
 // Map symbol codes to appropriate icons
-const getWeatherIcon = (symbolCode: string, compact = false, forceWhite = false) => {
-  const iconClass = compact ? "w-5 h-5" : "w-8 h-8";
+const getWeatherIcon = (symbolCode: string, compact = false, forceWhite = false, iconClassOverride?: string) => {
+  const iconClass = iconClassOverride ?? (compact ? "w-5 h-5" : "w-8 h-8");
   const color = compact || forceWhite ? "text-white" : "";
   
   // Thunder variants (check first since they can contain rain/snow/sleet)
@@ -90,18 +90,18 @@ export function WeatherWidget({ data, compact, rainToday }: WeatherWidgetProps) 
           <button
             type="button"
             onClick={() => handleTooltipClick('weather')}
-            className="rounded-xl text-left transition hover:bg-white/5"
+            className="rounded-lg px-1 py-0.5 text-left transition hover:bg-white/5 xl:py-1"
           >
-            <div className="flex items-center gap-2">
-              {getWeatherIcon(data.symbolCode, true, true)}
-              <div className="min-w-0 flex-1">
-                <p className="text-[9px] uppercase leading-none tracking-[0.02em] text-white xl:text-[10px]">Ute nå</p>
-                <p className="mt-0.5 line-clamp-2 text-sm font-semibold leading-tight xl:mt-1 xl:text-base">{data.description}</p>
-                <p className="mt-0.5 text-[28px] font-light leading-none xl:mt-1 xl:text-4xl">{data.temperature.toFixed(1)}°</p>
-                <p className="mt-1 text-[9px] uppercase leading-tight tracking-[0.02em] text-white xl:text-[10px]">
-                  UV <span className="font-semibold">{displayUvIndex.toFixed(1)}</span>
-                </p>
+            <div className="min-w-0">
+              <p className="text-[9px] uppercase leading-none tracking-[0.02em] text-white xl:text-[10px]">Ute nå</p>
+              <p className="mt-0.5 line-clamp-2 text-sm font-semibold leading-tight xl:mt-1 xl:text-base">{data.description}</p>
+              <div className="mt-1 flex items-center gap-2 xl:mt-1.5">
+                {getWeatherIcon(data.symbolCode, true, true, "h-9 w-9 xl:h-10 xl:w-10")}
+                <p className="text-[36px] font-light leading-none xl:text-4xl">{data.temperature.toFixed(1)}°</p>
               </div>
+              <p className="mt-1 text-[9px] uppercase leading-tight tracking-[0.02em] text-white xl:text-[10px]">
+                UV <span className="font-semibold">{displayUvIndex.toFixed(1)}</span>
+              </p>
             </div>
           </button>
 
