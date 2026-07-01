@@ -102,32 +102,32 @@ export function WeatherWidget({ data, compact, rainToday }: WeatherWidgetProps) 
             <p className="mt-2 text-[34px] font-light leading-none xl:text-4xl">{data.temperature.toFixed(1)}°</p>
           </button>
 
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             {rainToday !== null && rainToday !== undefined && (
               <button
                 type="button"
                 onClick={() => handleTooltipClick('rain')}
-                className="rounded-xl bg-white/10 px-3 py-2 text-left transition hover:bg-white/15"
+                className="flex w-full items-center justify-between gap-4 rounded-lg px-1 py-1 text-left transition hover:bg-white/5"
               >
-                <span className="block text-[10px] uppercase tracking-[0.04em] text-white">Nedbør i dag</span>
-                <span className="mt-1 block text-lg font-semibold leading-none">{rainToday.toFixed(1)} mm</span>
+                <span className="text-[11px] uppercase tracking-[0.04em] text-white">Nedbør</span>
+                <span className="text-sm font-semibold leading-none">{rainToday.toFixed(1)} mm</span>
               </button>
             )}
             <button
               type="button"
               onClick={() => handleTooltipClick('uv')}
-              className="rounded-xl bg-white/10 px-3 py-2 text-left transition hover:bg-white/15"
+              className="flex w-full items-center justify-between gap-4 rounded-lg px-1 py-1 text-left transition hover:bg-white/5"
             >
-              <span className="block text-[10px] uppercase tracking-[0.04em] text-white">UV nå</span>
-              <span className="mt-1 block text-lg font-semibold leading-none">{displayUvIndex.toFixed(1)}</span>
+              <span className="text-[11px] uppercase tracking-[0.04em] text-white">UV</span>
+              <span className="text-sm font-semibold leading-none">{displayUvIndex.toFixed(1)}</span>
             </button>
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             <button
               type="button"
               onClick={() => handleTooltipClick('sunrise')}
-              className="flex items-center justify-between gap-3 rounded-xl bg-white/8 px-3 py-2 text-sm transition hover:bg-white/13"
+              className="flex w-full items-center justify-between gap-4 rounded-lg px-1 py-1 text-sm transition hover:bg-white/5"
             >
               <span className="flex items-center gap-2 text-white">
                 <SunriseIcon className="h-4 w-4" />
@@ -138,7 +138,7 @@ export function WeatherWidget({ data, compact, rainToday }: WeatherWidgetProps) 
             <button
               type="button"
               onClick={() => handleTooltipClick('sunset')}
-              className="flex items-center justify-between gap-3 rounded-xl bg-white/8 px-3 py-2 text-sm transition hover:bg-white/13"
+              className="flex w-full items-center justify-between gap-4 rounded-lg px-1 py-1 text-sm transition hover:bg-white/5"
             >
               <span className="flex items-center gap-2 text-white">
                 <SunsetIcon className="h-4 w-4" />
