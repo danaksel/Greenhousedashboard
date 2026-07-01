@@ -601,7 +601,7 @@ export default function App() {
 
   return (
     <div className={`min-h-screen transition-colors duration-300 ${bgColor}`}>
-      <div className="max-w-md mx-auto relative">
+      <div className="relative mx-auto max-w-md lg:max-w-7xl lg:px-8 xl:px-10">
         {/* Offline Indicator */}
         <div
           className={`fixed top-0 left-0 right-0 z-50 flex items-center justify-center gap-2 bg-red-600 px-4 py-2 text-center text-sm text-white transition-all duration-300 ${
@@ -621,11 +621,11 @@ export default function App() {
         />
 
         {/* Header with Logo, Title, and Controls */}
-        <div className="bg-[#5d7342] px-4 py-4 sticky top-0 z-30">
-          <div className="flex items-center justify-between">
+        <div className="sticky top-0 z-30 bg-[#5d7342] px-4 py-4 lg:rounded-b-2xl lg:px-8 lg:py-5 lg:shadow-lg lg:shadow-black/10">
+          <div className="flex items-center justify-between gap-5">
             <div className="flex items-center gap-3">
-              <GreenhouseIcon className="w-9 h-9 text-white" />
-              <h1 className="text-xl text-white" style={{ fontFamily: "'Cinzel Decorative', serif", fontWeight: 400 }}>Kristins drivhus</h1>
+              <GreenhouseIcon className="h-9 w-9 text-white lg:h-11 lg:w-11" />
+              <h1 className="text-xl text-white lg:text-3xl" style={{ fontFamily: "'Cinzel Decorative', serif", fontWeight: 400 }}>Kristins drivhus</h1>
             </div>
             <div className="flex items-center gap-2">
               {/* Refresh Button */}
@@ -660,7 +660,7 @@ export default function App() {
 
         {/* Error Message */}
         <div
-          className={`overflow-hidden bg-red-500 px-4 text-sm text-white transition-all duration-300 ${
+          className={`overflow-hidden bg-red-500 px-4 text-sm text-white transition-all duration-300 lg:mx-8 lg:rounded-b-xl lg:px-6 ${
             error ? "max-h-24 py-3 opacity-100" : "max-h-0 py-0 opacity-0"
           }`}
         >
@@ -672,69 +672,87 @@ export default function App() {
           )}
         </div>
 
-        {/* Hero Image */}
-        <div className="relative w-full h-[200px] overflow-hidden mb-6">
-          <ImageWithFallback
-            src={heroImageSrc}
-            alt="Drivhus" 
-            className="w-full h-full object-cover object-center"
-          />
-          
-          {/* Weather Widget Overlay */}
-          {weatherLoading ? (
-            <div className="absolute top-4 right-4 bottom-4">
-              <WeatherWidgetSkeleton />
-            </div>
-          ) : weatherData ? (
-            <div className="absolute top-4 right-4 bottom-4">
-              <Suspense fallback={<WeatherWidgetSkeleton />}>
-                <WeatherWidget data={weatherData} compact rainToday={rainToday} />
-              </Suspense>
-            </div>
-          ) : null}
-        </div>
-
-        <div className="px-4 pb-6">
-          {/* Climate Metrics */}
-          <div className="mb-7 pt-1">
-            {loading ? (
-              <ClimateMetricsSkeleton darkMode={darkMode} />
-            ) : (
-              <div
-                key={`climate-${temperature}-${humidity}`}
-                className="grid grid-cols-2 gap-3 opacity-100 transition-opacity duration-300 sm:gap-4"
-              >
-                <ClimateMetric
-                  label="Temperatur"
-                  value={temperature}
-                  unit="°C"
-                  warningMessage={getTemperatureWarningMessage(temperature)}
-                  min={temperatureMinMax.min}
-                  max={temperatureMinMax.max}
-                  darkMode={darkMode}
+        <main className="lg:px-8 lg:py-8">
+          <div className="lg:space-y-8">
+            <section>
+              {/* Hero Image */}
+              <div className="relative mb-6 h-[200px] w-full overflow-hidden lg:mb-0 lg:aspect-[3/1] lg:h-auto lg:rounded-2xl lg:shadow-xl lg:shadow-black/15">
+                <ImageWithFallback
+                  src={heroImageSrc}
+                  alt="Drivhus" 
+                  className="h-full w-full object-cover object-center lg:object-top"
                 />
-                <ClimateMetric
-                  label="Luftfuktighet"
-                  value={humidity}
-                  unit="%"
-                  warningMessage={getHumidityWarningMessage(humidity)}
-                  min={humidityMinMax.min}
-                  max={humidityMinMax.max}
-                  darkMode={darkMode}
-                />
+                
+                {/* Weather Widget Overlay */}
+                {weatherLoading ? (
+                  <div className="absolute bottom-4 right-4 top-4">
+                    <WeatherWidgetSkeleton />
+                  </div>
+                ) : weatherData ? (
+                  <div className="absolute bottom-4 right-4 top-4 lg:bottom-auto lg:left-auto lg:right-5 lg:top-5">
+                    <Suspense fallback={<WeatherWidgetSkeleton />}>
+                      <WeatherWidget data={weatherData} compact rainToday={rainToday} />
+                    </Suspense>
+                  </div>
+                ) : null}
               </div>
-            )}
-          </div>
 
-          {!loading && <DeviceStatusRow items={statusItems} darkMode={darkMode} />}
+            </section>
 
-          {/* Trend Charts */}
-          {!loading && (
-            <div className="space-y-3">
+            <section className="px-4 pb-6 lg:grid lg:grid-cols-2 lg:gap-8 lg:px-0 lg:pb-0">
+              {/* Climate Metrics */}
+              <div
+                className={`mb-7 pt-1 lg:mb-0 lg:flex lg:items-center lg:rounded-2xl lg:border lg:p-6 lg:shadow-lg lg:shadow-black/5 lg:backdrop-blur-sm ${
+                  darkMode ? "lg:border-white/10 lg:bg-white/[0.045]" : "lg:border-white/25 lg:bg-white/25"
+                }`}
+              >
+                {loading ? (
+                  <ClimateMetricsSkeleton darkMode={darkMode} />
+                ) : (
+                  <div
+                    key={`climate-${temperature}-${humidity}`}
+                    className="grid w-full grid-cols-2 gap-3 opacity-100 transition-opacity duration-300 sm:gap-4 lg:gap-6"
+                  >
+                    <ClimateMetric
+                      label="Temperatur"
+                      value={temperature}
+                      unit="°C"
+                      warningMessage={getTemperatureWarningMessage(temperature)}
+                      min={temperatureMinMax.min}
+                      max={temperatureMinMax.max}
+                      darkMode={darkMode}
+                    />
+                    <ClimateMetric
+                      label="Luftfuktighet"
+                      value={humidity}
+                      unit="%"
+                      warningMessage={getHumidityWarningMessage(humidity)}
+                      min={humidityMinMax.min}
+                      max={humidityMinMax.max}
+                      darkMode={darkMode}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {!loading && (
+                <div
+                  className={`lg:relative lg:flex lg:flex-col lg:justify-center lg:rounded-2xl lg:border lg:p-6 lg:shadow-lg lg:shadow-black/5 lg:backdrop-blur-sm ${
+                    darkMode ? "lg:border-white/10 lg:bg-white/[0.045]" : "lg:border-white/25 lg:bg-white/25"
+                  }`}
+                >
+                  <DeviceStatusRow items={statusItems} darkMode={darkMode} desktopCardLayout />
+                </div>
+              )}
+            </section>
+
+            {/* Trend Charts */}
+            {!loading && (
+              <section className="space-y-3 px-4 pb-6 lg:space-y-4 lg:px-0 lg:pb-0">
               <div className="flex items-center justify-between gap-3 px-1">
                 <button
                   type="button"
-                  className={`flex min-h-9 items-center gap-2 text-xs uppercase leading-none tracking-[0.04em] transition-colors ${
+                  className={`flex min-h-9 items-center gap-2 text-xs uppercase leading-none tracking-[0.04em] transition-colors lg:pointer-events-none ${
                     darkMode ? "text-white/45 hover:text-white/70" : "text-stone-500 hover:text-stone-700"
                   }`}
                   onClick={() => setChartsExpanded((expanded) => !expanded)}
@@ -743,7 +761,7 @@ export default function App() {
                 >
                   <span>Grafer</span>
                   <ChevronDownIcon
-                    className={`size-4 transition-transform duration-300 ${chartsExpanded ? "rotate-180" : "rotate-0"}`}
+                    className={`size-4 transition-transform duration-300 lg:hidden ${chartsExpanded ? "rotate-180" : "rotate-0"}`}
                   />
                 </button>
                 <Select value={chartRange} onValueChange={(value) => setChartRange(value as ChartRange)}>
@@ -762,18 +780,20 @@ export default function App() {
               </div>
 
               {!chartsExpanded && (
-                <CollapsedChartPreview
-                  temperatureData={selectedTemperatureData}
-                  humidityData={selectedHumidityData}
-                  darkMode={darkMode}
-                  loading={historyLoading}
-                  onClick={() => setChartsExpanded(true)}
-                />
+                <div className="lg:hidden">
+                  <CollapsedChartPreview
+                    temperatureData={selectedTemperatureData}
+                    humidityData={selectedHumidityData}
+                    darkMode={darkMode}
+                    loading={historyLoading}
+                    onClick={() => setChartsExpanded(true)}
+                  />
+                </div>
               )}
 
               <div
                 id="chart-panel"
-                className={`grid overflow-hidden transition-[grid-template-rows,opacity] duration-300 ${
+                className={`grid overflow-hidden transition-[grid-template-rows,opacity] duration-300 lg:grid-rows-[1fr] lg:opacity-100 ${
                   chartsExpanded ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
                 }`}
               >
@@ -786,11 +806,11 @@ export default function App() {
                         <Carousel
                           setApi={setChartCarouselApi}
                           opts={{ align: "start", containScroll: "trimSnaps" }}
-                          className="w-full"
+                          className="w-full lg:pointer-events-none"
                           aria-label="Grafer for temperatur og luftfuktighet"
                         >
-                          <CarouselContent className="ml-0 pb-5 pt-1">
-                            <CarouselItem className="px-3">
+                          <CarouselContent className="ml-0 pb-5 pt-1 lg:grid lg:grid-cols-2 lg:gap-4 lg:pb-0">
+                            <CarouselItem className="px-3 lg:min-w-0 lg:px-0">
                               <TrendChart
                                 title={`Temperatur ${chartRangeLabel}`}
                                 data={selectedTemperatureData}
@@ -800,7 +820,7 @@ export default function App() {
                                 xAxisInterval={chartXAxisInterval}
                               />
                             </CarouselItem>
-                            <CarouselItem className="px-3">
+                            <CarouselItem className="px-3 lg:min-w-0 lg:px-0">
                               <TrendChart
                                 title={`Luftfuktighet ${chartRangeLabel}`}
                                 data={selectedHumidityData}
@@ -812,7 +832,7 @@ export default function App() {
                             </CarouselItem>
                           </CarouselContent>
                         </Carousel>
-                        <div className="flex items-center justify-center gap-3">
+                        <div className="flex items-center justify-center gap-3 lg:hidden">
                           <button
                             type="button"
                             className={chartNavButtonClass}
@@ -849,25 +869,26 @@ export default function App() {
                   )}
                 </div>
               </div>
-            </div>
-          )}
+              </section>
+            )}
 
-          {/* Footer with Last Updated */}
-          {lastUpdated && (
-            <div className="mt-4">
-              <p className={`text-xs text-center ${darkMode ? 'text-white/60' : 'text-gray-500'}`}>
-                Siste data fra drivhuset mottatt {lastUpdated.toLocaleDateString('nb-NO', {
-                  day: '2-digit',
-                  month: '2-digit',
-                  year: 'numeric'
-                })} {lastUpdated.toLocaleTimeString('nb-NO', {
-                  hour: '2-digit',
-                  minute: '2-digit'
-                })}
-              </p>
-            </div>
-          )}
-        </div>
+            {/* Footer with Last Updated */}
+            {lastUpdated && (
+              <div className="mt-4 px-4 pb-6 lg:mt-0 lg:px-0 lg:pb-0">
+                <p className={`text-center text-xs ${darkMode ? 'text-white/60' : 'text-gray-500'} lg:text-right`}>
+                  Siste data fra drivhuset mottatt {lastUpdated.toLocaleDateString('nb-NO', {
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: 'numeric'
+                  })} {lastUpdated.toLocaleTimeString('nb-NO', {
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  })}
+                </p>
+              </div>
+            )}
+          </div>
+        </main>
       </div>
     </div>
   );

@@ -48,7 +48,7 @@ export function ClimateMetric({
   const labelColor = darkMode ? "text-white/45" : "text-stone-500";
 
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-1.5 lg:space-y-3">
       <p className={`ml-[10px] text-[10px] uppercase tracking-[0.02em] leading-[1.15] ${labelColor}`}>
         {label}
       </p>
@@ -60,7 +60,7 @@ export function ClimateMetric({
               aria-label={`Vis varsel for ${label.toLowerCase()}`}
             >
               <span
-                className={`text-[60px] leading-[0.92] font-light tracking-[0] ${valueColor}`}
+                className={`text-[60px] leading-[0.92] font-light tracking-[0] lg:text-[72px] ${valueColor}`}
                 style={
                   {
                     color: normalValueColor,
@@ -71,7 +71,7 @@ export function ClimateMetric({
               >
                 {value !== null ? value.toFixed(1) : "--"}
               </span>
-              <span className={`pb-0.5 text-[30px] leading-none font-light ${unitColor}`}>
+              <span className={`pb-0.5 text-[30px] leading-none font-light lg:text-[34px] ${unitColor}`}>
                 {unit}
               </span>
             </button>
@@ -91,12 +91,12 @@ export function ClimateMetric({
       ) : (
         <div className="ml-[10px] flex items-end gap-1 sm:gap-1.5">
           <span
-            className={`text-[60px] leading-[0.92] font-light tracking-[0] ${valueColor}`}
+            className={`text-[60px] leading-[0.92] font-light tracking-[0] lg:text-[72px] ${valueColor}`}
             style={{ color: normalValueColor }}
           >
             {value !== null ? value.toFixed(1) : "--"}
           </span>
-          <span className={`pb-0.5 text-[30px] leading-none font-light ${unitColor}`}>
+          <span className={`pb-0.5 text-[30px] leading-none font-light lg:text-[34px] ${unitColor}`}>
             {unit}
           </span>
         </div>

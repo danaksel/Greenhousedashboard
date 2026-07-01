@@ -12,17 +12,28 @@ interface DeviceStatusItem {
 interface DeviceStatusRowProps {
   items: DeviceStatusItem[];
   darkMode?: boolean;
+  desktopCardLayout?: boolean;
 }
 
-export function DeviceStatusRow({ items, darkMode = false }: DeviceStatusRowProps) {
+export function DeviceStatusRow({ items, darkMode = false, desktopCardLayout = false }: DeviceStatusRowProps) {
   const [openTooltip, setOpenTooltip] = useState<string | null>(null);
   const labelColor = darkMode ? "text-white/45" : "text-stone-500";
-  const labelClass = `text-[10px] uppercase tracking-[0.02em] leading-[1.15] whitespace-nowrap ${labelColor}`;
+  const labelClass = `text-[10px] uppercase tracking-[0.02em] leading-[1.15] ${desktopCardLayout ? "lg:whitespace-normal" : "whitespace-nowrap"} ${labelColor}`;
+  const rowClass = desktopCardLayout
+    ? "mb-8 flex items-start justify-center gap-7 pt-2 lg:mb-0 lg:grid lg:grid-cols-3 lg:gap-4 lg:pt-0"
+    : "mb-8 flex items-start justify-center gap-7 pt-2 lg:mb-0 lg:justify-start lg:gap-6 lg:pt-0";
 
   return (
-    <div className="mb-8 flex items-start justify-center gap-7 pt-2">
+    <div className={rowClass}>
       {items.map((item) => (
-        <div key={item.label} className="flex w-[110px] flex-col items-center text-center">
+        <div
+          key={item.label}
+          className={`flex w-[110px] flex-col items-center text-center ${
+            desktopCardLayout
+              ? "lg:w-full lg:rounded-xl lg:border lg:border-current/10 lg:bg-white/20 lg:px-3 lg:py-5 lg:backdrop-blur-sm"
+              : "lg:w-[100px]"
+          }`}
+        >
           {item.tooltip ? (
             <Tooltip
               open={openTooltip === item.label}
