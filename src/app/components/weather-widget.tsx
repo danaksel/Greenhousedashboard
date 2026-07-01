@@ -94,9 +94,9 @@ export function WeatherWidget({ data, compact, rainToday }: WeatherWidgetProps) 
           >
             <div className="flex items-center gap-2">
               {getWeatherIcon(data.symbolCode, true, true)}
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <p className="text-[9px] uppercase leading-none tracking-[0.02em] text-white xl:text-[10px]">Ute nå</p>
-                <p className="mt-0.5 truncate text-sm font-semibold leading-tight xl:mt-1 xl:text-base">{data.description}</p>
+                <p className="mt-0.5 line-clamp-2 text-sm font-semibold leading-tight xl:mt-1 xl:text-base">{data.description}</p>
                 <p className="mt-0.5 text-[28px] font-light leading-none xl:mt-1 xl:text-4xl">{data.temperature.toFixed(1)}°</p>
                 <p className="mt-1 text-[9px] uppercase leading-tight tracking-[0.02em] text-white xl:text-[10px]">
                   UV <span className="font-semibold">{displayUvIndex.toFixed(1)}</span>
