@@ -50,6 +50,10 @@ function getUploadSizeGuidance(format: HeaderImageFormat) {
   return "Anbefalt 900 x 460 px for retina. Minimum 780 x 400 px. Format ca. 390:200.";
 }
 
+function getImagePreviewAspectClass(image: AdminImage) {
+  return image.format === "mobile" ? "aspect-[390/200]" : "aspect-[3/1]";
+}
+
 export function AdminPage() {
   const [config, setConfig] = useState<SiteConfig>(defaultSiteConfig);
   const [images, setImages] = useState<AdminImage[]>([]);
@@ -426,7 +430,7 @@ export function AdminPage() {
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                   {selectedImages.map((image) => (
                     <article key={image.key} className="overflow-hidden rounded-lg border border-[#d8ded1] bg-[#f7f8f5]">
-                      <div className="aspect-[3/1] bg-stone-200">
+                      <div className={`${getImagePreviewAspectClass(image)} bg-stone-200`}>
                         <img
                           src={resolveGreenhouseAssetUrl(image.url)}
                           alt={image.filename}
@@ -442,10 +446,10 @@ export function AdminPage() {
                         </div>
                         <div className="flex min-h-6 flex-wrap gap-1.5 text-[11px] font-semibold">
                           {config.headerImages[selectedSlot].desktop === image.url && (
-                            <span className="rounded-full bg-[#5d7342] px-2 py-1 text-white">Valgt desktop</span>
+                            <span className="rounded-full border border-[#2d3a21] px-2 py-1 text-[#2d3a21]">Valgt desktop</span>
                           )}
                           {config.headerImages[selectedSlot].mobile === image.url && (
-                            <span className="rounded-full bg-[#d28c31] px-2 py-1 text-white">Valgt mobil</span>
+                            <span className="rounded-full border border-[#2d3a21] px-2 py-1 text-[#2d3a21]">Valgt mobil</span>
                           )}
                         </div>
                         <div className="flex flex-wrap gap-2">
