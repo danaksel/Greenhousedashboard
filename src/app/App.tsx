@@ -744,7 +744,11 @@ export default function App() {
               </section>
             )}
 
-            <section className={`px-4 pb-6 lg:grid lg:gap-8 lg:px-0 lg:pb-0 ${hasVisibleStatuses ? "lg:grid-cols-2" : "lg:grid-cols-1"}`}>
+            <section
+              className={`px-4 pb-6 lg:grid lg:gap-8 lg:px-0 lg:pb-0 lg:pt-0 ${
+                siteConfig.showHeroImage ? "" : "pt-5"
+              } ${hasVisibleStatuses ? "lg:grid-cols-2" : "lg:grid-cols-1"}`}
+            >
               {/* Climate Metrics */}
               <div
                 className={`mb-7 pt-1 lg:mb-0 lg:flex lg:items-center lg:rounded-2xl lg:border lg:p-6 lg:shadow-lg lg:shadow-black/5 lg:backdrop-blur-sm ${
