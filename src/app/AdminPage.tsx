@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   defaultSiteConfig,
   deleteAdminImage,
@@ -42,12 +42,22 @@ function formatBytes(size: number | null) {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function getUploadSizeGuidance(format: HeaderImageFormat) {
+  if (format === "desktop") {
+    return "Anbefalt 2400 x 800 px for retina. Minimum 1200 x 400 px. Format 3:1.";
+  }
+
+  return "Anbefalt 900 x 460 px for retina. Minimum 780 x 400 px. Format ca. 390:200.";
+}
+
 export function AdminPage() {
   const [config, setConfig] = useState<SiteConfig>(defaultSiteConfig);
   const [images, setImages] = useState<AdminImage[]>([]);
   const [latest, setLatest] = useState<LatestData | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<HeaderImageSlot>("normal");
   const [selectedFormat, setSelectedFormat] = useState<HeaderImageFormat>("desktop");
+  const selectedSlotRef = useRef<HeaderImageSlot>("normal");
+  const selectedFormatRef = useRef<HeaderImageFormat>("desktop");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -86,6 +96,16 @@ export function AdminPage() {
     setMessage(null);
   };
 
+  const setSelectedUploadSlot = (slot: HeaderImageSlot) => {
+    selectedSlotRef.current = slot;
+    setSelectedSlot(slot);
+  };
+
+  const setSelectedUploadFormat = (format: HeaderImageFormat) => {
+    selectedFormatRef.current = format;
+    setSelectedFormat(format);
+  };
+
   const setImage = (slot: HeaderImageSlot, format: HeaderImageFormat, value: string) => {
     updateConfig((current) => ({
       ...current,
@@ -97,6 +117,11 @@ export function AdminPage() {
         },
       },
     }));
+  };
+
+  const applyImage = (slot: HeaderImageSlot, format: HeaderImageFormat, image: AdminImage) => {
+    setImage(slot, format, image.url);
+    setMessage(`${image.filename} er valgt for ${config.headerImages[slot].label.toLowerCase()} / ${format === "desktop" ? "desktop" : "mobil"}. Husk å lagre.`);
   };
 
   const handleSave = async () => {
@@ -123,10 +148,12 @@ export function AdminPage() {
     setMessage(null);
 
     try {
-      const image = await uploadAdminImage(file, selectedSlot, selectedFormat);
+      const targetSlot = selectedSlotRef.current;
+      const targetFormat = selectedFormatRef.current;
+      const image = await uploadAdminImage(file, targetSlot, targetFormat);
       setImages((current) => [image, ...current.filter((item) => item.key !== image.key)]);
-      setImage(selectedSlot, selectedFormat, image.url);
-      setMessage("Bildet er lastet opp og valgt. Husk å lagre.");
+      setImage(targetSlot, targetFormat, image.url);
+      setMessage(`Bildet er lastet opp og valgt for ${config.headerImages[targetSlot].label.toLowerCase()} / ${targetFormat === "desktop" ? "desktop" : "mobil"}. Husk å lagre.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Kunne ikke laste opp bildet");
     } finally {
@@ -321,8 +348,8 @@ export function AdminPage() {
                               <button
                                 type="button"
                                 onClick={() => {
-                                  setSelectedSlot(slot);
-                                  setSelectedFormat(format.key);
+                                  setSelectedUploadSlot(slot);
+                                  setSelectedUploadFormat(format.key);
                                 }}
                                 className="rounded-full border border-[#cbd3c2] px-3 py-1.5 text-xs text-[#4d5d3e] transition hover:bg-white"
                               >
@@ -343,11 +370,14 @@ export function AdminPage() {
                 <div>
                   <h2 className="text-base font-semibold">R2-bilder</h2>
                   <p className="text-sm text-stone-600">Last opp JPG/PNG eller velg et bilde som allerede ligger i R2.</p>
+                  <p className="mt-1 text-xs text-stone-500">
+                    Desktop: 2400 x 800 px anbefalt. Mobil: 900 x 460 px anbefalt.
+                  </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <select
                     value={selectedSlot}
-                    onChange={(event) => setSelectedSlot(event.target.value as HeaderImageSlot)}
+                    onChange={(event) => setSelectedUploadSlot(event.target.value as HeaderImageSlot)}
                     className="rounded-lg border border-[#cbd3c2] bg-white px-3 py-2 text-sm"
                   >
                     {imageSlots.map((slot) => (
@@ -358,7 +388,7 @@ export function AdminPage() {
                   </select>
                   <select
                     value={selectedFormat}
-                    onChange={(event) => setSelectedFormat(event.target.value as HeaderImageFormat)}
+                    onChange={(event) => setSelectedUploadFormat(event.target.value as HeaderImageFormat)}
                     className="rounded-lg border border-[#cbd3c2] bg-white px-3 py-2 text-sm"
                   >
                     {imageFormats.map((format) => (
@@ -373,11 +403,17 @@ export function AdminPage() {
               <label className="mb-5 flex cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-[#9daa8f] bg-[#f7f8f5] px-4 py-8 text-center transition hover:bg-white">
                 <span className="text-sm font-semibold">{uploading ? "Laster opp" : "Last opp bilde"}</span>
                 <span className="mt-1 text-xs text-stone-500">JPG eller PNG for {config.headerImages[selectedSlot].label.toLowerCase()} / {selectedFormat}</span>
+                <span className="mt-2 max-w-md text-xs leading-relaxed text-stone-500">
+                  {getUploadSizeGuidance(selectedFormat)}
+                </span>
                 <input
                   type="file"
                   accept="image/jpeg,image/png"
                   disabled={uploading}
-                  onChange={(event) => void handleUpload(event.target.files?.[0])}
+                  onChange={(event) => {
+                    void handleUpload(event.target.files?.[0]);
+                    event.target.value = "";
+                  }}
                   className="sr-only"
                 />
               </label>
@@ -404,17 +440,25 @@ export function AdminPage() {
                             {[image.slot, image.format, formatBytes(image.size)].filter(Boolean).join(" · ")}
                           </p>
                         </div>
+                        <div className="flex min-h-6 flex-wrap gap-1.5 text-[11px] font-semibold">
+                          {config.headerImages[selectedSlot].desktop === image.url && (
+                            <span className="rounded-full bg-[#5d7342] px-2 py-1 text-white">Valgt desktop</span>
+                          )}
+                          {config.headerImages[selectedSlot].mobile === image.url && (
+                            <span className="rounded-full bg-[#d28c31] px-2 py-1 text-white">Valgt mobil</span>
+                          )}
+                        </div>
                         <div className="flex flex-wrap gap-2">
                           <button
                             type="button"
-                            onClick={() => setImage(selectedSlot, "desktop", image.url)}
+                            onClick={() => applyImage(selectedSlot, "desktop", image)}
                             className="rounded-full bg-[#5d7342] px-3 py-1.5 text-xs font-semibold text-white"
                           >
                             Bruk desktop
                           </button>
                           <button
                             type="button"
-                            onClick={() => setImage(selectedSlot, "mobile", image.url)}
+                            onClick={() => applyImage(selectedSlot, "mobile", image)}
                             className="rounded-full border border-[#cbd3c2] px-3 py-1.5 text-xs font-semibold text-[#4d5d3e]"
                           >
                             Bruk mobil
