@@ -10,9 +10,9 @@ interface WeatherWidgetProps {
 }
 
 // Map symbol codes to appropriate icons
-const getWeatherIcon = (symbolCode: string, compact = false) => {
+const getWeatherIcon = (symbolCode: string, compact = false, forceWhite = false) => {
   const iconClass = compact ? "w-5 h-5" : "w-8 h-8";
-  const color = compact ? "text-white" : "";
+  const color = compact || forceWhite ? "text-white" : "";
   
   // Thunder variants (check first since they can contain rain/snow/sleet)
   if (symbolCode.includes("thunder")) {
@@ -93,9 +93,9 @@ export function WeatherWidget({ data, compact, rainToday }: WeatherWidgetProps) 
             className="flex w-full items-start justify-between gap-4 rounded-lg text-left transition hover:bg-white/5"
           >
             <div className="flex min-w-0 items-start gap-3">
-              {getWeatherIcon(data.symbolCode, false)}
+              {getWeatherIcon(data.symbolCode, false, true)}
               <div className="min-w-0">
-                <p className="text-[11px] uppercase leading-none tracking-[0.04em] text-white/60">Ute nå</p>
+                <p className="text-[11px] uppercase leading-none tracking-[0.04em] text-white">Ute nå</p>
                 <p className="mt-1 truncate text-base font-semibold leading-tight">{data.description}</p>
               </div>
             </div>
@@ -109,7 +109,7 @@ export function WeatherWidget({ data, compact, rainToday }: WeatherWidgetProps) 
                 onClick={() => handleTooltipClick('rain')}
                 className="rounded-xl bg-white/10 px-3 py-2 text-left transition hover:bg-white/15"
               >
-                <span className="block text-[10px] uppercase tracking-[0.04em] text-white/55">Nedbør i dag</span>
+                <span className="block text-[10px] uppercase tracking-[0.04em] text-white">Nedbør i dag</span>
                 <span className="mt-1 block text-lg font-semibold leading-none">{rainToday.toFixed(1)} mm</span>
               </button>
             )}
@@ -118,7 +118,7 @@ export function WeatherWidget({ data, compact, rainToday }: WeatherWidgetProps) 
               onClick={() => handleTooltipClick('uv')}
               className="rounded-xl bg-white/10 px-3 py-2 text-left transition hover:bg-white/15"
             >
-              <span className="block text-[10px] uppercase tracking-[0.04em] text-white/55">UV nå</span>
+              <span className="block text-[10px] uppercase tracking-[0.04em] text-white">UV nå</span>
               <span className="mt-1 block text-lg font-semibold leading-none">{displayUvIndex.toFixed(1)}</span>
             </button>
           </div>
@@ -129,7 +129,7 @@ export function WeatherWidget({ data, compact, rainToday }: WeatherWidgetProps) 
               onClick={() => handleTooltipClick('sunrise')}
               className="flex items-center justify-between gap-3 rounded-xl bg-white/8 px-3 py-2 text-sm transition hover:bg-white/13"
             >
-              <span className="flex items-center gap-2 text-white/65">
+              <span className="flex items-center gap-2 text-white">
                 <SunriseIcon className="h-4 w-4" />
                 Opp
               </span>
@@ -140,7 +140,7 @@ export function WeatherWidget({ data, compact, rainToday }: WeatherWidgetProps) 
               onClick={() => handleTooltipClick('sunset')}
               className="flex items-center justify-between gap-3 rounded-xl bg-white/8 px-3 py-2 text-sm transition hover:bg-white/13"
             >
-              <span className="flex items-center gap-2 text-white/65">
+              <span className="flex items-center gap-2 text-white">
                 <SunsetIcon className="h-4 w-4" />
                 Ned
               </span>
@@ -149,7 +149,7 @@ export function WeatherWidget({ data, compact, rainToday }: WeatherWidgetProps) 
           </div>
 
           {activeTooltip === 'rain' && (
-            <p className="mt-3 rounded-lg bg-black/25 px-3 py-2 text-xs text-white/75">
+            <p className="mt-3 rounded-lg bg-black/25 px-3 py-2 text-xs text-white">
               Total nedbør fra midnatt til nå. Måles i Kristins hage.
             </p>
           )}
