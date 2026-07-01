@@ -724,7 +724,7 @@ export default function App() {
                     <ImageWithFallback
                       src={heroMobileImageSrc}
                       alt="Drivhus" 
-                      className="h-full w-full object-cover object-center lg:object-top"
+                      className="h-full w-full object-cover object-center"
                     />
                   </picture>
                   

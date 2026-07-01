@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   defaultSiteConfig,
+  deleteAdminImage,
   fetchAdminImages,
   fetchAdminSiteConfig,
   fetchLatestGreenhouseData,
@@ -133,6 +134,48 @@ export function AdminPage() {
     }
   };
 
+  const replaceDeletedImageReferences = (current: SiteConfig, deletedUrl: string): SiteConfig => {
+    const next: SiteConfig = {
+      ...current,
+      headerImages: {
+        ...current.headerImages,
+      },
+    };
+
+    for (const slot of imageSlots) {
+      next.headerImages[slot] = {
+        ...next.headerImages[slot],
+        desktop:
+          next.headerImages[slot].desktop === deletedUrl
+            ? defaultSiteConfig.headerImages[slot].desktop
+            : next.headerImages[slot].desktop,
+        mobile:
+          next.headerImages[slot].mobile === deletedUrl
+            ? defaultSiteConfig.headerImages[slot].mobile
+            : next.headerImages[slot].mobile,
+      };
+    }
+
+    return next;
+  };
+
+  const handleDeleteImage = async (image: AdminImage) => {
+    const confirmed = window.confirm(`Slette ${image.filename} fra R2?`);
+    if (!confirmed) return;
+
+    setError(null);
+    setMessage(null);
+
+    try {
+      await deleteAdminImage(image.key);
+      setImages((current) => current.filter((item) => item.key !== image.key));
+      setConfig((current) => replaceDeletedImageReferences(current, image.url));
+      setMessage("Bildet er slettet. Eventuelle referanser er satt tilbake til standardbilde. Husk å lagre.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Kunne ikke slette bildet");
+    }
+  };
+
   const selectedImages = images.filter((image) => image.slot === selectedSlot || image.slot === "general");
 
   return (
@@ -258,7 +301,7 @@ export function AdminPage() {
                                 <img
                                   src={resolveGreenhouseAssetUrl(value)}
                                   alt={`${slotConfig.label} ${format.label}`}
-                                  className="h-full w-full object-cover object-top"
+                                  className="h-full w-full object-cover object-center"
                                 />
                               </div>
                               <select
@@ -351,7 +394,7 @@ export function AdminPage() {
                         <img
                           src={resolveGreenhouseAssetUrl(image.url)}
                           alt={image.filename}
-                          className="h-full w-full object-cover object-top"
+                          className="h-full w-full object-cover object-center"
                         />
                       </div>
                       <div className="space-y-3 p-3">
@@ -375,6 +418,13 @@ export function AdminPage() {
                             className="rounded-full border border-[#cbd3c2] px-3 py-1.5 text-xs font-semibold text-[#4d5d3e]"
                           >
                             Bruk mobil
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleDeleteImage(image)}
+                            className="rounded-full border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-50"
+                          >
+                            Slett
                           </button>
                         </div>
                       </div>

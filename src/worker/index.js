@@ -66,6 +66,10 @@ export default {
         return await handleUploadAdminImage(request, env, corsHeaders);
       }
 
+      if (url.pathname === "/admin/api/images" && request.method === "DELETE") {
+        return await handleDeleteAdminImage(request, env, corsHeaders);
+      }
+
       if (url.pathname === "/api/fan/on" && request.method === "POST") {
         return await handleFanCommand(env, "on", corsHeaders);
       }
@@ -208,6 +212,24 @@ async function handleUploadAdminImage(request, env, corsHeaders) {
 
   const image = await getImageMetadata(bucket, key);
   return jsonResponse({ ok: true, data: image }, 201, corsHeaders);
+}
+
+async function handleDeleteAdminImage(request, env, corsHeaders) {
+  const bucket = getAssetBucket(env);
+  if (!bucket) {
+    return jsonResponse({ ok: false, error: "R2 bucket is not configured" }, 500, corsHeaders);
+  }
+
+  const url = new URL(request.url);
+  const key = url.searchParams.get("key") || "";
+
+  if (!isAllowedImageKey(key)) {
+    return jsonResponse({ ok: false, error: "Invalid image key" }, 400, corsHeaders);
+  }
+
+  await bucket.delete(key);
+
+  return jsonResponse({ ok: true, deleted: key }, 200, corsHeaders);
 }
 
 async function listAdminImages(env) {

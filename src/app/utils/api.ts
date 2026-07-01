@@ -259,6 +259,16 @@ export async function uploadAdminImage(file: File, slot: HeaderImageSlot, format
   return json.data;
 }
 
+export async function deleteAdminImage(key: string): Promise<void> {
+  const res = await fetch(greenhouseApiUrl(`/admin/api/images?key=${encodeURIComponent(key)}`), {
+    method: "DELETE",
+  });
+
+  if (!res.ok) {
+    throw new Error(`API error: ${res.status}`);
+  }
+}
+
 export async function fetchGreenhouseStats24h(): Promise<GreenhouseStats24h> {
   const res = await fetch(greenhouseApiUrl("/api/stats24h"), {
     method: "GET",
