@@ -85,24 +85,24 @@ export function WeatherWidget({ data, compact, rainToday }: WeatherWidgetProps) 
 
   if (compact) {
     return (
-      <div>
-        <div className="hidden w-[292px] rounded-2xl bg-black/28 p-4 text-white shadow-xl shadow-black/15 backdrop-blur-md md:block">
+      <div className="h-full">
+        <div className="hidden h-full w-[174px] flex-col justify-between rounded-2xl bg-black/28 p-3 text-white shadow-xl shadow-black/15 backdrop-blur-md md:flex xl:w-[190px] xl:p-4">
           <button
             type="button"
             onClick={() => handleTooltipClick('weather')}
-            className="flex w-full items-start justify-between gap-4 rounded-lg text-left transition hover:bg-white/5"
+            className="rounded-xl text-left transition hover:bg-white/5"
           >
-            <div className="flex min-w-0 items-start gap-3">
-              {getWeatherIcon(data.symbolCode, false, true)}
+            <div className="flex items-center gap-2">
+              {getWeatherIcon(data.symbolCode, true, true)}
               <div className="min-w-0">
                 <p className="text-[11px] uppercase leading-none tracking-[0.04em] text-white">Ute nå</p>
                 <p className="mt-1 truncate text-base font-semibold leading-tight">{data.description}</p>
               </div>
             </div>
-            <p className="shrink-0 text-4xl font-light leading-none">{data.temperature.toFixed(1)}°</p>
+            <p className="mt-2 text-[34px] font-light leading-none xl:text-4xl">{data.temperature.toFixed(1)}°</p>
           </button>
 
-          <div className="mt-4 grid grid-cols-2 gap-2">
+          <div className="space-y-2">
             {rainToday !== null && rainToday !== undefined && (
               <button
                 type="button"
@@ -123,7 +123,7 @@ export function WeatherWidget({ data, compact, rainToday }: WeatherWidgetProps) 
             </button>
           </div>
 
-          <div className="mt-2 grid grid-cols-2 gap-2">
+          <div className="space-y-2">
             <button
               type="button"
               onClick={() => handleTooltipClick('sunrise')}
@@ -149,7 +149,7 @@ export function WeatherWidget({ data, compact, rainToday }: WeatherWidgetProps) 
           </div>
 
           {activeTooltip === 'rain' && (
-            <p className="mt-3 rounded-lg bg-black/25 px-3 py-2 text-xs text-white">
+            <p className="rounded-lg bg-black/25 px-3 py-2 text-xs text-white">
               Total nedbør fra midnatt til nå. Måles i Kristins hage.
             </p>
           )}

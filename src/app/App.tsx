@@ -734,7 +734,7 @@ export default function App() {
                       <WeatherWidgetSkeleton />
                     </div>
                   ) : weatherData ? (
-                    <div className="absolute bottom-4 right-4 top-4 md:bottom-auto md:left-auto md:right-5 md:top-5">
+                    <div className="absolute bottom-4 right-4 top-4 md:bottom-5 md:left-auto md:right-5 md:top-5">
                       <Suspense fallback={<WeatherWidgetSkeleton />}>
                         <WeatherWidget data={weatherData} compact rainToday={rainToday} />
                       </Suspense>
