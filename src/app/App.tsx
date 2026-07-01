@@ -689,6 +689,23 @@ export default function App() {
               threshold: thresholds.temperature.min,
             }
           : null;
+  const renderTemperatureAlertTicker = (textSizeClass = "text-xs md:text-sm") =>
+    temperatureAlert ? (
+      <div className={`greenhouse-alert-ticker-track flex w-max whitespace-nowrap font-semibold uppercase tracking-[0.08em] ${textSizeClass}`}>
+        {[0, 1].map((group) => (
+          <span key={group} className="flex items-center gap-6 pr-6">
+            <AlertTriangleIcon className="h-4 w-4 shrink-0" />
+            <span>{temperatureAlert.label.toUpperCase()}</span>
+            <AlertTriangleIcon className="h-4 w-4 shrink-0" />
+            <span>
+              {temperatureAlert.reading} {temperatureAlert.comparisonLabel.toUpperCase()} {temperatureAlert.thresholdLabel}
+            </span>
+            <AlertTriangleIcon className="h-4 w-4 shrink-0" />
+            <span>{temperatureAlert.action}</span>
+          </span>
+        ))}
+      </div>
+    ) : null;
   const statusItems = [
     {
       id: "door",
@@ -855,7 +872,7 @@ export default function App() {
             {siteConfigReady && siteConfig.showHeroImage && (
               <section>
                 {/* Hero Image */}
-                <div className="relative mb-6 h-[200px] w-full overflow-hidden md:mb-0 md:aspect-[3/1] md:h-auto md:rounded-2xl md:shadow-xl md:shadow-black/15">
+                <div className={`relative h-[200px] w-full overflow-hidden md:mb-0 md:aspect-[3/1] md:h-auto md:rounded-2xl md:shadow-xl md:shadow-black/15 ${temperatureAlert ? "mb-0" : "mb-6"}`}>
                   <picture>
                     <source media="(min-width: 768px)" srcSet={heroDesktopImageSrc} />
                     <ImageWithFallback
@@ -874,23 +891,10 @@ export default function App() {
                   )}
                   {temperatureAlert && (
                     <div
-                      className="greenhouse-alert-ticker pointer-events-none absolute inset-x-0 bottom-0 z-20 overflow-hidden py-2 text-white"
+                      className="greenhouse-alert-ticker pointer-events-none absolute inset-x-0 bottom-0 z-20 hidden overflow-hidden py-2 text-white md:block"
                       style={{ "--alert-color": temperatureAlert.color } as React.CSSProperties}
                     >
-                      <div className="greenhouse-alert-ticker-track flex w-max whitespace-nowrap text-xs font-semibold uppercase tracking-[0.08em] md:text-sm">
-                        {[0, 1].map((group) => (
-                          <span key={group} className="flex items-center gap-6 pr-6">
-                            <AlertTriangleIcon className="h-4 w-4 shrink-0" />
-                            <span>{temperatureAlert.label.toUpperCase()}</span>
-                            <AlertTriangleIcon className="h-4 w-4 shrink-0" />
-                            <span>
-                              {temperatureAlert.reading} {temperatureAlert.comparisonLabel.toUpperCase()} {temperatureAlert.thresholdLabel}
-                            </span>
-                            <AlertTriangleIcon className="h-4 w-4 shrink-0" />
-                            <span>{temperatureAlert.action}</span>
-                          </span>
-                        ))}
-                      </div>
+                      {renderTemperatureAlertTicker()}
                     </div>
                   )}
                   
@@ -907,12 +911,22 @@ export default function App() {
                     </div>
                   ) : null}
                 </div>
+                {temperatureAlert && (
+                  <div
+                    className="greenhouse-alert-ticker overflow-hidden py-2 text-white md:hidden"
+                    style={{ "--alert-color": temperatureAlert.color } as React.CSSProperties}
+                  >
+                    {renderTemperatureAlertTicker("text-xs")}
+                  </div>
+                )}
               </section>
             )}
 
             <section
               className={`px-4 pb-6 md:grid md:gap-8 md:px-0 md:pb-0 md:pt-0 ${
                 siteConfigReady && !siteConfig.showHeroImage ? "pt-5" : ""
+              } ${
+                siteConfigReady && siteConfig.showHeroImage && temperatureAlert ? "pt-[10px] md:pt-0" : ""
               } ${hasVisibleStatuses ? "md:grid-cols-2" : "md:grid-cols-1"}`}
             >
               {/* Climate Metrics */}
