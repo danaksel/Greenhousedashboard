@@ -59,6 +59,7 @@ export interface HeaderImageConfig {
   description: string;
   mobile: string;
   desktop: string;
+  mobileVideo: string;
 }
 
 export interface SiteConfig {
@@ -134,24 +135,28 @@ export const defaultSiteConfig: SiteConfig = {
       description: "Under 12°C",
       mobile: "/cold.jpg",
       desktop: "/cold.jpg",
+      mobileVideo: "",
     },
     normal: {
       label: "Normalt",
       description: "12-22.9°C",
       mobile: "/drivhus.png",
       desktop: "/drivhus.png",
+      mobileVideo: "",
     },
     warm: {
       label: "Varmt",
       description: "23-28°C",
       mobile: "/warm.jpg",
       desktop: "/warm.jpg",
+      mobileVideo: "",
     },
     hot: {
       label: "Svært varmt",
       description: "Over 28°C",
       mobile: "/hot.jpg",
       desktop: "/hot.jpg",
+      mobileVideo: "",
     },
   },
   branding: {
@@ -355,6 +360,26 @@ export async function uploadAdminImage(file: File, slot: HeaderImageSlot, format
   formData.set("file", file);
   formData.set("slot", slot);
   formData.set("format", format);
+
+  const res = await fetch(greenhouseApiUrl("/admin/api/images"), {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!res.ok) {
+    throw new Error(`API error: ${res.status}`);
+  }
+
+  const json = await res.json();
+  return json.data;
+}
+
+export async function uploadAdminHeaderVideo(file: File, slot: HeaderImageSlot): Promise<AdminImage> {
+  const formData = new FormData();
+  formData.set("file", file);
+  formData.set("assetType", "header-video");
+  formData.set("slot", slot);
+  formData.set("format", "mobile-video");
 
   const res = await fetch(greenhouseApiUrl("/admin/api/images"), {
     method: "POST",

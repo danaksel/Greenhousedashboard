@@ -9,6 +9,7 @@ import {
   resolveGreenhouseAssetUrl,
   saveAdminSiteConfig,
   uploadAdminAsset,
+  uploadAdminHeaderVideo,
   uploadAdminImage,
   type AdminImage,
   type HeaderImageFormat,
@@ -22,6 +23,9 @@ const imageFormats: Array<{ key: HeaderImageFormat; label: string; ratio: string
   { key: "desktop", label: "Desktop 3:1", ratio: "3:1" },
   { key: "mobile", label: "Mobil ca. 2:1", ratio: "390:200" },
 ];
+
+const headerVideoGuidance = "MP4/MPEG-4 (H.264), ikke MOV. Uten lyd, sømløs loop. Anbefalt 900 x 460 px, 3-6 sekunder, maks 10 MB.";
+const headerVideoMaxBytes = 10 * 1024 * 1024;
 
 const statusLabels: Array<{ key: keyof SiteConfig["visibleStatuses"]; label: string }> = [
   { key: "door", label: "Dør" },
@@ -113,6 +117,7 @@ export function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [videoUploading, setVideoUploading] = useState(false);
   const [logoUploading, setLogoUploading] = useState(false);
   const [faviconUploading, setFaviconUploading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -218,6 +223,24 @@ export function AdminPage() {
     setMessage(`${image.filename} er valgt for ${config.headerImages[slot].label.toLowerCase()} / ${format === "desktop" ? "desktop" : "mobil"}. Husk å lagre.`);
   };
 
+  const setMobileVideo = (slot: HeaderImageSlot, value: string) => {
+    updateConfig((current) => ({
+      ...current,
+      headerImages: {
+        ...current.headerImages,
+        [slot]: {
+          ...current.headerImages[slot],
+          mobileVideo: value,
+        },
+      },
+    }));
+  };
+
+  const applyVideo = (slot: HeaderImageSlot, video: AdminImage) => {
+    setMobileVideo(slot, video.url);
+    setMessage(`${video.filename} er valgt som mobilvideo for ${config.headerImages[slot].label.toLowerCase()}. Husk å lagre.`);
+  };
+
   const handleSave = async () => {
     setSaving(true);
     setError(null);
@@ -253,6 +276,36 @@ export function AdminPage() {
       setError(err instanceof Error ? err.message : "Kunne ikke laste opp bildet");
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleVideoUpload = async (file: File | undefined) => {
+    if (!file) return;
+
+    if (file.type !== "video/mp4") {
+      setError("Header-video må være MP4 (H.264). MOV bør eksporteres/konverteres til MP4 før opplasting.");
+      return;
+    }
+
+    if (file.size > headerVideoMaxBytes) {
+      setError("Header-video må være maks 10 MB.");
+      return;
+    }
+
+    setVideoUploading(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const targetSlot = selectedSlotRef.current;
+      const video = await uploadAdminHeaderVideo(file, targetSlot);
+      setImages((current) => [video, ...current.filter((item) => item.key !== video.key)]);
+      setMobileVideo(targetSlot, video.url);
+      setMessage(`Videoen er lastet opp og valgt for ${config.headerImages[targetSlot].label.toLowerCase()} / mobil. Husk å lagre.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Kunne ikke laste opp video");
+    } finally {
+      setVideoUploading(false);
     }
   };
 
@@ -381,6 +434,10 @@ export function AdminPage() {
           next.headerImages[slot].mobile === deletedUrl
             ? defaultSiteConfig.headerImages[slot].mobile
             : next.headerImages[slot].mobile,
+        mobileVideo:
+          next.headerImages[slot].mobileVideo === deletedUrl
+            ? defaultSiteConfig.headerImages[slot].mobileVideo
+            : next.headerImages[slot].mobileVideo,
       };
     }
 
@@ -449,8 +506,12 @@ export function AdminPage() {
   };
 
   const headerAssets = images.filter((image) => (image.assetType ?? "header") === "header");
+  const headerVideoAssets = images.filter((image) => image.assetType === "header-video");
   const selectedImages = headerAssets.filter(
     (image) => (image.slot === selectedSlot || image.slot === "general") && image.format === selectedFormat
+  );
+  const selectedVideos = headerVideoAssets.filter(
+    (video) => (video.slot === selectedSlot || video.slot === "general") && video.format === "mobile-video"
   );
   const logoAssets = images.filter((image) => image.assetType === "logo");
   const faviconAssets = images.filter((image) => image.assetType === "favicon");
@@ -886,7 +947,7 @@ export function AdminPage() {
               <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h2 className="text-base font-semibold">Headerbilder</h2>
-                  <p className="text-sm text-stone-600">Desktop bruker 3:1. Mobil bruker dagens headerflate, ca. 390:200.</p>
+                  <p className="text-sm text-stone-600">Desktop bruker 3:1. Mobil bruker dagens headerflate, ca. 390:200. Mobil kan også ha MP4-video med bildet som fallback.</p>
                 </div>
                   <button
                     type="button"
@@ -959,6 +1020,60 @@ export function AdminPage() {
                             </div>
                           );
                         })}
+                      </div>
+
+                      <div className="mt-4 rounded-lg border border-[#d8ded1] bg-white/70 p-4">
+                        <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold">Mobilvideo</p>
+                            <p className="mt-1 text-xs leading-relaxed text-stone-500">
+                              Kun mobil. Bildet over brukes som fallback/poster.
+                            </p>
+                          </div>
+                          <span className="text-xs text-stone-500">390:200</span>
+                        </div>
+                        <div className="overflow-hidden rounded-lg bg-stone-200 aspect-[390/200]">
+                          {slotConfig.mobileVideo ? (
+                            <video
+                              src={resolveGreenhouseAssetUrl(slotConfig.mobileVideo)}
+                              poster={resolveGreenhouseAssetUrl(slotConfig.mobile)}
+                              muted
+                              loop
+                              playsInline
+                              controls
+                              className="h-full w-full object-cover object-center"
+                            />
+                          ) : (
+                            <img
+                              src={resolveGreenhouseAssetUrl(slotConfig.mobile)}
+                              alt={`${slotConfig.label} mobil fallback`}
+                              className="h-full w-full object-cover object-center"
+                            />
+                          )}
+                        </div>
+                        <select
+                          value={slotConfig.mobileVideo}
+                          onChange={(event) => setMobileVideo(slot, event.target.value)}
+                          className="mt-3 w-full rounded-lg border border-[#cbd3c2] bg-white px-3 py-2 text-sm"
+                        >
+                          <option value="">Ingen video, bruk mobilbilde</option>
+                          {headerVideoAssets
+                            .filter((video) => video.slot === slot || video.slot === "general")
+                            .map((video) => (
+                              <option key={`${slot}-video-${video.key}`} value={video.url}>
+                                {video.filename}
+                              </option>
+                            ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedUploadSlot(slot);
+                          }}
+                          className="mt-3 rounded-full border border-[#cbd3c2] px-3 py-1.5 text-xs text-[#4d5d3e] transition hover:bg-white"
+                        >
+                          Velg som video-opplastingsmål
+                        </button>
                       </div>
                     </div>
                   );
@@ -1069,6 +1184,97 @@ export function AdminPage() {
                           <button
                             type="button"
                             onClick={() => void handleDeleteImage(image)}
+                            className="rounded-full border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-50"
+                          >
+                            Slett
+                          </button>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section className="rounded-lg border border-[#d8ded1] bg-white/70 p-5 shadow-sm">
+              <div className="mb-4 flex flex-wrap items-end justify-between gap-4">
+                <div>
+                  <h2 className="text-base font-semibold">R2-videoer</h2>
+                  <p className="text-sm text-stone-600">Last opp eller velg mobilvideo for valgt temperaturkategori.</p>
+                  <p className="mt-1 text-xs text-stone-500">{headerVideoGuidance}</p>
+                </div>
+                <select
+                  value={selectedSlot}
+                  onChange={(event) => setSelectedUploadSlot(event.target.value as HeaderImageSlot)}
+                  className="rounded-lg border border-[#cbd3c2] bg-white px-3 py-2 text-sm"
+                >
+                  {imageSlots.map((slot) => (
+                    <option key={slot} value={slot}>
+                      {config.headerImages[slot].label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <label className="mb-5 flex cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-[#9daa8f] bg-[#f7f8f5] px-4 py-8 text-center transition hover:bg-white">
+                <span className="text-sm font-semibold">{videoUploading ? "Laster opp" : "Last opp mobilvideo"}</span>
+                <span className="mt-1 text-xs text-stone-500">MP4 for {config.headerImages[selectedSlot].label.toLowerCase()} / mobil</span>
+                <span className="mt-2 max-w-md text-xs leading-relaxed text-stone-500">{headerVideoGuidance}</span>
+                <input
+                  type="file"
+                  accept="video/mp4"
+                  disabled={videoUploading}
+                  onChange={(event) => {
+                    void handleVideoUpload(event.target.files?.[0]);
+                    event.target.value = "";
+                  }}
+                  className="sr-only"
+                />
+              </label>
+
+              {loading ? (
+                <div className="rounded-lg bg-[#f7f8f5] p-5 text-sm text-stone-500">Laster videoer</div>
+              ) : selectedVideos.length === 0 ? (
+                <div className="rounded-lg bg-[#f7f8f5] p-5 text-sm text-stone-500">
+                  Ingen mobilvideoer funnet for {config.headerImages[selectedSlot].label.toLowerCase()} ennå.
+                </div>
+              ) : (
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                  {selectedVideos.map((video) => (
+                    <article key={video.key} className="overflow-hidden rounded-lg border border-[#d8ded1] bg-[#f7f8f5]">
+                      <div className="bg-stone-200 aspect-[390/200]">
+                        <video
+                          src={resolveGreenhouseAssetUrl(video.url)}
+                          muted
+                          loop
+                          playsInline
+                          controls
+                          className="h-full w-full object-cover object-center"
+                        />
+                      </div>
+                      <div className="space-y-3 p-3">
+                        <div>
+                          <p className="truncate text-sm font-semibold">{video.filename}</p>
+                          <p className="text-xs text-stone-500">
+                            {[video.slot, "mobilvideo", formatBytes(video.size)].filter(Boolean).join(" · ")}
+                          </p>
+                        </div>
+                        <div className="flex min-h-6 flex-wrap gap-1.5 text-[11px] font-semibold">
+                          {config.headerImages[selectedSlot].mobileVideo === video.url && (
+                            <span className="rounded-full border border-[#2d3a21] px-2 py-1 text-[#2d3a21]">Valgt mobilvideo</span>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => applyVideo(selectedSlot, video)}
+                            className="rounded-full bg-[#5d7342] px-3 py-1.5 text-xs font-semibold text-white"
+                          >
+                            Bruk mobilvideo
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleDeleteImage(video)}
                             className="rounded-full border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-50"
                           >
                             Slett

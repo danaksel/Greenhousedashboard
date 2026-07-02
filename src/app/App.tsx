@@ -664,6 +664,7 @@ export default function App() {
   const heroImageConfig = siteConfig.headerImages[heroImageSlot] ?? defaultSiteConfig.headerImages[heroImageSlot];
   const heroMobileImageSrc = resolveGreenhouseAssetUrl(heroImageConfig.mobile);
   const heroDesktopImageSrc = resolveGreenhouseAssetUrl(heroImageConfig.desktop);
+  const heroMobileVideoSrc = resolveGreenhouseAssetUrl(heroImageConfig.mobileVideo);
   const customLogoSrc = siteConfigReady && siteConfig.branding.logo.url ? resolveGreenhouseAssetUrl(siteConfig.branding.logo.url) : "";
   const logoSize = siteConfig.branding.logo.size;
   const temperatureAlert: TemperatureAlert | null =
@@ -876,7 +877,21 @@ export default function App() {
               <section>
                 {/* Hero Image */}
                 <div className={`relative h-[200px] w-full overflow-hidden md:mb-0 md:aspect-[3/1] md:h-auto md:rounded-2xl ${temperatureAlert ? "mb-0" : "mb-6"}`}>
-                  <picture>
+                  {heroMobileVideoSrc ? (
+                    <video
+                      className="h-full w-full object-cover object-center md:hidden"
+                      autoPlay
+                      muted
+                      loop
+                      playsInline
+                      preload="metadata"
+                      poster={heroMobileImageSrc}
+                      aria-label="Drivhus"
+                    >
+                      <source src={heroMobileVideoSrc} type="video/mp4" />
+                    </video>
+                  ) : null}
+                  <picture className={heroMobileVideoSrc ? "hidden h-full w-full md:block" : "block h-full w-full"}>
                     <source media="(min-width: 768px)" srcSet={heroDesktopImageSrc} />
                     <ImageWithFallback
                       src={heroMobileImageSrc}

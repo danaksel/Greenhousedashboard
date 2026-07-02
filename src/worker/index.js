@@ -123,24 +123,28 @@ const DEFAULT_SITE_CONFIG = {
       description: "Under 12°C",
       mobile: "/cold.jpg",
       desktop: "/cold.jpg",
+      mobileVideo: "",
     },
     normal: {
       label: "Normalt",
       description: "12-22.9°C",
       mobile: "/drivhus.png",
       desktop: "/drivhus.png",
+      mobileVideo: "",
     },
     warm: {
       label: "Varmt",
       description: "23-28°C",
       mobile: "/warm.jpg",
       desktop: "/warm.jpg",
+      mobileVideo: "",
     },
     hot: {
       label: "Svært varmt",
       description: "Over 28°C",
       mobile: "/hot.jpg",
       desktop: "/hot.jpg",
+      mobileVideo: "",
     },
   },
   branding: {
@@ -169,6 +173,7 @@ const DEFAULT_SITE_CONFIG = {
 
 const SITE_CONFIG_KEY = "admin/site-config.json";
 const ADMIN_IMAGE_PREFIX = "admin/images/";
+const HEADER_VIDEO_MAX_BYTES = 10 * 1024 * 1024;
 const LOGO_FONT_OPTIONS = [
   "Cinzel Decorative",
   "Cormorant Garamond",
@@ -225,6 +230,10 @@ async function handleUploadAdminImage(request, env, corsHeaders) {
     return jsonResponse({ ok: false, error: "Missing file upload" }, 400, corsHeaders);
   }
 
+  if (assetType === "header-video" && file.size > HEADER_VIDEO_MAX_BYTES) {
+    return jsonResponse({ ok: false, error: "Header video must be 10 MB or smaller" }, 400, corsHeaders);
+  }
+
   if (!isAllowedUploadType(assetType, file.type, format)) {
     return jsonResponse({ ok: false, error: "Unsupported file type for this asset" }, 400, corsHeaders);
   }
@@ -232,7 +241,7 @@ async function handleUploadAdminImage(request, env, corsHeaders) {
   const extension = getUploadExtension(file.type);
   const originalName = sanitizeFilename(file.name || `header.${extension}`);
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const key = `${ADMIN_IMAGE_PREFIX}${slot}/${format}/${timestamp}-${originalName.replace(/\.(jpe?g|png|svg)$/i, "")}.${extension}`;
+  const key = `${ADMIN_IMAGE_PREFIX}${slot}/${format}/${timestamp}-${originalName.replace(/\.(jpe?g|png|svg|mp4)$/i, "")}.${extension}`;
 
   await bucket.put(key, file.stream(), {
     httpMetadata: {
@@ -467,6 +476,7 @@ function normalizeSiteConfig(config) {
       description: defaultImage.description,
       mobile: normalizeImageReference(image.mobile, defaultImage.mobile),
       desktop: normalizeImageReference(image.desktop, defaultImage.desktop),
+      mobileVideo: normalizeImageReference(image.mobileVideo, defaultImage.mobileVideo),
     };
   }
 
@@ -499,12 +509,14 @@ function isAllowedImageKey(key) {
 function isAllowedUploadType(assetType, contentType, format) {
   if (assetType === "logo") return contentType === "image/svg+xml";
   if (assetType === "favicon") return contentType === "image/svg+xml" || contentType === "image/png";
+  if (assetType === "header-video") return contentType === "video/mp4" && format === "mobile-video";
   return ["image/jpeg", "image/png"].includes(contentType) && ["desktop", "mobile", "image"].includes(format);
 }
 
 function getUploadExtension(contentType) {
   if (contentType === "image/svg+xml") return "svg";
   if (contentType === "image/png") return "png";
+  if (contentType === "video/mp4") return "mp4";
   return "jpg";
 }
 
