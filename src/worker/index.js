@@ -1,4 +1,8 @@
 export default {
+  async scheduled(controller, env, ctx) {
+    ctx.waitUntil(refreshWeatherCache(env));
+  },
+
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
@@ -27,6 +31,11 @@ export default {
       if (url.pathname === "/api/latest" && request.method === "GET") {
         const latest = await getLatest(env);
         return jsonResponse({ ok: true, data: latest }, 200, corsHeaders);
+      }
+
+      if (url.pathname === "/api/weather" && request.method === "GET") {
+        const weather = await getCachedWeather(env, ctx);
+        return jsonResponse({ ok: true, data: weather }, 200, corsHeaders);
       }
 
       if (url.pathname === "/api/history" && request.method === "GET") {
@@ -113,6 +122,11 @@ export default {
     }
   },
 };
+
+const WEATHER_CACHE_KEY = "latest:weather";
+const WEATHER_CACHE_MAX_AGE_MS = 15 * 60 * 1000;
+const WEATHER_LATITUDE = 59.87;
+const WEATHER_LONGITUDE = 10.67;
 
 const DEFAULT_SITE_CONFIG = {
   showHeroImage: true,
@@ -201,6 +215,72 @@ const DEFAULT_SITE_CONFIG = {
       png512: "",
     },
   },
+};
+
+const WEATHER_DESCRIPTIONS = {
+  clearsky_day: "Sol",
+  clearsky_night: "Klar himmel",
+  fair_day: "Lettskyet",
+  fair_night: "Lettskyet",
+  partlycloudy_day: "Delvis skyet",
+  partlycloudy_night: "Delvis skyet",
+  cloudy: "Overskyet",
+  fog: "Tåke",
+  lightrainshowers_day: "Lette regnbyger",
+  lightrainshowers_night: "Lette regnbyger",
+  rainshowers_day: "Regnbyger",
+  rainshowers_night: "Regnbyger",
+  heavyrainshowers_day: "Kraftige regnbyger",
+  heavyrainshowers_night: "Kraftige regnbyger",
+  lightrain: "Lett regn",
+  rain: "Regn",
+  heavyrain: "Kraftig regn",
+  lightsleetshowers_day: "Lette sluddbyger",
+  lightsleetshowers_night: "Lette sluddbyger",
+  sleetshowers_day: "Sluddbyger",
+  sleetshowers_night: "Sluddbyger",
+  heavysleetshowers_day: "Kraftige sluddbyger",
+  heavysleetshowers_night: "Kraftige sluddbyger",
+  lightsleet: "Lett sludd",
+  sleet: "Sludd",
+  heavysleet: "Kraftig sludd",
+  lightsnowshowers_day: "Lette snøbyger",
+  lightsnowshowers_night: "Lette snøbyger",
+  snowshowers_day: "Snøbyger",
+  snowshowers_night: "Snøbyger",
+  heavysnowshowers_day: "Kraftige snøbyger",
+  heavysnowshowers_night: "Kraftige snøbyger",
+  lightsnow: "Lett snø",
+  snow: "Snø",
+  heavysnow: "Kraftig snø",
+  thunderstorm: "Tordenvær",
+  lightrainshowersandthunder_day: "Lette regnbyger og torden",
+  lightrainshowersandthunder_night: "Lette regnbyger og torden",
+  rainshowersandthunder_day: "Regnbyger og torden",
+  rainshowersandthunder_night: "Regnbyger og torden",
+  heavyrainshowersandthunder_day: "Kraftige regnbyger og torden",
+  heavyrainshowersandthunder_night: "Kraftige regnbyger og torden",
+  lightrainandthunder: "Lett regn og torden",
+  rainandthunder: "Regn og torden",
+  heavyrainandthunder: "Kraftig regn og torden",
+  lightsleetshowersandthunder_day: "Lette sluddbyger og torden",
+  lightsleetshowersandthunder_night: "Lette sluddbyger og torden",
+  sleetshowersandthunder_day: "Sluddbyger og torden",
+  sleetshowersandthunder_night: "Sluddbyger og torden",
+  heavysleetshowersandthunder_day: "Kraftige sluddbyger og torden",
+  heavysleetshowersandthunder_night: "Kraftige sluddbyger og torden",
+  lightsleetandthunder: "Lett sludd og torden",
+  sleetandthunder: "Sludd og torden",
+  heavysleetandthunder: "Kraftig sludd og torden",
+  lightsnowshowersandthunder_day: "Lette snøbyger og torden",
+  lightsnowshowersandthunder_night: "Lette snøbyger og torden",
+  snowshowersandthunder_day: "Snøbyger og torden",
+  snowshowersandthunder_night: "Snøbyger og torden",
+  heavysnowshowersandthunder_day: "Kraftige snøbyger og torden",
+  heavysnowshowersandthunder_night: "Kraftige snøbyger og torden",
+  lightsnowandthunder: "Lett snø og torden",
+  snowandthunder: "Snø og torden",
+  heavysnowandthunder: "Kraftig snø og torden",
 };
 
 const SITE_CONFIG_KEY = "admin/site-config.json";
@@ -917,6 +997,110 @@ async function getEnvSecretValue(env, key) {
   }
 
   return String(value).trim();
+}
+
+async function getCachedWeather(env, ctx) {
+  const cached = await env.GREENHOUSE_DATA.get(WEATHER_CACHE_KEY, "json");
+  const cachedAt = cached?.cachedAt ? new Date(cached.cachedAt).getTime() : 0;
+  const isFresh = cachedAt && Date.now() - cachedAt < WEATHER_CACHE_MAX_AGE_MS;
+
+  if (cached && isFresh) return cached;
+
+  if (cached) {
+    ctx?.waitUntil?.(refreshWeatherCache(env).catch((error) => console.error("Failed to refresh weather cache", error)));
+    return cached;
+  }
+
+  return refreshWeatherCache(env);
+}
+
+async function refreshWeatherCache(env) {
+  const weather = await fetchWeatherSnapshot();
+  const cachedWeather = {
+    ...weather,
+    cachedAt: new Date().toISOString(),
+  };
+
+  await env.GREENHOUSE_DATA.put(WEATHER_CACHE_KEY, JSON.stringify(cachedWeather));
+  return cachedWeather;
+}
+
+async function fetchWeatherSnapshot() {
+  const yrRes = await fetch(
+    `https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${WEATHER_LATITUDE}&lon=${WEATHER_LONGITUDE}`,
+    {
+      headers: {
+        "User-Agent": "KristinsDrivhus/1.0 drivhus.danaksel.no",
+      },
+    }
+  );
+
+  if (!yrRes.ok) {
+    throw new Error(`Weather API error: ${yrRes.status}`);
+  }
+
+  const yrJson = await yrRes.json();
+  const current = yrJson.properties?.timeseries?.[0];
+
+  if (!current) {
+    throw new Error("No weather data available");
+  }
+
+  const updatedAtString = yrJson.properties?.meta?.updated_at;
+  const updatedAt = normalizeIsoDate(updatedAtString) ?? new Date().toISOString();
+  const rawSymbolCode =
+    current.data?.next_1_hours?.summary?.symbol_code ||
+    current.data?.next_6_hours?.summary?.symbol_code ||
+    "cloudy";
+  const baseSymbol = rawSymbolCode.split("_polarlight")[0].split("_polartwilight")[0];
+  const details = current.data?.instant?.details || {};
+  const temperature = typeof details.air_temperature === "number" ? details.air_temperature : 0;
+  const hasFog =
+    (details.fog_area_fraction !== undefined && details.fog_area_fraction > 0.5) ||
+    (details.visibility !== undefined && details.visibility < 1000) ||
+    baseSymbol.includes("fog");
+  const symbolCode = hasFog ? "fog" : baseSymbol;
+  let description = WEATHER_DESCRIPTIONS[baseSymbol] || WEATHER_DESCRIPTIONS[rawSymbolCode] || `Ukjent (${baseSymbol})`;
+
+  if (hasFog) {
+    if (baseSymbol === "cloudy") {
+      description = "Overskyet med tåke";
+    } else if (baseSymbol.includes("partlycloudy")) {
+      description = "Delvis skyet med tåke";
+    } else if (!baseSymbol.includes("fog")) {
+      description = `${description} og tåke`;
+    }
+  }
+
+  let uvIndex;
+  try {
+    const uvRes = await fetch(
+      `https://api.open-meteo.com/v1/forecast?latitude=${WEATHER_LATITUDE}&longitude=${WEATHER_LONGITUDE}&current=uv_index`
+    );
+
+    if (uvRes.ok) {
+      const uvJson = await uvRes.json();
+      if (typeof uvJson.current?.uv_index === "number") {
+        uvIndex = uvJson.current.uv_index;
+      }
+    }
+  } catch (error) {
+    console.warn("Failed to fetch UV data from Open-Meteo", error);
+  }
+
+  return {
+    temperature,
+    symbolCode,
+    description,
+    updatedAt,
+    uvIndex,
+  };
+}
+
+function normalizeIsoDate(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
 async function getLatest(env) {
