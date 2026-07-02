@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   defaultSiteConfig,
   deleteAdminImage,
@@ -19,7 +19,7 @@ import {
 } from "./utils/api";
 
 const imageSlots: HeaderImageSlot[] = ["cold", "normal", "warm", "hot"];
-const headerVideoGuidance = "MP4/MPEG-4 (H.264), ikke MOV. Uten lyd, sømløs loop. Anbefalt 900 x 460 px, 3-6 sekunder, maks 10 MB.";
+const headerVideoGuidance = "MP4/MPEG-4 (H.264), ikke MOV. Uten lyd, sømløs loop. Anbefalt 1920 x 1080 px, 16:9, 3-6 sekunder, maks 10 MB.";
 const headerVideoMaxBytes = 10 * 1024 * 1024;
 
 const statusLabels: Array<{ key: keyof SiteConfig["visibleStatuses"]; label: string }> = [
@@ -39,10 +39,10 @@ const adminSections: Array<{ key: AdminSection; label: string }> = [
 
 type HeaderAssetKind = HeaderImageFormat | "mobile-video";
 
-const headerAssetKinds: Array<{ key: HeaderAssetKind; label: string; tag: string }> = [
-  { key: "desktop", label: "Desktop", tag: "3:1" },
-  { key: "mobile", label: "Mobil", tag: "390:200" },
-  { key: "mobile-video", label: "Video", tag: "MP4" },
+const headerAssetKinds: Array<{ key: HeaderAssetKind; label: string; ratio: string; fallbackFormat: string }> = [
+  { key: "desktop", label: "Desktop", ratio: "3:1", fallbackFormat: "JPG/PNG" },
+  { key: "mobile", label: "Mobil", ratio: "390:200", fallbackFormat: "JPG/PNG" },
+  { key: "mobile-video", label: "Video", ratio: "16:9", fallbackFormat: "MP4" },
 ];
 
 const adminTagClass =
@@ -50,11 +50,11 @@ const adminTagClass =
 const adminSelectedTagClass =
   "inline-flex items-center rounded-md border border-[#2d3a21] bg-transparent px-2 py-1 text-[11px] font-semibold leading-none text-[#2d3a21]";
 const adminPrimaryButtonClass =
-  "inline-flex cursor-pointer items-center justify-center rounded-full bg-[#5d7342] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#4d6137] disabled:cursor-not-allowed disabled:opacity-60";
+  "inline-flex min-h-9 cursor-pointer items-center justify-center rounded-lg bg-[#5d7342] px-4 py-2 text-xs font-semibold text-white shadow-sm shadow-black/10 transition hover:bg-[#4d6137] disabled:cursor-not-allowed disabled:opacity-60";
 const adminSecondaryButtonClass =
-  "inline-flex cursor-pointer items-center justify-center rounded-full border border-[#cbd3c2] bg-white px-3 py-1.5 text-xs font-semibold text-[#4d5d3e] transition hover:border-[#9daa8f] hover:bg-[#f7f8f5]";
+  "inline-flex min-h-9 cursor-pointer items-center justify-center rounded-lg border border-[#b9c4ae] bg-white px-4 py-2 text-xs font-semibold text-[#4d5d3e] shadow-sm shadow-black/5 transition hover:border-[#7f936a] hover:bg-[#f7f8f5] disabled:cursor-not-allowed disabled:opacity-45";
 const adminDangerButtonClass =
-  "inline-flex cursor-pointer items-center justify-center rounded-full border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-50";
+  "inline-flex min-h-9 cursor-pointer items-center justify-center rounded-lg border border-red-200 bg-white px-4 py-2 text-xs font-semibold text-red-700 shadow-sm shadow-black/5 transition hover:bg-red-50";
 
 function getActiveSlot(temperature: number | null | undefined): HeaderImageSlot {
   if (temperature == null) return "normal";
@@ -69,6 +69,11 @@ function formatBytes(size: number | null) {
   if (size < 1024) return `${size} B`;
   if (size < 1024 * 1024) return `${Math.round(size / 1024)} kB`;
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function getFileFormatTag(filename: string | undefined, fallback: string) {
+  const extension = filename?.split(".").pop()?.trim().toUpperCase();
+  return extension && extension.length <= 5 ? extension : fallback;
 }
 
 function getUploadSizeGuidance(format: HeaderImageFormat) {
@@ -130,6 +135,7 @@ export function AdminPage() {
   const [faviconUploading, setFaviconUploading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const headerLibraryRef = useRef<HTMLElement | null>(null);
 
   const activeSlot = useMemo(() => getActiveSlot(latest?.temperature), [latest?.temperature]);
   const configSnapshot = useMemo(() => JSON.stringify(config), [config]);
@@ -504,6 +510,13 @@ export function AdminPage() {
     void loadAdminData();
   };
 
+  const openHeaderLibrary = (kind: HeaderAssetKind) => {
+    setSelectedHeaderAssetKind(kind);
+    window.requestAnimationFrame(() => {
+      headerLibraryRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  };
+
   const headerAssets = images.filter((image) => (image.assetType ?? "header") === "header");
   const headerVideoAssets = images.filter((image) => image.assetType === "header-video");
   const logoAssets = images.filter((image) => image.assetType === "logo");
@@ -549,7 +562,8 @@ export function AdminPage() {
     const value = getHeaderAssetValue(slot, kind);
     const selectedAsset = getSelectedHeaderAsset(value);
     const isVideo = kind === "mobile-video";
-    const previewClass = kind === "desktop" ? "aspect-[3/1]" : "aspect-[390/200]";
+    const previewClass = kind === "desktop" ? "aspect-[3/1]" : isVideo ? "aspect-video" : "aspect-[390/200]";
+    const formatTag = getFileFormatTag(selectedAsset?.filename, assetKind?.fallbackFormat ?? "");
 
     return (
       <article key={kind} className="rounded-lg border border-[#d8ded1] bg-white/70 p-3">
@@ -560,7 +574,10 @@ export function AdminPage() {
               {selectedAsset?.filename ?? (isVideo && !value ? "Ingen video valgt" : "Standard")}
             </p>
           </div>
-          <span className={adminTagClass}>{assetKind?.tag}</span>
+          <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+            <span className={adminTagClass}>{assetKind?.ratio}</span>
+            <span className={adminTagClass}>{formatTag}</span>
+          </div>
         </div>
 
         <div className={`overflow-hidden rounded-lg bg-stone-200 ${previewClass}`}>
@@ -576,14 +593,22 @@ export function AdminPage() {
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => openHeaderLibrary(kind)}
+            className={adminPrimaryButtonClass}
+          >
+            Velg fra bibliotek
+          </button>
           {isVideo ? (
             <>
               <button
                 type="button"
                 onClick={() => setMobileVideo(slot, defaultSiteConfig.headerImages[slot].mobileVideo)}
                 className={adminSecondaryButtonClass}
+                disabled={!value}
               >
-                Ingen video
+                Fjern video
               </button>
               <label className={adminPrimaryButtonClass}>
                 {videoUploading ? "Laster opp" : "Last opp"}
@@ -606,7 +631,7 @@ export function AdminPage() {
                 onClick={() => setImage(slot, kind, defaultSiteConfig.headerImages[slot][kind])}
                 className={adminSecondaryButtonClass}
               >
-                Standard
+                Bruk standard
               </button>
               <label className={adminPrimaryButtonClass}>
                 {uploading ? "Laster opp" : "Last opp"}
@@ -649,7 +674,7 @@ export function AdminPage() {
           const isSelected = selectedUrl === asset.url;
           return (
             <article key={asset.key} className="rounded-lg border border-[#d8ded1] bg-[#f7f8f5] p-3">
-              <div className={`overflow-hidden rounded-lg bg-stone-200 ${kind === "desktop" ? "aspect-[3/1]" : "aspect-[390/200]"}`}>
+              <div className={`overflow-hidden rounded-lg bg-stone-200 ${kind === "desktop" ? "aspect-[3/1]" : isVideo ? "aspect-video" : "aspect-[390/200]"}`}>
                 {isVideo ? (
                   renderAdminVideoPreview(asset.url, asset.filename)
                 ) : (
@@ -1180,12 +1205,12 @@ export function AdminPage() {
                       </div>
                     </article>
 
-                    <section className="rounded-lg border border-[#d8ded1] bg-white/70 p-4">
+                    <section ref={headerLibraryRef} className="rounded-lg border border-[#d8ded1] bg-white/70 p-4 scroll-mt-24">
                       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
                         <div>
                           <h3 className="font-semibold">R2-bibliotek</h3>
                           <p className="text-sm text-stone-600">
-                            Viser filer for {config.headerImages[selectedHeaderSlot].label.toLowerCase()} og valgt format.
+                            Velg format og trykk <span className="font-semibold text-[#2d3a21]">Bruk</span> på filen du vil koble til {config.headerImages[selectedHeaderSlot].label.toLowerCase()}.
                           </p>
                           <p className="mt-1 text-xs leading-relaxed text-stone-500">
                             Desktop: {getUploadSizeGuidance("desktop")} Mobil: {getUploadSizeGuidance("mobile")} Video: {headerVideoGuidance}
