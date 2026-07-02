@@ -36,6 +36,13 @@ const WeatherWidget = lazy(async () => {
   return { default: module.WeatherWidget };
 });
 
+function isRainWeatherSymbol(symbolCode: string | null | undefined) {
+  const symbol = String(symbolCode || "").toLowerCase();
+  if (!symbol) return false;
+  if (symbol.includes("snow") || symbol.includes("sleet")) return false;
+  return symbol.includes("rain") || symbol.includes("thunder");
+}
+
 type ChartPoint = { time: string; value: number; min?: number; max?: number; range?: [number, number]; id: string };
 type HistoryPoint = { time: string; value: number | null; min?: number | null; max?: number | null; timestamp: string | null; bucketStart: string | null };
 type MetricMinMax = { min: number | undefined; max: number | undefined };
@@ -652,15 +659,17 @@ export default function App() {
     : "bg-[#2d3a21]/10 hover:bg-[#2d3a21]/15";
   const safeWindowCount = Math.min(Math.max(windowCount ?? 0, 0), 3);
   const heroImageSlot: HeaderImageSlot =
-    temperature === null
-      ? "normal"
-      : temperature < 12
-        ? "cold"
-        : temperature < 23
+    temperature !== null && temperature < 12
+      ? "cold"
+      : isRainWeatherSymbol(weatherData?.symbolCode)
+        ? "rain"
+        : temperature === null
           ? "normal"
-          : temperature <= 28
-            ? "warm"
-            : "hot";
+          : temperature < 23
+            ? "normal"
+            : temperature <= 28
+              ? "warm"
+              : "hot";
   const heroImageConfig = siteConfig.headerImages[heroImageSlot] ?? defaultSiteConfig.headerImages[heroImageSlot];
   const heroMobileImageSrc = resolveGreenhouseAssetUrl(heroImageConfig.mobile);
   const heroDesktopImageSrc = resolveGreenhouseAssetUrl(heroImageConfig.desktop);

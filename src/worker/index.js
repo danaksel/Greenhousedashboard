@@ -129,6 +129,13 @@ const DEFAULT_SITE_CONFIG = {
       desktop: "/cold.jpg",
       mobileVideo: "",
     },
+    rain: {
+      label: "Regn",
+      description: "Regn eller torden fra Yr",
+      mobile: "/drivhus.png",
+      desktop: "/drivhus.png",
+      mobileVideo: "",
+    },
     normal: {
       label: "Normalt",
       description: "12-22.9°C",

@@ -21,7 +21,7 @@ import {
   type WeatherData,
 } from "./utils/api";
 
-const imageSlots: HeaderImageSlot[] = ["cold", "normal", "warm", "hot"];
+const imageSlots: HeaderImageSlot[] = ["cold", "rain", "normal", "warm", "hot"];
 const headerVideoGuidance = "MP4/MPEG-4 (H.264), ikke MOV. Uten lyd, sømløs loop. Anbefalt 1920 x 1080 px, 16:9, 3-6 sekunder, maks 10 MB.";
 const headerVideoMaxBytes = 10 * 1024 * 1024;
 
@@ -128,7 +128,16 @@ const adminSecondaryButtonClass =
 const adminDangerButtonClass =
   "inline-flex min-h-9 cursor-pointer items-center justify-center rounded-lg border border-red-200 bg-white px-4 py-2 text-xs font-semibold text-red-700 shadow-sm shadow-black/5 transition hover:bg-red-50";
 
-function getActiveSlot(temperature: number | null | undefined): HeaderImageSlot {
+function isRainWeatherSymbol(symbolCode: string | null | undefined) {
+  const symbol = String(symbolCode || "").toLowerCase();
+  if (!symbol) return false;
+  if (symbol.includes("snow") || symbol.includes("sleet")) return false;
+  return symbol.includes("rain") || symbol.includes("thunder");
+}
+
+function getActiveSlot(temperature: number | null | undefined, symbolCode?: string | null): HeaderImageSlot {
+  if (temperature != null && temperature < 12) return "cold";
+  if (isRainWeatherSymbol(symbolCode)) return "rain";
   if (temperature == null) return "normal";
   if (temperature < 12) return "cold";
   if (temperature < 23) return "normal";
@@ -251,7 +260,10 @@ export function AdminPage() {
   const [error, setError] = useState<string | null>(null);
   const headerLibraryRef = useRef<HTMLElement | null>(null);
 
-  const activeSlot = useMemo(() => getActiveSlot(latest?.temperature), [latest?.temperature]);
+  const activeSlot = useMemo(
+    () => getActiveSlot(latest?.temperature, weatherData?.symbolCode),
+    [latest?.temperature, weatherData?.symbolCode]
+  );
   const configSnapshot = useMemo(() => JSON.stringify(config), [config]);
   const hasUnsavedChanges = !loading && configSnapshot !== savedConfigSnapshot;
 
@@ -910,70 +922,73 @@ export function AdminPage() {
                   </span>
                 )}
               </div>
-              <div className="mt-3 flex items-start gap-3">
-                <div className="min-w-0 flex-1">
-                  {isEditing ? (
-                    <form
-                      className="space-y-2"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        void saveRenameImage(asset);
-                      }}
-                    >
-                      <div className="flex min-w-0 items-center gap-1.5">
-                        <input
-                          type="text"
-                          value={editingFilenameBase}
-                          onChange={(event) => setEditingFilenameBase(event.target.value)}
-                          onKeyDown={(event) => {
-                            if (event.key === "Escape") cancelRenameImage();
-                          }}
-                          autoFocus
-                          className="min-w-0 flex-1 rounded-md border border-[#9daa8f] bg-white px-3 py-2 text-sm font-semibold text-[#2d3a21]"
-                        />
-                        <span className="shrink-0 text-sm font-semibold text-stone-500">{extension}</span>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <button type="submit" className="rounded-md bg-[#5d7342] px-3 py-1.5 text-xs font-semibold text-white">
-                          Lagre
-                        </button>
-                        <button type="button" onClick={cancelRenameImage} className="rounded-md border border-[#cbd3c2] bg-white px-3 py-1.5 text-xs font-semibold text-[#4d5d3e]">
-                          Avbryt
-                        </button>
-                      </div>
-                    </form>
-                  ) : (
+              <div className="mt-3 space-y-3">
+                {isEditing ? (
+                  <form
+                    className="space-y-2"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void saveRenameImage(asset);
+                    }}
+                  >
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <input
+                        type="text"
+                        value={editingFilenameBase}
+                        onChange={(event) => setEditingFilenameBase(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Escape") cancelRenameImage();
+                        }}
+                        autoFocus
+                        className="min-w-0 flex-1 rounded-md border border-[#9daa8f] bg-white px-3 py-2 text-sm font-semibold text-[#2d3a21]"
+                      />
+                      <span className="shrink-0 text-sm font-semibold text-stone-500">{extension}</span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button type="submit" className="rounded-md bg-[#5d7342] px-3 py-1.5 text-xs font-semibold text-white">
+                        Lagre
+                      </button>
+                      <button type="button" onClick={cancelRenameImage} className="rounded-md border border-[#cbd3c2] bg-white px-3 py-1.5 text-xs font-semibold text-[#4d5d3e]">
+                        Avbryt
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <div>
                     <button
                       type="button"
                       onClick={() => startRenameImage(asset)}
-                      className="block max-w-full truncate text-left text-sm font-semibold text-[#2d3a21] underline-offset-2 hover:underline"
+                      className="block max-w-full break-words text-left text-sm font-semibold leading-snug text-[#2d3a21] underline-offset-2 hover:underline"
                       title="Klikk for å endre filnavn"
                     >
                       {asset.filename}
                     </button>
-                  )}
-                  <p className="text-xs text-stone-500">{formatBytes(asset.size)}</p>
-                </div>
-                {!isEditing && !isSelected && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (isVideo) applyVideo(slot, asset);
-                      else applyImage(slot, kind, asset);
-                    }}
-                    className={adminPrimaryButtonClass}
-                  >
-                    Bruk
-                  </button>
+                    <p className="mt-1 text-xs text-stone-500">{formatBytes(asset.size)}</p>
+                  </div>
                 )}
+
                 {!isEditing && (
-                  <button
-                    type="button"
-                    onClick={() => void handleDeleteImage(asset)}
-                    className={adminDangerButtonClass}
-                  >
-                    Slett
-                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    {!isSelected && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (isVideo) applyVideo(slot, asset);
+                          else applyImage(slot, kind, asset);
+                        }}
+                        className={adminPrimaryButtonClass}
+                      >
+                        Bruk
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => void handleDeleteImage(asset)}
+                      className={adminDangerButtonClass}
+                    >
+                      Slett
+                    </button>
+                  </div>
                 )}
               </div>
             </article>

@@ -39,7 +39,7 @@ export interface WeatherData {
   uvIndex?: number;
 }
 
-export type HeaderImageSlot = "cold" | "normal" | "warm" | "hot";
+export type HeaderImageSlot = "cold" | "rain" | "normal" | "warm" | "hot";
 export type HeaderImageFormat = "mobile" | "desktop";
 
 export const logoFontOptions = [
@@ -138,6 +138,13 @@ export const defaultSiteConfig: SiteConfig = {
       desktop: "/cold.jpg",
       mobileVideo: "",
     },
+    rain: {
+      label: "Regn",
+      description: "Regn eller torden fra Yr",
+      mobile: "/drivhus.png",
+      desktop: "/drivhus.png",
+      mobileVideo: "",
+    },
     normal: {
       label: "Normalt",
       description: "12-22.9°C",
@@ -214,6 +221,7 @@ function normalizeSiteConfig(data: Partial<SiteConfig> | null | undefined): Site
     },
     headerImages: {
       cold: { ...defaultSiteConfig.headerImages.cold, ...(headerImages.cold ?? {}) },
+      rain: { ...defaultSiteConfig.headerImages.rain, ...(headerImages.rain ?? {}) },
       normal: { ...defaultSiteConfig.headerImages.normal, ...(headerImages.normal ?? {}) },
       warm: { ...defaultSiteConfig.headerImages.warm, ...(headerImages.warm ?? {}) },
       hot: { ...defaultSiteConfig.headerImages.hot, ...(headerImages.hot ?? {}) },
