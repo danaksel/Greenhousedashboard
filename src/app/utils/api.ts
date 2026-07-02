@@ -61,6 +61,7 @@ export interface HeaderImageConfig {
   mobile: string;
   desktop: string;
   mobileVideo: string;
+  darkModeColor: string;
 }
 
 export interface SiteConfig {
@@ -137,6 +138,7 @@ export const defaultSiteConfig: SiteConfig = {
       mobile: "/cold.jpg",
       desktop: "/cold.jpg",
       mobileVideo: "",
+      darkModeColor: "#2d3a21",
     },
     rain: {
       label: "Regn",
@@ -144,6 +146,7 @@ export const defaultSiteConfig: SiteConfig = {
       mobile: "/drivhus.png",
       desktop: "/drivhus.png",
       mobileVideo: "",
+      darkModeColor: "#2d3a21",
     },
     normal: {
       label: "Normalt",
@@ -151,6 +154,7 @@ export const defaultSiteConfig: SiteConfig = {
       mobile: "/drivhus.png",
       desktop: "/drivhus.png",
       mobileVideo: "",
+      darkModeColor: "#2d3a21",
     },
     warm: {
       label: "Varmt",
@@ -158,6 +162,7 @@ export const defaultSiteConfig: SiteConfig = {
       mobile: "/warm.jpg",
       desktop: "/warm.jpg",
       mobileVideo: "",
+      darkModeColor: "#2d3a21",
     },
     hot: {
       label: "Svært varmt",
@@ -165,6 +170,7 @@ export const defaultSiteConfig: SiteConfig = {
       mobile: "/hot.jpg",
       desktop: "/hot.jpg",
       mobileVideo: "",
+      darkModeColor: "#2d3a21",
     },
   },
   branding: {
@@ -220,11 +226,11 @@ function normalizeSiteConfig(data: Partial<SiteConfig> | null | undefined): Site
       window: typeof visibleStatuses.window === "boolean" ? visibleStatuses.window : defaultSiteConfig.visibleStatuses.window,
     },
     headerImages: {
-      cold: { ...defaultSiteConfig.headerImages.cold, ...(headerImages.cold ?? {}) },
-      rain: { ...defaultSiteConfig.headerImages.rain, ...(headerImages.rain ?? {}) },
-      normal: { ...defaultSiteConfig.headerImages.normal, ...(headerImages.normal ?? {}) },
-      warm: { ...defaultSiteConfig.headerImages.warm, ...(headerImages.warm ?? {}) },
-      hot: { ...defaultSiteConfig.headerImages.hot, ...(headerImages.hot ?? {}) },
+      cold: normalizeHeaderImageConfig(headerImages.cold, defaultSiteConfig.headerImages.cold),
+      rain: normalizeHeaderImageConfig(headerImages.rain, defaultSiteConfig.headerImages.rain),
+      normal: normalizeHeaderImageConfig(headerImages.normal, defaultSiteConfig.headerImages.normal),
+      warm: normalizeHeaderImageConfig(headerImages.warm, defaultSiteConfig.headerImages.warm),
+      hot: normalizeHeaderImageConfig(headerImages.hot, defaultSiteConfig.headerImages.hot),
     },
     branding: {
       siteName,
@@ -263,6 +269,22 @@ function normalizeSiteConfig(data: Partial<SiteConfig> | null | undefined): Site
       },
     },
   };
+}
+
+function normalizeHeaderImageConfig(
+  input: Partial<HeaderImageConfig> | undefined,
+  fallback: HeaderImageConfig
+): HeaderImageConfig {
+  return {
+    ...fallback,
+    ...(input ?? {}),
+    darkModeColor: normalizeHexColor(input?.darkModeColor, fallback.darkModeColor),
+  };
+}
+
+function normalizeHexColor(value: unknown, fallback: string) {
+  const raw = String(value || "").trim();
+  return /^#[0-9a-fA-F]{6}$/.test(raw) ? raw.toLowerCase() : fallback;
 }
 
 export async function fetchLatestGreenhouseData(): Promise<LatestData> {

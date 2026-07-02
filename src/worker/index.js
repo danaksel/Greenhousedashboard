@@ -128,6 +128,7 @@ const DEFAULT_SITE_CONFIG = {
       mobile: "/cold.jpg",
       desktop: "/cold.jpg",
       mobileVideo: "",
+      darkModeColor: "#2d3a21",
     },
     rain: {
       label: "Regn",
@@ -135,6 +136,7 @@ const DEFAULT_SITE_CONFIG = {
       mobile: "/drivhus.png",
       desktop: "/drivhus.png",
       mobileVideo: "",
+      darkModeColor: "#2d3a21",
     },
     normal: {
       label: "Normalt",
@@ -142,6 +144,7 @@ const DEFAULT_SITE_CONFIG = {
       mobile: "/drivhus.png",
       desktop: "/drivhus.png",
       mobileVideo: "",
+      darkModeColor: "#2d3a21",
     },
     warm: {
       label: "Varmt",
@@ -149,6 +152,7 @@ const DEFAULT_SITE_CONFIG = {
       mobile: "/warm.jpg",
       desktop: "/warm.jpg",
       mobileVideo: "",
+      darkModeColor: "#2d3a21",
     },
     hot: {
       label: "Svært varmt",
@@ -156,6 +160,7 @@ const DEFAULT_SITE_CONFIG = {
       mobile: "/hot.jpg",
       desktop: "/hot.jpg",
       mobileVideo: "",
+      darkModeColor: "#2d3a21",
     },
   },
   branding: {
@@ -615,6 +620,7 @@ function normalizeSiteConfig(config) {
       mobile: normalizeImageReference(image.mobile, defaultImage.mobile),
       desktop: normalizeImageReference(image.desktop, defaultImage.desktop),
       mobileVideo: normalizeImageReference(image.mobileVideo, defaultImage.mobileVideo),
+      darkModeColor: normalizeHexColor(image.darkModeColor, defaultImage.darkModeColor),
     };
   }
 
@@ -632,6 +638,11 @@ function normalizeImageReference(value, fallback) {
 function normalizeText(value, fallback, maxLength) {
   const raw = String(value || "").replace(/\s+/g, " ").trim();
   return raw ? raw.slice(0, maxLength) : fallback;
+}
+
+function normalizeHexColor(value, fallback) {
+  const raw = String(value || "").trim();
+  return /^#[0-9a-fA-F]{6}$/.test(raw) ? raw.toLowerCase() : fallback;
 }
 
 function normalizeNumber(value, fallback, min, max) {

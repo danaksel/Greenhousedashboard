@@ -145,6 +145,11 @@ function getActiveSlot(temperature: number | null | undefined, symbolCode?: stri
   return "hot";
 }
 
+function getValidHexColor(value: string | undefined, fallback: string) {
+  const raw = String(value || "").trim();
+  return /^#[0-9a-fA-F]{6}$/.test(raw) ? raw : fallback;
+}
+
 function formatBytes(size: number | null) {
   if (!size) return "";
   if (size < 1024) return `${size} B`;
@@ -264,6 +269,11 @@ export function AdminPage() {
     () => getActiveSlot(latest?.temperature, weatherData?.symbolCode),
     [latest?.temperature, weatherData?.symbolCode]
   );
+  const selectedHeaderConfig = config.headerImages[selectedHeaderSlot];
+  const selectedDarkModeColor = getValidHexColor(
+    selectedHeaderConfig.darkModeColor,
+    defaultSiteConfig.headerImages[selectedHeaderSlot].darkModeColor
+  );
   const configSnapshot = useMemo(() => JSON.stringify(config), [config]);
   const hasUnsavedChanges = !loading && configSnapshot !== savedConfigSnapshot;
 
@@ -366,6 +376,19 @@ export function AdminPage() {
         [slot]: {
           ...current.headerImages[slot],
           mobileVideo: value,
+        },
+      },
+    }));
+  };
+
+  const setHeaderDarkModeColor = (slot: HeaderImageSlot, value: string) => {
+    updateConfig((current) => ({
+      ...current,
+      headerImages: {
+        ...current.headerImages,
+        [slot]: {
+          ...current.headerImages[slot],
+          darkModeColor: value,
         },
       },
     }));
@@ -1576,10 +1599,42 @@ export function AdminPage() {
                     <article className="rounded-lg border border-[#d8ded1] bg-[#f7f8f5] p-4">
                       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
                         <div>
-                          <h3 className="text-lg font-semibold">{config.headerImages[selectedHeaderSlot].label}</h3>
-                          <p className="text-sm text-stone-500">{config.headerImages[selectedHeaderSlot].description}</p>
+                          <h3 className="text-lg font-semibold">{selectedHeaderConfig.label}</h3>
+                          <p className="text-sm text-stone-500">{selectedHeaderConfig.description}</p>
                         </div>
                         {selectedHeaderSlot === activeSlot && <span className={adminSelectedTagClass}>Brukes akkurat nå</span>}
+                      </div>
+
+                      <div className="mb-4 rounded-lg border border-[#d8ded1] bg-white/70 p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold">Darkmode/theme-farge</p>
+                            <p className="text-xs text-stone-500">
+                              Brukes som mørk bakgrunn og mobil theme-color når denne staten er aktiv.
+                            </p>
+                          </div>
+                          <label className="flex items-center gap-2 text-sm font-semibold text-[#2d3a21]">
+                            <span
+                              className="h-9 w-9 rounded-lg border border-[#cbd3c2]"
+                              style={{ backgroundColor: selectedDarkModeColor }}
+                              aria-hidden="true"
+                            />
+                            <input
+                              type="color"
+                              value={selectedDarkModeColor}
+                              onChange={(event) => setHeaderDarkModeColor(selectedHeaderSlot, event.target.value)}
+                              className="h-9 w-12 cursor-pointer rounded border border-[#cbd3c2] bg-white p-1"
+                              aria-label="Velg darkmode/theme-farge"
+                            />
+                            <input
+                              type="text"
+                              value={selectedHeaderConfig.darkModeColor}
+                              onChange={(event) => setHeaderDarkModeColor(selectedHeaderSlot, event.target.value)}
+                              className="w-24 rounded-lg border border-[#cbd3c2] bg-white px-3 py-2 text-sm"
+                              pattern="#[0-9a-fA-F]{6}"
+                            />
+                          </label>
+                        </div>
                       </div>
 
                       <div className="grid gap-3 xl:grid-cols-3">

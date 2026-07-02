@@ -43,6 +43,15 @@ function isRainWeatherSymbol(symbolCode: string | null | undefined) {
   return symbol.includes("rain") || symbol.includes("thunder");
 }
 
+function getHeaderImageSlot(temperature: number | null, symbolCode: string | null | undefined): HeaderImageSlot {
+  if (temperature !== null && temperature < 12) return "cold";
+  if (isRainWeatherSymbol(symbolCode)) return "rain";
+  if (temperature === null) return "normal";
+  if (temperature < 23) return "normal";
+  if (temperature <= 28) return "warm";
+  return "hot";
+}
+
 type ChartPoint = { time: string; value: number; min?: number; max?: number; range?: [number, number]; id: string };
 type HistoryPoint = { time: string; value: number | null; min?: number | null; max?: number | null; timestamp: string | null; bucketStart: string | null };
 type MetricMinMax = { min: number | undefined; max: number | undefined };
@@ -457,7 +466,9 @@ export default function App() {
       metaThemeColor.setAttribute('name', 'theme-color');
       document.head.appendChild(metaThemeColor);
     }
-    const browserBackgroundColor = darkMode ? '#2d3a21' : '#e8ede3';
+    const activeHeaderSlot = getHeaderImageSlot(temperature, weatherData?.symbolCode);
+    const activeHeaderConfig = siteConfig.headerImages[activeHeaderSlot] ?? defaultSiteConfig.headerImages[activeHeaderSlot];
+    const browserBackgroundColor = darkMode ? activeHeaderConfig.darkModeColor : '#e8ede3';
     metaThemeColor.setAttribute('content', browserBackgroundColor);
     document.documentElement.style.backgroundColor = browserBackgroundColor;
     document.body.style.backgroundColor = browserBackgroundColor;
@@ -470,7 +481,7 @@ export default function App() {
       document.head.appendChild(appleStatusBar);
     }
     appleStatusBar.setAttribute('content', darkMode ? 'black-translucent' : 'default');
-  }, [darkMode]);
+  }, [darkMode, siteConfig, temperature, weatherData?.symbolCode]);
 
   useEffect(() => {
     if (!siteConfigReady) return;
@@ -652,25 +663,14 @@ export default function App() {
     });
   };
 
-  const bgColor = darkMode ? 'bg-[#2d3a21]' : 'bg-[#e8ede3]';
+  const safeWindowCount = Math.min(Math.max(windowCount ?? 0, 0), 3);
+  const heroImageSlot = getHeaderImageSlot(temperature, weatherData?.symbolCode);
+  const heroImageConfig = siteConfig.headerImages[heroImageSlot] ?? defaultSiteConfig.headerImages[heroImageSlot];
+  const browserBackgroundColor = darkMode ? heroImageConfig.darkModeColor : "#e8ede3";
   const headerTextClass = darkMode ? "text-[#e8ede3]" : "text-[#2d3a21]";
   const headerButtonClass = darkMode
     ? "bg-[#e8ede3]/12 hover:bg-[#e8ede3]/18"
     : "bg-[#2d3a21]/10 hover:bg-[#2d3a21]/15";
-  const safeWindowCount = Math.min(Math.max(windowCount ?? 0, 0), 3);
-  const heroImageSlot: HeaderImageSlot =
-    temperature !== null && temperature < 12
-      ? "cold"
-      : isRainWeatherSymbol(weatherData?.symbolCode)
-        ? "rain"
-        : temperature === null
-          ? "normal"
-          : temperature < 23
-            ? "normal"
-            : temperature <= 28
-              ? "warm"
-              : "hot";
-  const heroImageConfig = siteConfig.headerImages[heroImageSlot] ?? defaultSiteConfig.headerImages[heroImageSlot];
   const heroMobileImageSrc = resolveGreenhouseAssetUrl(heroImageConfig.mobile);
   const heroDesktopImageSrc = resolveGreenhouseAssetUrl(heroImageConfig.desktop);
   const heroMobileVideoSrc = resolveGreenhouseAssetUrl(heroImageConfig.mobileVideo);
@@ -781,7 +781,7 @@ export default function App() {
         : "h-1.5 w-1.5 rounded-full bg-[#9daa8f]/55 transition-all";
 
   return (
-    <div className={`min-h-screen transition-colors duration-300 ${bgColor}`}>
+    <div className="min-h-screen transition-colors duration-300" style={{ backgroundColor: browserBackgroundColor }}>
       <div className="relative mx-auto max-w-md md:max-w-7xl md:px-8 xl:px-10">
         {/* Offline Indicator */}
         <div
