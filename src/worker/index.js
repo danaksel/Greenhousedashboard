@@ -122,6 +122,22 @@ const DEFAULT_SITE_CONFIG = {
     window: true,
   },
   headerImages: {
+    coldNight: {
+      label: "Kald natt",
+      description: "Natt og under 12°C",
+      mobile: "/cold.jpg",
+      desktop: "/cold.jpg",
+      mobileVideo: "",
+      darkModeColor: "#2d3a21",
+    },
+    night: {
+      label: "Natt",
+      description: "Etter solnedgang og før soloppgang",
+      mobile: "/drivhus.png",
+      desktop: "/drivhus.png",
+      mobileVideo: "",
+      darkModeColor: "#2d3a21",
+    },
     cold: {
       label: "Kaldt",
       description: "Under 12°C",

@@ -39,7 +39,7 @@ export interface WeatherData {
   uvIndex?: number;
 }
 
-export type HeaderImageSlot = "cold" | "rain" | "normal" | "warm" | "hot";
+export type HeaderImageSlot = "coldNight" | "night" | "cold" | "rain" | "normal" | "warm" | "hot";
 export type HeaderImageFormat = "mobile" | "desktop";
 
 export const logoFontOptions = [
@@ -132,6 +132,22 @@ export const defaultSiteConfig: SiteConfig = {
     window: true,
   },
   headerImages: {
+    coldNight: {
+      label: "Kald natt",
+      description: "Natt og under 12°C",
+      mobile: "/cold.jpg",
+      desktop: "/cold.jpg",
+      mobileVideo: "",
+      darkModeColor: "#2d3a21",
+    },
+    night: {
+      label: "Natt",
+      description: "Etter solnedgang og før soloppgang",
+      mobile: "/drivhus.png",
+      desktop: "/drivhus.png",
+      mobileVideo: "",
+      darkModeColor: "#2d3a21",
+    },
     cold: {
       label: "Kaldt",
       description: "Under 12°C",
@@ -226,6 +242,8 @@ function normalizeSiteConfig(data: Partial<SiteConfig> | null | undefined): Site
       window: typeof visibleStatuses.window === "boolean" ? visibleStatuses.window : defaultSiteConfig.visibleStatuses.window,
     },
     headerImages: {
+      coldNight: normalizeHeaderImageConfig(headerImages.coldNight, defaultSiteConfig.headerImages.coldNight),
+      night: normalizeHeaderImageConfig(headerImages.night, defaultSiteConfig.headerImages.night),
       cold: normalizeHeaderImageConfig(headerImages.cold, defaultSiteConfig.headerImages.cold),
       rain: normalizeHeaderImageConfig(headerImages.rain, defaultSiteConfig.headerImages.rain),
       normal: normalizeHeaderImageConfig(headerImages.normal, defaultSiteConfig.headerImages.normal),

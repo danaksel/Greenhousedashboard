@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import SunCalc from "suncalc";
 import {
   defaultSiteConfig,
   deleteAdminImage,
@@ -20,10 +21,13 @@ import {
   type SiteConfig,
   type WeatherData,
 } from "./utils/api";
+import { thresholds } from "../config/thresholds";
 
-const imageSlots: HeaderImageSlot[] = ["cold", "rain", "normal", "warm", "hot"];
+const imageSlots: HeaderImageSlot[] = ["coldNight", "night", "cold", "rain", "normal", "warm", "hot"];
 const headerVideoGuidance = "MP4/MPEG-4 (H.264), ikke MOV. Uten lyd, sømløs loop. Anbefalt 1920 x 1080 px, 16:9, 3-6 sekunder, maks 10 MB.";
 const headerVideoMaxBytes = 10 * 1024 * 1024;
+const greenhouseLatitude = 59.8667;
+const greenhouseLongitude = 10.7167;
 
 const statusLabels: Array<{ key: keyof SiteConfig["visibleStatuses"]; label: string }> = [
   { key: "door", label: "Dør" },
@@ -135,11 +139,17 @@ function isRainWeatherSymbol(symbolCode: string | null | undefined) {
   return symbol.includes("rain") || symbol.includes("thunder");
 }
 
-function getActiveSlot(temperature: number | null | undefined, symbolCode?: string | null): HeaderImageSlot {
-  if (temperature != null && temperature < 12) return "cold";
+function isNightNow(now = new Date()) {
+  const sunTimes = SunCalc.getTimes(now, greenhouseLatitude, greenhouseLongitude);
+  return now < sunTimes.sunrise || now >= sunTimes.sunset;
+}
+
+function getActiveSlot(temperature: number | null | undefined, symbolCode?: string | null, now = new Date()): HeaderImageSlot {
+  const isCold = temperature != null && temperature < thresholds.temperature.min;
+  if (isNightNow(now)) return isCold ? "coldNight" : "night";
+  if (isCold) return "cold";
   if (isRainWeatherSymbol(symbolCode)) return "rain";
   if (temperature == null) return "normal";
-  if (temperature < 12) return "cold";
   if (temperature < 23) return "normal";
   if (temperature <= 28) return "warm";
   return "hot";

@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from "react";
+import SunCalc from "suncalc";
 import { AdminPage } from "./AdminPage";
 import { ChartSkeleton } from "./components/chart-skeleton";
 import {
@@ -36,6 +37,9 @@ const WeatherWidget = lazy(async () => {
   return { default: module.WeatherWidget };
 });
 
+const greenhouseLatitude = 59.8667;
+const greenhouseLongitude = 10.7167;
+
 function isRainWeatherSymbol(symbolCode: string | null | undefined) {
   const symbol = String(symbolCode || "").toLowerCase();
   if (!symbol) return false;
@@ -43,8 +47,15 @@ function isRainWeatherSymbol(symbolCode: string | null | undefined) {
   return symbol.includes("rain") || symbol.includes("thunder");
 }
 
-function getHeaderImageSlot(temperature: number | null, symbolCode: string | null | undefined): HeaderImageSlot {
-  if (temperature !== null && temperature < 12) return "cold";
+function isNightNow(now = new Date()) {
+  const sunTimes = SunCalc.getTimes(now, greenhouseLatitude, greenhouseLongitude);
+  return now < sunTimes.sunrise || now >= sunTimes.sunset;
+}
+
+function getHeaderImageSlot(temperature: number | null, symbolCode: string | null | undefined, now = new Date()): HeaderImageSlot {
+  const isCold = temperature !== null && temperature < thresholds.temperature.min;
+  if (isNightNow(now)) return isCold ? "coldNight" : "night";
+  if (isCold) return "cold";
   if (isRainWeatherSymbol(symbolCode)) return "rain";
   if (temperature === null) return "normal";
   if (temperature < 23) return "normal";
@@ -481,7 +492,7 @@ export default function App() {
       document.head.appendChild(appleStatusBar);
     }
     appleStatusBar.setAttribute('content', darkMode ? 'black-translucent' : 'default');
-  }, [darkMode, siteConfig, temperature, weatherData?.symbolCode]);
+  }, [darkMode, lastUpdated, siteConfig, temperature, weatherData?.symbolCode]);
 
   useEffect(() => {
     if (!siteConfigReady) return;
