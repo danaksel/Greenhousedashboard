@@ -888,6 +888,7 @@ export default function App() {
                 <div className={`relative h-[200px] w-full overflow-hidden md:mb-0 md:aspect-[3/1] md:h-auto md:rounded-2xl ${temperatureAlert ? "mb-0" : "mb-6"}`}>
                   {heroMobileVideoSrc ? (
                     <video
+                      key={heroMobileVideoSrc}
                       className="h-full w-full object-cover object-center md:hidden"
                       autoPlay
                       muted
@@ -895,10 +896,9 @@ export default function App() {
                       playsInline
                       preload="metadata"
                       poster={heroMobileImageSrc}
+                      src={heroMobileVideoSrc}
                       aria-label="Drivhus"
-                    >
-                      <source src={heroMobileVideoSrc} type="video/mp4" />
-                    </video>
+                    />
                   ) : null}
                   <picture className={heroMobileVideoSrc ? "hidden h-full w-full md:block" : "block h-full w-full"}>
                     <source media="(min-width: 768px)" srcSet={heroDesktopImageSrc} />
