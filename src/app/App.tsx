@@ -197,6 +197,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [weatherLoading, setWeatherLoading] = useState(true);
+  const [weatherReady, setWeatherReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
@@ -418,6 +419,7 @@ export default function App() {
           console.error('Failed to fetch weather data:', weatherErr);
           // Don't set error state for weather failures - just skip showing weather
         } finally {
+          setWeatherReady(true);
           setWeatherLoading(false);
         }
       })() : Promise.resolve();
@@ -477,9 +479,14 @@ export default function App() {
       metaThemeColor.setAttribute('name', 'theme-color');
       document.head.appendChild(metaThemeColor);
     }
-    const activeHeaderSlot = getHeaderImageSlot(temperature, weatherData?.symbolCode);
-    const activeHeaderConfig = siteConfig.headerImages[activeHeaderSlot] ?? defaultSiteConfig.headerImages[activeHeaderSlot];
-    const browserBackgroundColor = darkMode ? activeHeaderConfig.darkModeColor : '#e8ede3';
+    const activeHeaderSlot =
+      siteConfigReady && temperature !== null && weatherReady
+        ? getHeaderImageSlot(temperature, weatherData?.symbolCode)
+        : null;
+    const activeHeaderConfig = activeHeaderSlot
+      ? siteConfig.headerImages[activeHeaderSlot] ?? defaultSiteConfig.headerImages[activeHeaderSlot]
+      : null;
+    const browserBackgroundColor = darkMode ? activeHeaderConfig?.darkModeColor ?? '#2d3a21' : '#e8ede3';
     metaThemeColor.setAttribute('content', browserBackgroundColor);
     document.documentElement.style.backgroundColor = browserBackgroundColor;
     document.body.style.backgroundColor = browserBackgroundColor;
@@ -492,7 +499,7 @@ export default function App() {
       document.head.appendChild(appleStatusBar);
     }
     appleStatusBar.setAttribute('content', darkMode ? 'black-translucent' : 'default');
-  }, [darkMode, lastUpdated, siteConfig, temperature, weatherData?.symbolCode]);
+  }, [darkMode, lastUpdated, siteConfig, siteConfigReady, temperature, weatherData?.symbolCode, weatherReady]);
 
   useEffect(() => {
     if (!siteConfigReady) return;
@@ -675,16 +682,19 @@ export default function App() {
   };
 
   const safeWindowCount = Math.min(Math.max(windowCount ?? 0, 0), 3);
-  const heroImageSlot = getHeaderImageSlot(temperature, weatherData?.symbolCode);
-  const heroImageConfig = siteConfig.headerImages[heroImageSlot] ?? defaultSiteConfig.headerImages[heroImageSlot];
-  const browserBackgroundColor = darkMode ? heroImageConfig.darkModeColor : "#e8ede3";
+  const heroStateReady = siteConfigReady && temperature !== null && weatherReady;
+  const heroImageSlot = heroStateReady ? getHeaderImageSlot(temperature, weatherData?.symbolCode) : null;
+  const heroImageConfig = heroImageSlot
+    ? siteConfig.headerImages[heroImageSlot] ?? defaultSiteConfig.headerImages[heroImageSlot]
+    : null;
+  const browserBackgroundColor = darkMode ? heroImageConfig?.darkModeColor ?? "#2d3a21" : "#e8ede3";
   const headerTextClass = darkMode ? "text-[#e8ede3]" : "text-[#2d3a21]";
   const headerButtonClass = darkMode
     ? "bg-[#e8ede3]/12 hover:bg-[#e8ede3]/18"
     : "bg-[#2d3a21]/10 hover:bg-[#2d3a21]/15";
-  const heroMobileImageSrc = resolveGreenhouseAssetUrl(heroImageConfig.mobile);
-  const heroDesktopImageSrc = resolveGreenhouseAssetUrl(heroImageConfig.desktop);
-  const heroMobileVideoSrc = resolveGreenhouseAssetUrl(heroImageConfig.mobileVideo);
+  const heroMobileImageSrc = heroImageConfig ? resolveGreenhouseAssetUrl(heroImageConfig.mobile) : "";
+  const heroDesktopImageSrc = heroImageConfig ? resolveGreenhouseAssetUrl(heroImageConfig.desktop) : "";
+  const heroMobileVideoSrc = heroImageConfig ? resolveGreenhouseAssetUrl(heroImageConfig.mobileVideo) : "";
   const customLogoSrc = siteConfigReady && siteConfig.branding.logo.url ? resolveGreenhouseAssetUrl(siteConfig.branding.logo.url) : "";
   const logoSize = siteConfig.branding.logo.size;
   const temperatureAlert: TemperatureAlert | null =
@@ -897,28 +907,32 @@ export default function App() {
               <section>
                 {/* Hero Image */}
                 <div className={`relative h-[200px] w-full overflow-hidden md:mb-0 md:aspect-[3/1] md:h-auto md:rounded-2xl ${temperatureAlert ? "mb-0" : "mb-6"}`}>
-                  {heroMobileVideoSrc ? (
-                    <video
-                      key={heroMobileVideoSrc}
-                      className="h-full w-full object-cover object-center md:hidden"
-                      autoPlay
-                      muted
-                      loop
-                      playsInline
-                      preload="metadata"
-                      poster={heroMobileImageSrc}
-                      src={heroMobileVideoSrc}
-                      aria-label="Drivhus"
-                    />
+                  {heroImageConfig ? (
+                    <>
+                      {heroMobileVideoSrc ? (
+                        <video
+                          key={heroMobileVideoSrc}
+                          className="h-full w-full object-cover object-center md:hidden"
+                          autoPlay
+                          muted
+                          loop
+                          playsInline
+                          preload="metadata"
+                          poster={heroMobileImageSrc}
+                          src={heroMobileVideoSrc}
+                          aria-label="Drivhus"
+                        />
+                      ) : null}
+                      <picture className={heroMobileVideoSrc ? "hidden h-full w-full md:block" : "block h-full w-full"}>
+                        <source media="(min-width: 768px)" srcSet={heroDesktopImageSrc} />
+                        <ImageWithFallback
+                          src={heroMobileImageSrc}
+                          alt="Drivhus"
+                          className="h-full w-full object-cover object-center"
+                        />
+                      </picture>
+                    </>
                   ) : null}
-                  <picture className={heroMobileVideoSrc ? "hidden h-full w-full md:block" : "block h-full w-full"}>
-                    <source media="(min-width: 768px)" srcSet={heroDesktopImageSrc} />
-                    <ImageWithFallback
-                      src={heroMobileImageSrc}
-                      alt="Drivhus" 
-                      className="h-full w-full object-cover object-center"
-                    />
-                  </picture>
                   {temperatureAlert && (
                     <div
                       className="pointer-events-none absolute inset-0 opacity-45"
