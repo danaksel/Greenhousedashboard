@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   defaultSiteConfig,
   deleteAdminImage,
@@ -19,11 +19,6 @@ import {
 } from "./utils/api";
 
 const imageSlots: HeaderImageSlot[] = ["cold", "normal", "warm", "hot"];
-const imageFormats: Array<{ key: HeaderImageFormat; label: string; ratio: string }> = [
-  { key: "desktop", label: "Desktop 3:1", ratio: "3:1" },
-  { key: "mobile", label: "Mobil ca. 2:1", ratio: "390:200" },
-];
-
 const headerVideoGuidance = "MP4/MPEG-4 (H.264), ikke MOV. Uten lyd, sømløs loop. Anbefalt 900 x 460 px, 3-6 sekunder, maks 10 MB.";
 const headerVideoMaxBytes = 10 * 1024 * 1024;
 
@@ -63,10 +58,6 @@ function getUploadSizeGuidance(format: HeaderImageFormat) {
   }
 
   return "Anbefalt 900 x 460 px for retina. Minimum 780 x 400 px. Format ca. 390:200.";
-}
-
-function getImagePreviewAspectClass(image: AdminImage) {
-  return image.format === "mobile" ? "aspect-[390/200]" : "aspect-[3/1]";
 }
 
 async function svgFileToPngFile(file: File, size: number, filename: string): Promise<File> {
@@ -110,10 +101,6 @@ export function AdminPage() {
   const [images, setImages] = useState<AdminImage[]>([]);
   const [latest, setLatest] = useState<LatestData | null>(null);
   const [activeSection, setActiveSection] = useState<AdminSection>("logo");
-  const [selectedSlot, setSelectedSlot] = useState<HeaderImageSlot>("normal");
-  const [selectedFormat, setSelectedFormat] = useState<HeaderImageFormat>("desktop");
-  const selectedSlotRef = useRef<HeaderImageSlot>("normal");
-  const selectedFormatRef = useRef<HeaderImageFormat>("desktop");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -167,16 +154,6 @@ export function AdminPage() {
   const updateConfig = (updater: (current: SiteConfig) => SiteConfig) => {
     setConfig((current) => updater(current));
     setMessage(null);
-  };
-
-  const setSelectedUploadSlot = (slot: HeaderImageSlot) => {
-    selectedSlotRef.current = slot;
-    setSelectedSlot(slot);
-  };
-
-  const setSelectedUploadFormat = (format: HeaderImageFormat) => {
-    selectedFormatRef.current = format;
-    setSelectedFormat(format);
   };
 
   const setBrandingText = (
@@ -258,7 +235,11 @@ export function AdminPage() {
     }
   };
 
-  const handleUpload = async (file: File | undefined) => {
+  const handleSlotImageUpload = async (
+    slot: HeaderImageSlot,
+    format: HeaderImageFormat,
+    file: File | undefined
+  ) => {
     if (!file) return;
 
     setUploading(true);
@@ -266,12 +247,10 @@ export function AdminPage() {
     setMessage(null);
 
     try {
-      const targetSlot = selectedSlotRef.current;
-      const targetFormat = selectedFormatRef.current;
-      const image = await uploadAdminImage(file, targetSlot, targetFormat);
+      const image = await uploadAdminImage(file, slot, format);
       setImages((current) => [image, ...current.filter((item) => item.key !== image.key)]);
-      setImage(targetSlot, targetFormat, image.url);
-      setMessage(`Bildet er lastet opp og valgt for ${config.headerImages[targetSlot].label.toLowerCase()} / ${targetFormat === "desktop" ? "desktop" : "mobil"}. Husk å lagre.`);
+      setImage(slot, format, image.url);
+      setMessage(`Bildet er lastet opp og valgt for ${config.headerImages[slot].label.toLowerCase()} / ${format === "desktop" ? "desktop" : "mobil"}. Husk å lagre.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Kunne ikke laste opp bildet");
     } finally {
@@ -279,7 +258,7 @@ export function AdminPage() {
     }
   };
 
-  const handleVideoUpload = async (file: File | undefined) => {
+  const handleSlotVideoUpload = async (slot: HeaderImageSlot, file: File | undefined) => {
     if (!file) return;
 
     if (file.type !== "video/mp4") {
@@ -297,11 +276,10 @@ export function AdminPage() {
     setMessage(null);
 
     try {
-      const targetSlot = selectedSlotRef.current;
-      const video = await uploadAdminHeaderVideo(file, targetSlot);
+      const video = await uploadAdminHeaderVideo(file, slot);
       setImages((current) => [video, ...current.filter((item) => item.key !== video.key)]);
-      setMobileVideo(targetSlot, video.url);
-      setMessage(`Videoen er lastet opp og valgt for ${config.headerImages[targetSlot].label.toLowerCase()} / mobil. Husk å lagre.`);
+      setMobileVideo(slot, video.url);
+      setMessage(`Videoen er lastet opp og valgt for ${config.headerImages[slot].label.toLowerCase()} / mobil. Husk å lagre.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Kunne ikke laste opp video");
     } finally {
@@ -507,14 +485,119 @@ export function AdminPage() {
 
   const headerAssets = images.filter((image) => (image.assetType ?? "header") === "header");
   const headerVideoAssets = images.filter((image) => image.assetType === "header-video");
-  const selectedImages = headerAssets.filter(
-    (image) => (image.slot === selectedSlot || image.slot === "general") && image.format === selectedFormat
-  );
-  const selectedVideos = headerVideoAssets.filter(
-    (video) => (video.slot === selectedSlot || video.slot === "general") && video.format === "mobile-video"
-  );
   const logoAssets = images.filter((image) => image.assetType === "logo");
   const faviconAssets = images.filter((image) => image.assetType === "favicon");
+
+  const primeVideoPreview = (video: HTMLVideoElement) => {
+    if (video.readyState > 0 && video.currentTime < 0.04) {
+      try {
+        video.currentTime = 0.05;
+      } catch {
+        // Some browsers disallow seeking before enough data is available.
+      }
+    }
+    void video.play().catch(() => undefined);
+  };
+
+  const renderAdminVideoPreview = (src: string, label: string) => (
+    <video
+      src={resolveGreenhouseAssetUrl(src)}
+      muted
+      loop
+      playsInline
+      autoPlay
+      preload="auto"
+      aria-label={label}
+      onLoadedMetadata={(event) => primeVideoPreview(event.currentTarget)}
+      onLoadedData={(event) => primeVideoPreview(event.currentTarget)}
+      className="h-full w-full object-cover object-center"
+    />
+  );
+
+  const renderHeaderImageAssets = (
+    slot: HeaderImageSlot,
+    format: HeaderImageFormat,
+    assets: AdminImage[],
+    selectedUrl: string
+  ) => (
+    <div className="mt-3 max-h-44 space-y-2 overflow-y-auto pr-1">
+      {assets.length === 0 ? (
+        <p className="rounded-lg bg-white/70 px-3 py-2 text-xs text-stone-500">Ingen filer i R2.</p>
+      ) : (
+        assets.map((image) => (
+          <div key={image.key} className="flex items-center gap-2 rounded-lg border border-[#d8ded1] bg-white/70 p-2">
+            <div className={`w-20 shrink-0 overflow-hidden rounded bg-stone-200 ${format === "desktop" ? "aspect-[3/1]" : "aspect-[390/200]"}`}>
+              <img
+                src={resolveGreenhouseAssetUrl(image.url)}
+                alt={image.filename}
+                className="h-full w-full object-cover object-center"
+              />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-xs font-semibold">{image.filename}</p>
+              <p className="text-[11px] text-stone-500">{formatBytes(image.size)}</p>
+            </div>
+            {selectedUrl === image.url ? (
+              <span className="rounded-full border border-[#2d3a21] px-2 py-1 text-[11px] font-semibold text-[#2d3a21]">Valgt</span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => applyImage(slot, format, image)}
+                className="rounded-full bg-[#5d7342] px-2.5 py-1 text-[11px] font-semibold text-white"
+              >
+                Bruk
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => void handleDeleteImage(image)}
+              className="rounded-full border border-red-200 px-2.5 py-1 text-[11px] font-semibold text-red-700 transition hover:bg-red-50"
+            >
+              Slett
+            </button>
+          </div>
+        ))
+      )}
+    </div>
+  );
+
+  const renderHeaderVideoAssets = (slot: HeaderImageSlot, assets: AdminImage[], selectedUrl: string) => (
+    <div className="mt-3 max-h-44 space-y-2 overflow-y-auto pr-1">
+      {assets.length === 0 ? (
+        <p className="rounded-lg bg-white/70 px-3 py-2 text-xs text-stone-500">Ingen videoer i R2.</p>
+      ) : (
+        assets.map((video) => (
+          <div key={video.key} className="flex items-center gap-2 rounded-lg border border-[#d8ded1] bg-white/70 p-2">
+            <div className="w-20 shrink-0 overflow-hidden rounded bg-stone-200 aspect-[390/200]">
+              {renderAdminVideoPreview(video.url, video.filename)}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-xs font-semibold">{video.filename}</p>
+              <p className="text-[11px] text-stone-500">{formatBytes(video.size)}</p>
+            </div>
+            {selectedUrl === video.url ? (
+              <span className="rounded-full border border-[#2d3a21] px-2 py-1 text-[11px] font-semibold text-[#2d3a21]">Valgt</span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => applyVideo(slot, video)}
+                className="rounded-full bg-[#5d7342] px-2.5 py-1 text-[11px] font-semibold text-white"
+              >
+                Bruk
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => void handleDeleteImage(video)}
+              className="rounded-full border border-red-200 px-2.5 py-1 text-[11px] font-semibold text-red-700 transition hover:bg-red-50"
+            >
+              Slett
+            </button>
+          </div>
+        ))
+      )}
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-[#e8ede3] text-[#2d3a21]">
@@ -943,350 +1026,170 @@ export function AdminPage() {
 
             {activeSection === "header" && (
               <>
-            <section className="rounded-lg border border-[#d8ded1] bg-white/70 p-5 shadow-sm">
-              <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-base font-semibold">Headerbilder</h2>
-                  <p className="text-sm text-stone-600">Desktop bruker 3:1. Mobil bruker dagens headerflate, ca. 390:200. Mobil kan også ha MP4-video med bildet som fallback.</p>
-                </div>
-                  <button
-                    type="button"
-                    onClick={handleReloadAdminData}
-                    className="rounded-full border border-[#cbd3c2] px-4 py-2 text-sm text-[#4d5d3e] transition hover:bg-white"
-                  >
-                  Oppdater
-                </button>
-              </div>
+                <section className="rounded-lg border border-[#d8ded1] bg-white/70 p-5 shadow-sm">
+                  <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h2 className="text-base font-semibold">Header</h2>
+                      <p className="text-sm text-stone-600">Administrer bilder og mobilvideo direkte på hver temperaturstate.</p>
+                      <p className="mt-1 text-xs text-stone-500">
+                        Desktop: 2400 x 800 px. Mobil: 900 x 460 px. Video: {headerVideoGuidance}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleReloadAdminData}
+                      className="rounded-full border border-[#cbd3c2] px-4 py-2 text-sm text-[#4d5d3e] transition hover:bg-white"
+                    >
+                      Oppdater
+                    </button>
+                  </div>
 
-              <div className="grid gap-4">
-                {imageSlots.map((slot) => {
-                  const slotConfig = config.headerImages[slot];
-                  const isActive = activeSlot === slot;
+                  <div className="grid gap-4">
+                    {imageSlots.map((slot) => {
+                      const slotConfig = config.headerImages[slot];
+                      const isActive = activeSlot === slot;
+                      const desktopAssets = headerAssets.filter((image) => (image.slot === slot || image.slot === "general") && image.format === "desktop");
+                      const mobileAssets = headerAssets.filter((image) => (image.slot === slot || image.slot === "general") && image.format === "mobile");
+                      const videoAssets = headerVideoAssets.filter((video) => (video.slot === slot || video.slot === "general") && video.format === "mobile-video");
 
-                  return (
-                    <div key={slot} className="rounded-lg border border-[#d8ded1] bg-[#f7f8f5] p-4">
-                      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-                        <div>
-                          <h3 className="font-semibold">{slotConfig.label}</h3>
-                          <p className="text-sm text-stone-500">{slotConfig.description}</p>
-                        </div>
-                        {isActive && (
-                          <span className="rounded-full bg-[#5d7342] px-3 py-1 text-xs font-semibold text-white">
-                            Aktiv nå
-                          </span>
-                        )}
-                      </div>
+                      return (
+                        <article key={slot} className="rounded-lg border border-[#d8ded1] bg-[#f7f8f5] p-4">
+                          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <h3 className="font-semibold">{slotConfig.label}</h3>
+                              <p className="text-sm text-stone-500">{slotConfig.description}</p>
+                            </div>
+                            {isActive && (
+                              <span className="rounded-full bg-[#5d7342] px-3 py-1 text-xs font-semibold text-white">
+                                Aktiv nå
+                              </span>
+                            )}
+                          </div>
 
-                      <div className="grid gap-4 md:grid-cols-2">
-                        {imageFormats.map((format) => {
-                          const value = slotConfig[format.key];
-                          return (
-                            <div key={format.key} className="space-y-3">
-                              <div className="flex items-center justify-between gap-3">
-                                <p className="text-sm font-semibold">{format.label}</p>
-                                <span className="text-xs text-stone-500">{format.ratio}</span>
+                          <div className="grid gap-3 xl:grid-cols-3">
+                            <div className="rounded-lg border border-[#d8ded1] bg-white/65 p-3">
+                              <div className="mb-2 flex items-center justify-between gap-3">
+                                <p className="text-sm font-semibold">Desktopbilde</p>
+                                <span className="text-xs text-stone-500">3:1</span>
                               </div>
-                              <div className={`overflow-hidden rounded-lg bg-stone-200 ${format.key === "desktop" ? "aspect-[3/1]" : "aspect-[390/200]"}`}>
+                              <div className="overflow-hidden rounded-lg bg-stone-200 aspect-[3/1]">
                                 <img
-                                  src={resolveGreenhouseAssetUrl(value)}
-                                  alt={`${slotConfig.label} ${format.label}`}
+                                  src={resolveGreenhouseAssetUrl(slotConfig.desktop)}
+                                  alt={`${slotConfig.label} desktop`}
                                   className="h-full w-full object-cover object-center"
                                 />
                               </div>
-                              <select
-                                value={value}
-                                onChange={(event) => setImage(slot, format.key, event.target.value)}
-                                className="w-full rounded-lg border border-[#cbd3c2] bg-white px-3 py-2 text-sm"
-                              >
-                                <option value={defaultSiteConfig.headerImages[slot][format.key]}>
-                                  Standardbilde
-                                </option>
-                                {headerAssets.map((image) => (
-                                  <option key={`${slot}-${format.key}-${image.key}`} value={image.url}>
-                                    {image.filename}
-                                  </option>
-                                ))}
-                              </select>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setSelectedUploadSlot(slot);
-                                  setSelectedUploadFormat(format.key);
-                                }}
-                                className="rounded-full border border-[#cbd3c2] px-3 py-1.5 text-xs text-[#4d5d3e] transition hover:bg-white"
-                              >
-                                Velg som opplastingsmål
-                              </button>
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setImage(slot, "desktop", defaultSiteConfig.headerImages[slot].desktop)}
+                                  className="rounded-full border border-[#cbd3c2] px-3 py-1.5 text-xs font-semibold text-[#4d5d3e]"
+                                >
+                                  Standard
+                                </button>
+                                <label className="cursor-pointer rounded-full bg-[#5d7342] px-3 py-1.5 text-xs font-semibold text-white">
+                                  {uploading ? "Laster opp" : "Last opp"}
+                                  <input
+                                    type="file"
+                                    accept="image/jpeg,image/png"
+                                    disabled={uploading}
+                                    onChange={(event) => {
+                                      void handleSlotImageUpload(slot, "desktop", event.target.files?.[0]);
+                                      event.target.value = "";
+                                    }}
+                                    className="sr-only"
+                                  />
+                                </label>
+                              </div>
+                              <p className="mt-2 text-[11px] leading-relaxed text-stone-500">{getUploadSizeGuidance("desktop")}</p>
+                              {renderHeaderImageAssets(slot, "desktop", desktopAssets, slotConfig.desktop)}
                             </div>
-                          );
-                        })}
-                      </div>
 
-                      <div className="mt-4 rounded-lg border border-[#d8ded1] bg-white/70 p-4">
-                        <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-semibold">Mobilvideo</p>
-                            <p className="mt-1 text-xs leading-relaxed text-stone-500">
-                              Kun mobil. Bildet over brukes som fallback/poster.
-                            </p>
+                            <div className="rounded-lg border border-[#d8ded1] bg-white/65 p-3">
+                              <div className="mb-2 flex items-center justify-between gap-3">
+                                <p className="text-sm font-semibold">Mobilbilde</p>
+                                <span className="text-xs text-stone-500">390:200</span>
+                              </div>
+                              <div className="overflow-hidden rounded-lg bg-stone-200 aspect-[390/200]">
+                                <img
+                                  src={resolveGreenhouseAssetUrl(slotConfig.mobile)}
+                                  alt={`${slotConfig.label} mobil`}
+                                  className="h-full w-full object-cover object-center"
+                                />
+                              </div>
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setImage(slot, "mobile", defaultSiteConfig.headerImages[slot].mobile)}
+                                  className="rounded-full border border-[#cbd3c2] px-3 py-1.5 text-xs font-semibold text-[#4d5d3e]"
+                                >
+                                  Standard
+                                </button>
+                                <label className="cursor-pointer rounded-full bg-[#5d7342] px-3 py-1.5 text-xs font-semibold text-white">
+                                  {uploading ? "Laster opp" : "Last opp"}
+                                  <input
+                                    type="file"
+                                    accept="image/jpeg,image/png"
+                                    disabled={uploading}
+                                    onChange={(event) => {
+                                      void handleSlotImageUpload(slot, "mobile", event.target.files?.[0]);
+                                      event.target.value = "";
+                                    }}
+                                    className="sr-only"
+                                  />
+                                </label>
+                              </div>
+                              <p className="mt-2 text-[11px] leading-relaxed text-stone-500">{getUploadSizeGuidance("mobile")}</p>
+                              {renderHeaderImageAssets(slot, "mobile", mobileAssets, slotConfig.mobile)}
+                            </div>
+
+                            <div className="rounded-lg border border-[#d8ded1] bg-white/65 p-3">
+                              <div className="mb-2 flex items-center justify-between gap-3">
+                                <p className="text-sm font-semibold">Mobilvideo</p>
+                                <span className="text-xs text-stone-500">MP4</span>
+                              </div>
+                              <div className="overflow-hidden rounded-lg bg-stone-200 aspect-[390/200]">
+                                {slotConfig.mobileVideo ? (
+                                  renderAdminVideoPreview(slotConfig.mobileVideo, `${slotConfig.label} mobilvideo`)
+                                ) : (
+                                  <img
+                                    src={resolveGreenhouseAssetUrl(slotConfig.mobile)}
+                                    alt={`${slotConfig.label} mobil fallback`}
+                                    className="h-full w-full object-cover object-center"
+                                  />
+                                )}
+                              </div>
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setMobileVideo(slot, defaultSiteConfig.headerImages[slot].mobileVideo)}
+                                  className="rounded-full border border-[#cbd3c2] px-3 py-1.5 text-xs font-semibold text-[#4d5d3e]"
+                                >
+                                  Ingen video
+                                </button>
+                                <label className="cursor-pointer rounded-full bg-[#5d7342] px-3 py-1.5 text-xs font-semibold text-white">
+                                  {videoUploading ? "Laster opp" : "Last opp"}
+                                  <input
+                                    type="file"
+                                    accept="video/mp4"
+                                    disabled={videoUploading}
+                                    onChange={(event) => {
+                                      void handleSlotVideoUpload(slot, event.target.files?.[0]);
+                                      event.target.value = "";
+                                    }}
+                                    className="sr-only"
+                                  />
+                                </label>
+                              </div>
+                              <p className="mt-2 text-[11px] leading-relaxed text-stone-500">{headerVideoGuidance}</p>
+                              {renderHeaderVideoAssets(slot, videoAssets, slotConfig.mobileVideo)}
+                            </div>
                           </div>
-                          <span className="text-xs text-stone-500">390:200</span>
-                        </div>
-                        <div className="overflow-hidden rounded-lg bg-stone-200 aspect-[390/200]">
-                          {slotConfig.mobileVideo ? (
-                            <video
-                              src={resolveGreenhouseAssetUrl(slotConfig.mobileVideo)}
-                              muted
-                              loop
-                              playsInline
-                              preload="metadata"
-                              controls
-                              className="h-full w-full object-cover object-center"
-                            />
-                          ) : (
-                            <img
-                              src={resolveGreenhouseAssetUrl(slotConfig.mobile)}
-                              alt={`${slotConfig.label} mobil fallback`}
-                              className="h-full w-full object-cover object-center"
-                            />
-                          )}
-                        </div>
-                        <select
-                          value={slotConfig.mobileVideo}
-                          onChange={(event) => setMobileVideo(slot, event.target.value)}
-                          className="mt-3 w-full rounded-lg border border-[#cbd3c2] bg-white px-3 py-2 text-sm"
-                        >
-                          <option value="">Ingen video, bruk mobilbilde</option>
-                          {headerVideoAssets
-                            .filter((video) => video.slot === slot || video.slot === "general")
-                            .map((video) => (
-                              <option key={`${slot}-video-${video.key}`} value={video.url}>
-                                {video.filename}
-                              </option>
-                            ))}
-                        </select>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedUploadSlot(slot);
-                          }}
-                          className="mt-3 rounded-full border border-[#cbd3c2] px-3 py-1.5 text-xs text-[#4d5d3e] transition hover:bg-white"
-                        >
-                          Velg som video-opplastingsmål
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-
-            <section className="rounded-lg border border-[#d8ded1] bg-white/70 p-5 shadow-sm">
-              <div className="mb-4 flex flex-wrap items-end justify-between gap-4">
-                <div>
-                  <h2 className="text-base font-semibold">R2-bilder</h2>
-                  <p className="text-sm text-stone-600">Last opp JPG/PNG eller velg et bilde som allerede ligger i R2.</p>
-                  <p className="mt-1 text-xs text-stone-500">
-                    Desktop: 2400 x 800 px anbefalt. Mobil: 900 x 460 px anbefalt.
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <select
-                    value={selectedSlot}
-                    onChange={(event) => setSelectedUploadSlot(event.target.value as HeaderImageSlot)}
-                    className="rounded-lg border border-[#cbd3c2] bg-white px-3 py-2 text-sm"
-                  >
-                    {imageSlots.map((slot) => (
-                      <option key={slot} value={slot}>
-                        {config.headerImages[slot].label}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    value={selectedFormat}
-                    onChange={(event) => setSelectedUploadFormat(event.target.value as HeaderImageFormat)}
-                    className="rounded-lg border border-[#cbd3c2] bg-white px-3 py-2 text-sm"
-                  >
-                    {imageFormats.map((format) => (
-                      <option key={format.key} value={format.key}>
-                        {format.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <label className="mb-5 flex cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-[#9daa8f] bg-[#f7f8f5] px-4 py-8 text-center transition hover:bg-white">
-                <span className="text-sm font-semibold">{uploading ? "Laster opp" : "Last opp bilde"}</span>
-                <span className="mt-1 text-xs text-stone-500">JPG eller PNG for {config.headerImages[selectedSlot].label.toLowerCase()} / {selectedFormat}</span>
-                <span className="mt-2 max-w-md text-xs leading-relaxed text-stone-500">
-                  {getUploadSizeGuidance(selectedFormat)}
-                </span>
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png"
-                  disabled={uploading}
-                  onChange={(event) => {
-                    void handleUpload(event.target.files?.[0]);
-                    event.target.value = "";
-                  }}
-                  className="sr-only"
-                />
-              </label>
-
-              {loading ? (
-                <div className="rounded-lg bg-[#f7f8f5] p-5 text-sm text-stone-500">Laster bilder</div>
-              ) : selectedImages.length === 0 ? (
-                <div className="rounded-lg bg-[#f7f8f5] p-5 text-sm text-stone-500">
-                  Ingen {selectedFormat === "desktop" ? "desktopbilder" : "mobilbilder"} funnet for {config.headerImages[selectedSlot].label.toLowerCase()} ennå.
-                </div>
-              ) : (
-                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                  {selectedImages.map((image) => (
-                    <article key={image.key} className="overflow-hidden rounded-lg border border-[#d8ded1] bg-[#f7f8f5]">
-                      <div className={`${getImagePreviewAspectClass(image)} bg-stone-200`}>
-                        <img
-                          src={resolveGreenhouseAssetUrl(image.url)}
-                          alt={image.filename}
-                          className="h-full w-full object-cover object-center"
-                        />
-                      </div>
-                      <div className="space-y-3 p-3">
-                        <div>
-                          <p className="truncate text-sm font-semibold">{image.filename}</p>
-                          <p className="text-xs text-stone-500">
-                            {[image.slot, image.format, formatBytes(image.size)].filter(Boolean).join(" · ")}
-                          </p>
-                        </div>
-                        <div className="flex min-h-6 flex-wrap gap-1.5 text-[11px] font-semibold">
-                          {config.headerImages[selectedSlot].desktop === image.url && (
-                            <span className="rounded-full border border-[#2d3a21] px-2 py-1 text-[#2d3a21]">Valgt desktop</span>
-                          )}
-                          {config.headerImages[selectedSlot].mobile === image.url && (
-                            <span className="rounded-full border border-[#2d3a21] px-2 py-1 text-[#2d3a21]">Valgt mobil</span>
-                          )}
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            onClick={() => applyImage(selectedSlot, "desktop", image)}
-                            className="rounded-full bg-[#5d7342] px-3 py-1.5 text-xs font-semibold text-white"
-                          >
-                            Bruk desktop
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => applyImage(selectedSlot, "mobile", image)}
-                            className="rounded-full border border-[#cbd3c2] px-3 py-1.5 text-xs font-semibold text-[#4d5d3e]"
-                          >
-                            Bruk mobil
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void handleDeleteImage(image)}
-                            className="rounded-full border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-50"
-                          >
-                            Slett
-                          </button>
-                        </div>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              )}
-            </section>
-
-            <section className="rounded-lg border border-[#d8ded1] bg-white/70 p-5 shadow-sm">
-              <div className="mb-4 flex flex-wrap items-end justify-between gap-4">
-                <div>
-                  <h2 className="text-base font-semibold">R2-videoer</h2>
-                  <p className="text-sm text-stone-600">Last opp eller velg mobilvideo for valgt temperaturkategori.</p>
-                  <p className="mt-1 text-xs text-stone-500">{headerVideoGuidance}</p>
-                </div>
-                <select
-                  value={selectedSlot}
-                  onChange={(event) => setSelectedUploadSlot(event.target.value as HeaderImageSlot)}
-                  className="rounded-lg border border-[#cbd3c2] bg-white px-3 py-2 text-sm"
-                >
-                  {imageSlots.map((slot) => (
-                    <option key={slot} value={slot}>
-                      {config.headerImages[slot].label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <label className="mb-5 flex cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-[#9daa8f] bg-[#f7f8f5] px-4 py-8 text-center transition hover:bg-white">
-                <span className="text-sm font-semibold">{videoUploading ? "Laster opp" : "Last opp mobilvideo"}</span>
-                <span className="mt-1 text-xs text-stone-500">MP4 for {config.headerImages[selectedSlot].label.toLowerCase()} / mobil</span>
-                <span className="mt-2 max-w-md text-xs leading-relaxed text-stone-500">{headerVideoGuidance}</span>
-                <input
-                  type="file"
-                  accept="video/mp4"
-                  disabled={videoUploading}
-                  onChange={(event) => {
-                    void handleVideoUpload(event.target.files?.[0]);
-                    event.target.value = "";
-                  }}
-                  className="sr-only"
-                />
-              </label>
-
-              {loading ? (
-                <div className="rounded-lg bg-[#f7f8f5] p-5 text-sm text-stone-500">Laster videoer</div>
-              ) : selectedVideos.length === 0 ? (
-                <div className="rounded-lg bg-[#f7f8f5] p-5 text-sm text-stone-500">
-                  Ingen mobilvideoer funnet for {config.headerImages[selectedSlot].label.toLowerCase()} ennå.
-                </div>
-              ) : (
-                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                  {selectedVideos.map((video) => (
-                    <article key={video.key} className="overflow-hidden rounded-lg border border-[#d8ded1] bg-[#f7f8f5]">
-                      <div className="bg-stone-200 aspect-[390/200]">
-                        <video
-                          src={resolveGreenhouseAssetUrl(video.url)}
-                          muted
-                          loop
-                          playsInline
-                          preload="metadata"
-                          controls
-                          className="h-full w-full object-cover object-center"
-                        />
-                      </div>
-                      <div className="space-y-3 p-3">
-                        <div>
-                          <p className="truncate text-sm font-semibold">{video.filename}</p>
-                          <p className="text-xs text-stone-500">
-                            {[video.slot, "mobilvideo", formatBytes(video.size)].filter(Boolean).join(" · ")}
-                          </p>
-                        </div>
-                        <div className="flex min-h-6 flex-wrap gap-1.5 text-[11px] font-semibold">
-                          {config.headerImages[selectedSlot].mobileVideo === video.url && (
-                            <span className="rounded-full border border-[#2d3a21] px-2 py-1 text-[#2d3a21]">Valgt mobilvideo</span>
-                          )}
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            onClick={() => applyVideo(selectedSlot, video)}
-                            className="rounded-full bg-[#5d7342] px-3 py-1.5 text-xs font-semibold text-white"
-                          >
-                            Bruk mobilvideo
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void handleDeleteImage(video)}
-                            className="rounded-full border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-50"
-                          >
-                            Slett
-                          </button>
-                        </div>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              )}
-            </section>
+                        </article>
+                      );
+                    })}
+                  </div>
+                </section>
               </>
             )}
           </div>
