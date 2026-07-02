@@ -450,7 +450,10 @@ export default function App() {
       metaThemeColor.setAttribute('name', 'theme-color');
       document.head.appendChild(metaThemeColor);
     }
-    metaThemeColor.setAttribute('content', darkMode ? '#2d3a21' : '#e8ede3');
+    const browserBackgroundColor = darkMode ? '#2d3a21' : '#e8ede3';
+    metaThemeColor.setAttribute('content', browserBackgroundColor);
+    document.documentElement.style.backgroundColor = browserBackgroundColor;
+    document.body.style.backgroundColor = browserBackgroundColor;
 
     // Set apple-mobile-web-app-status-bar-style
     let appleStatusBar = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');

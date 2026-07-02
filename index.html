@@ -16,7 +16,12 @@
             const storedMode = localStorage.getItem("darkMode");
             const hour = new Date().getHours();
             const isDark = storedMode === null ? hour >= 20 || hour < 6 : storedMode === "true";
-            document.querySelector('meta[name="theme-color"]')?.setAttribute("content", isDark ? "#2d3a21" : "#e8ede3");
+            const themeColor = isDark ? "#2d3a21" : "#e8ede3";
+            document.documentElement.style.backgroundColor = themeColor;
+            document.addEventListener("DOMContentLoaded", () => {
+              document.body.style.backgroundColor = themeColor;
+            }, { once: true });
+            document.querySelector('meta[name="theme-color"]')?.setAttribute("content", themeColor);
             document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]')?.setAttribute("content", isDark ? "black-translucent" : "default");
           } catch {
             document.querySelector('meta[name="theme-color"]')?.setAttribute("content", "#2d3a21");
