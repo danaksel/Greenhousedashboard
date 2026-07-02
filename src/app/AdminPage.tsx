@@ -914,29 +914,33 @@ export function AdminPage() {
                 <div className="min-w-0 flex-1">
                   {isEditing ? (
                     <form
-                      className="flex min-w-0 items-center gap-1"
+                      className="space-y-2"
                       onSubmit={(event) => {
                         event.preventDefault();
                         void saveRenameImage(asset);
                       }}
                     >
-                      <input
-                        type="text"
-                        value={editingFilenameBase}
-                        onChange={(event) => setEditingFilenameBase(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Escape") cancelRenameImage();
-                        }}
-                        autoFocus
-                        className="min-w-0 flex-1 rounded-md border border-[#9daa8f] bg-white px-2 py-1 text-sm font-semibold text-[#2d3a21]"
-                      />
-                      <span className="shrink-0 text-sm font-semibold text-stone-500">{extension}</span>
-                      <button type="submit" className="rounded-md bg-[#5d7342] px-2 py-1 text-xs font-semibold text-white">
-                        Lagre
-                      </button>
-                      <button type="button" onClick={cancelRenameImage} className="rounded-md border border-[#cbd3c2] bg-white px-2 py-1 text-xs font-semibold text-[#4d5d3e]">
-                        Avbryt
-                      </button>
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        <input
+                          type="text"
+                          value={editingFilenameBase}
+                          onChange={(event) => setEditingFilenameBase(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Escape") cancelRenameImage();
+                          }}
+                          autoFocus
+                          className="min-w-0 flex-1 rounded-md border border-[#9daa8f] bg-white px-3 py-2 text-sm font-semibold text-[#2d3a21]"
+                        />
+                        <span className="shrink-0 text-sm font-semibold text-stone-500">{extension}</span>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button type="submit" className="rounded-md bg-[#5d7342] px-3 py-1.5 text-xs font-semibold text-white">
+                          Lagre
+                        </button>
+                        <button type="button" onClick={cancelRenameImage} className="rounded-md border border-[#cbd3c2] bg-white px-3 py-1.5 text-xs font-semibold text-[#4d5d3e]">
+                          Avbryt
+                        </button>
+                      </div>
                     </form>
                   ) : (
                     <button
@@ -950,7 +954,7 @@ export function AdminPage() {
                   )}
                   <p className="text-xs text-stone-500">{formatBytes(asset.size)}</p>
                 </div>
-                {!isSelected && (
+                {!isEditing && !isSelected && (
                   <button
                     type="button"
                     onClick={() => {
@@ -962,13 +966,15 @@ export function AdminPage() {
                     Bruk
                   </button>
                 )}
-                <button
-                  type="button"
-                  onClick={() => void handleDeleteImage(asset)}
-                  className={adminDangerButtonClass}
-                >
-                  Slett
-                </button>
+                {!isEditing && (
+                  <button
+                    type="button"
+                    onClick={() => void handleDeleteImage(asset)}
+                    className={adminDangerButtonClass}
+                  >
+                    Slett
+                  </button>
+                )}
               </div>
             </article>
           );
