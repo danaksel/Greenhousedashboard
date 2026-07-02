@@ -20,6 +20,7 @@ export interface LatestData {
   temperatureUpdatedAt: string;
   humidityUpdatedAt: string;
   rainToday?: number;
+  rainTodayUpdatedAt?: string;
   door?: "open" | "closed";
   doorUpdatedAt?: string;
   window?: number;
@@ -279,6 +280,7 @@ export async function fetchLatestGreenhouseData(): Promise<LatestData> {
     temperatureUpdatedAt: data.temperatureUpdatedAt,
     humidityUpdatedAt: data.humidityUpdatedAt,
     rainToday: data.rainToday,
+    rainTodayUpdatedAt: data.rainTodayUpdatedAt,
     door: data.door,
     doorUpdatedAt: data.doorUpdatedAt,
     window: data.window,

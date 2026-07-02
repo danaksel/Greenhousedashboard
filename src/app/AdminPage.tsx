@@ -5,6 +5,7 @@ import {
   fetchAdminImages,
   fetchAdminSiteConfig,
   fetchLatestGreenhouseData,
+  fetchWeatherData,
   logoFontOptions,
   resolveGreenhouseAssetUrl,
   saveAdminSiteConfig,
@@ -16,6 +17,7 @@ import {
   type HeaderImageSlot,
   type LatestData,
   type SiteConfig,
+  type WeatherData,
 } from "./utils/api";
 
 const imageSlots: HeaderImageSlot[] = ["cold", "normal", "warm", "hot"];
@@ -28,13 +30,82 @@ const statusLabels: Array<{ key: keyof SiteConfig["visibleStatuses"]; label: str
   { key: "window", label: "Vindu" },
 ];
 
-type AdminSection = "logo" | "visibility" | "metadata" | "header";
+type AdminSection = "logo" | "visibility" | "data" | "metadata" | "header";
 
 const adminSections: Array<{ key: AdminSection; label: string }> = [
   { key: "logo", label: "Logo" },
   { key: "visibility", label: "Visning" },
+  { key: "data", label: "Data" },
   { key: "metadata", label: "Metadata" },
   { key: "header", label: "Headerbilde" },
+];
+
+type HomeyIngestDoc = {
+  name: string;
+  sensor: string;
+  aliases: string;
+  value: string;
+  example: string;
+  note: string;
+};
+
+const homeyIngestDocs: HomeyIngestDoc[] = [
+  {
+    name: "Temperatur inne",
+    sensor: "temperature",
+    aliases: "temp, temperatur",
+    value: "Tall i °C",
+    example: '{ "sensor": "temperature", "value": 24.1 }',
+    note: "Lagres også som 15-minutters historikk for grafer.",
+  },
+  {
+    name: "Luftfuktighet inne",
+    sensor: "humidity",
+    aliases: "humid, luftfuktighet, fuktighet",
+    value: "Tall i %",
+    example: '{ "sensor": "humidity", "value": 54.8 }',
+    note: "Lagres også som 15-minutters historikk for grafer.",
+  },
+  {
+    name: "Nedbør siden midnatt",
+    sensor: "rain_today",
+    aliases: "rain, regn",
+    value: "Tall i mm",
+    example: '{ "sensor": "rain_today", "value": 0.8 }',
+    note: "Vises i værwidgeten som akkumulert nedbør.",
+  },
+  {
+    name: "Dør",
+    sensor: "door",
+    aliases: "dør, dor, contact, contact_sensor, contactalarm, contact_alarm",
+    value: 'Åpen/lukket: "open", "closed", "ja", "nei", true/false eller 1/0',
+    example: '{ "sensor": "door", "value": "open" }',
+    note: "Normaliseres til open/closed.",
+  },
+  {
+    name: "Vifte",
+    sensor: "fan",
+    aliases: "vifte, blower",
+    value: 'På/av: "on", "off", "ja", "nei", true/false eller 1/0',
+    example: '{ "sensor": "fan", "value": "on" }',
+    note: "Normaliseres til on/off.",
+  },
+  {
+    name: "Varme",
+    sensor: "heating",
+    aliases: "heater, varme, varmeelement, heating_element",
+    value: 'På/av: "on", "off", "på", "av", true/false eller 1/0',
+    example: '{ "sensor": "heating", "value": "off" }',
+    note: "Brukes for å skille varmevifte fra ventilasjon.",
+  },
+  {
+    name: "Vindu",
+    sensor: "window",
+    aliases: "windows, vindu, vinduer, takvindu, takvinduer",
+    value: "Heltall fra 0 til 3",
+    example: '{ "sensor": "window", "value": 2 }',
+    note: "Verdien betyr antall åpne vinduer.",
+  },
 ];
 
 type HeaderAssetKind = HeaderImageFormat | "mobile-video";
@@ -84,6 +155,29 @@ function getUploadSizeGuidance(format: HeaderImageFormat) {
   return "Anbefalt 900 x 460 px for retina. Minimum 780 x 400 px. Format ca. 390:200.";
 }
 
+function formatAdminTimestamp(value: string | Date | null | undefined) {
+  if (!value) return "Mangler";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "Ukjent";
+  return date.toLocaleString("nb-NO", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatNumberValue(value: number | null | undefined, unit: string, decimals = 1) {
+  if (typeof value !== "number" || Number.isNaN(value)) return "Mangler";
+  return `${value.toFixed(decimals)} ${unit}`;
+}
+
+function formatStatusValue(value: string | number | null | undefined, labels: Record<string, string>) {
+  if (value === null || value === undefined) return "Mangler";
+  return labels[String(value)] ?? String(value);
+}
+
 async function svgFileToPngFile(file: File, size: number, filename: string): Promise<File> {
   const svgText = await file.text();
   const svgBlob = new Blob([svgText], { type: "image/svg+xml" });
@@ -124,6 +218,8 @@ export function AdminPage() {
   const [savedConfigSnapshot, setSavedConfigSnapshot] = useState(() => JSON.stringify(defaultSiteConfig));
   const [images, setImages] = useState<AdminImage[]>([]);
   const [latest, setLatest] = useState<LatestData | null>(null);
+  const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
+  const [weatherFetchedAt, setWeatherFetchedAt] = useState<Date | null>(null);
   const [activeSection, setActiveSection] = useState<AdminSection>("logo");
   const [selectedHeaderSlot, setSelectedHeaderSlot] = useState<HeaderImageSlot>("normal");
   const [selectedHeaderAssetKind, setSelectedHeaderAssetKind] = useState<HeaderAssetKind>("desktop");
@@ -146,16 +242,21 @@ export function AdminPage() {
     setLoading(true);
 
     try {
-      const [siteConfig, r2Images, latestData] = await Promise.all([
+      const [siteConfig, r2Images, latestData, weatherResult] = await Promise.all([
         fetchAdminSiteConfig(),
         fetchAdminImages(),
         fetchLatestGreenhouseData().catch(() => null),
+        fetchWeatherData()
+          .then((data) => ({ data, fetchedAt: new Date() }))
+          .catch(() => null),
       ]);
 
       setConfig(siteConfig);
       setSavedConfigSnapshot(JSON.stringify(siteConfig));
       setImages(r2Images);
       setLatest(latestData);
+      setWeatherData(weatherResult?.data ?? null);
+      setWeatherFetchedAt(weatherResult?.fetchedAt ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Kunne ikke laste admin-data");
     } finally {
@@ -521,6 +622,74 @@ export function AdminPage() {
   const headerVideoAssets = images.filter((image) => image.assetType === "header-video");
   const logoAssets = images.filter((image) => image.assetType === "logo");
   const faviconAssets = images.filter((image) => image.assetType === "favicon");
+  const dataRows = [
+    {
+      name: "Temperatur inne",
+      source: "Homey -> Worker KV",
+      value: formatNumberValue(latest?.temperature, "°C"),
+      updatedAt: formatAdminTimestamp(latest?.temperatureUpdatedAt),
+    },
+    {
+      name: "Luftfuktighet inne",
+      source: "Homey -> Worker KV",
+      value: formatNumberValue(latest?.humidity, "%"),
+      updatedAt: formatAdminTimestamp(latest?.humidityUpdatedAt),
+    },
+    {
+      name: "Nedbør siden midnatt",
+      source: "Homey -> Worker KV",
+      value: formatNumberValue(latest?.rainToday, "mm"),
+      updatedAt: formatAdminTimestamp(latest?.rainTodayUpdatedAt),
+    },
+    {
+      name: "Dør",
+      source: "Homey -> Worker KV",
+      value: formatStatusValue(latest?.door, { open: "Åpen", closed: "Lukket" }),
+      updatedAt: formatAdminTimestamp(latest?.doorUpdatedAt),
+    },
+    {
+      name: "Vifte",
+      source: "Homey -> Worker KV",
+      value: formatStatusValue(latest?.fan, { on: "På", off: "Av" }),
+      updatedAt: formatAdminTimestamp(latest?.fanUpdatedAt),
+    },
+    {
+      name: "Varme",
+      source: "Homey -> Worker KV",
+      value: formatStatusValue(latest?.heating, { on: "På", off: "Av" }),
+      updatedAt: formatAdminTimestamp(latest?.heatingUpdatedAt),
+    },
+    {
+      name: "Vinduer åpne",
+      source: "Homey -> Worker KV",
+      value: latest?.window == null ? "Mangler" : `${latest.window}/3`,
+      updatedAt: formatAdminTimestamp(latest?.windowUpdatedAt),
+    },
+    {
+      name: "Utetemperatur",
+      source: "Yr locationforecast",
+      value: formatNumberValue(weatherData?.temperature, "°C"),
+      updatedAt: formatAdminTimestamp(weatherData?.updatedAt),
+    },
+    {
+      name: "Værtekst",
+      source: "Yr locationforecast",
+      value: weatherData?.description ?? "Mangler",
+      updatedAt: formatAdminTimestamp(weatherData?.updatedAt),
+    },
+    {
+      name: "Værsymbol",
+      source: "Yr locationforecast",
+      value: weatherData?.symbolCode ?? "Mangler",
+      updatedAt: formatAdminTimestamp(weatherData?.updatedAt),
+    },
+    {
+      name: "UV-indeks",
+      source: "Open-Meteo",
+      value: weatherData?.uvIndex == null ? "Mangler" : weatherData.uvIndex.toFixed(1),
+      updatedAt: formatAdminTimestamp(weatherFetchedAt),
+    },
+  ];
 
   const primeVideoPreview = (video: HTMLVideoElement) => {
     if (video.readyState > 0 && video.currentTime < 0.04) {
@@ -822,6 +991,109 @@ export function AdminPage() {
                       ? "Ingen temperaturdata. Normalbildet brukes."
                       : `${latest.temperature.toFixed(1)}°C bruker ${config.headerImages[activeSlot].label.toLowerCase()}.`}
                   </p>
+                </section>
+              </>
+            )}
+
+            {activeSection === "data" && (
+              <>
+                <section className="rounded-lg border border-[#d8ded1] bg-white/70 p-5 shadow-sm">
+                  <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h2 className="text-base font-semibold">Datapunkter</h2>
+                      <p className="text-sm text-stone-600">
+                        Oversikt over verdier som driver frontend, hvor de kommer fra, og når de sist ble oppdatert.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleReloadAdminData}
+                      className={adminSecondaryButtonClass}
+                    >
+                      Oppdater data
+                    </button>
+                  </div>
+
+                  <div className="overflow-x-auto rounded-lg border border-[#d8ded1]">
+                    <div className="grid min-w-[760px] grid-cols-[1.1fr_1fr_0.8fr_1fr] gap-3 bg-[#f7f8f5] px-4 py-3 text-xs font-semibold uppercase tracking-[0.04em] text-stone-500">
+                      <span>Navn</span>
+                      <span>Kilde</span>
+                      <span>Siste verdi</span>
+                      <span>Sist inn</span>
+                    </div>
+                    <div className="divide-y divide-[#d8ded1] bg-white/75">
+                      {dataRows.map((row) => (
+                        <div key={row.name} className="grid min-w-[760px] grid-cols-[1.1fr_1fr_0.8fr_1fr] gap-3 px-4 py-3 text-sm">
+                          <span className="font-semibold text-[#2d3a21]">{row.name}</span>
+                          <span className="text-stone-600">{row.source}</span>
+                          <span className="font-medium">{row.value}</span>
+                          <span className="text-stone-600">{row.updatedAt}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 md:grid-cols-3">
+                    <div className="rounded-lg border border-[#d8ded1] bg-[#f7f8f5] p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.04em] text-stone-500">Homey</p>
+                      <p className="mt-1 text-sm text-stone-600">Sender sensordata til Worker via `/ingest`.</p>
+                    </div>
+                    <div className="rounded-lg border border-[#d8ded1] bg-[#f7f8f5] p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.04em] text-stone-500">Yr</p>
+                      <p className="mt-1 text-sm text-stone-600">Henter utetemperatur, værtekst og symbolkode ved lasting/refresh.</p>
+                    </div>
+                    <div className="rounded-lg border border-[#d8ded1] bg-[#f7f8f5] p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.04em] text-stone-500">Open-Meteo</p>
+                      <p className="mt-1 text-sm text-stone-600">Henter UV-indeks fordi Yr ikke leverer UV i denne integrasjonen.</p>
+                    </div>
+                  </div>
+                </section>
+
+                <section className="rounded-lg border border-[#d8ded1] bg-white/70 p-5 shadow-sm">
+                  <div className="mb-5">
+                    <h2 className="text-base font-semibold">Homey-dokumentasjon</h2>
+                    <p className="text-sm text-stone-600">
+                      Alle Homey-flows sender én verdi av gangen til Cloudflare Worker.
+                    </p>
+                  </div>
+
+                  <div className="rounded-lg border border-[#d8ded1] bg-[#f7f8f5] p-4">
+                    <div className="grid gap-3 md:grid-cols-[160px_minmax(0,1fr)]">
+                      <span className="text-sm font-semibold">Endpoint</span>
+                      <code className="rounded-md bg-white px-3 py-2 text-sm text-[#2d3a21]">POST https://drivhus.dan-aksel.workers.dev/ingest</code>
+                      <span className="text-sm font-semibold">Headers</span>
+                      <div className="space-y-2">
+                        <code className="block rounded-md bg-white px-3 py-2 text-sm text-[#2d3a21]">Authorization: Bearer &lt;secretkey&gt;</code>
+                        <code className="block rounded-md bg-white px-3 py-2 text-sm text-[#2d3a21]">Content-Type: application/json</code>
+                      </div>
+                      <span className="text-sm font-semibold">Body</span>
+                      <code className="rounded-md bg-white px-3 py-2 text-sm text-[#2d3a21]">{'{ "sensor": "humidity", "value": 54.8 }'}</code>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 overflow-x-auto rounded-lg border border-[#d8ded1]">
+                    <div className="grid min-w-[1040px] grid-cols-[0.9fr_0.8fr_1fr_1.25fr_1.35fr] gap-3 bg-[#f7f8f5] px-4 py-3 text-xs font-semibold uppercase tracking-[0.04em] text-stone-500">
+                      <span>Datapunkt</span>
+                      <span>Sensor</span>
+                      <span>Alias</span>
+                      <span>Verdi</span>
+                      <span>Eksempel</span>
+                    </div>
+                    <div className="divide-y divide-[#d8ded1] bg-white/75">
+                      {homeyIngestDocs.map((doc) => (
+                        <div key={doc.sensor} className="grid min-w-[1040px] grid-cols-[0.9fr_0.8fr_1fr_1.25fr_1.35fr] gap-3 px-4 py-3 text-sm">
+                          <div>
+                            <p className="font-semibold text-[#2d3a21]">{doc.name}</p>
+                            <p className="mt-1 text-xs text-stone-500">{doc.note}</p>
+                          </div>
+                          <code className="text-xs font-semibold text-[#2d3a21]">{doc.sensor}</code>
+                          <span className="text-xs text-stone-600">{doc.aliases}</span>
+                          <span className="text-xs text-stone-600">{doc.value}</span>
+                          <code className="break-all rounded-md bg-[#f7f8f5] px-2 py-1 text-xs text-[#2d3a21]">{doc.example}</code>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </section>
               </>
             )}
