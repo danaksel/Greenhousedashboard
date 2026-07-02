@@ -236,6 +236,21 @@ export default function App() {
       }
       setError(null);
 
+      const weatherPromise = includeWeather ? (async () => {
+        try {
+          setWeatherLoading(true);
+          const weather = await fetchWeatherData();
+          console.log('Weather data fetched:', weather);
+          setWeatherData(weather);
+        } catch (weatherErr) {
+          console.error('Failed to fetch weather data:', weatherErr);
+          // Don't set error state for weather failures - just skip showing weather
+        } finally {
+          setWeatherReady(true);
+          setWeatherLoading(false);
+        }
+      })() : Promise.resolve();
+
       // Fetch latest data
       const latest = await fetchLatestGreenhouseData();
       setTemperature(latest.temperature);
@@ -412,21 +427,6 @@ export default function App() {
           console.error('Failed to fetch greenhouse history:', historyErr);
         } finally {
           setHistoryLoading(false);
-        }
-      })() : Promise.resolve();
-
-      const weatherPromise = includeWeather ? (async () => {
-        try {
-          setWeatherLoading(true);
-          const weather = await fetchWeatherData();
-          console.log('Weather data fetched:', weather);
-          setWeatherData(weather);
-        } catch (weatherErr) {
-          console.error('Failed to fetch weather data:', weatherErr);
-          // Don't set error state for weather failures - just skip showing weather
-        } finally {
-          setWeatherReady(true);
-          setWeatherLoading(false);
         }
       })() : Promise.resolve();
 
@@ -926,7 +926,7 @@ export default function App() {
                           muted
                           loop
                           playsInline
-                          preload="metadata"
+                          preload="auto"
                           poster={heroMobileImageSrc}
                           src={heroMobileVideoSrc}
                           aria-label="Drivhus"
