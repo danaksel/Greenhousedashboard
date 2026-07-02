@@ -1036,10 +1036,10 @@ export function AdminPage() {
                           {slotConfig.mobileVideo ? (
                             <video
                               src={resolveGreenhouseAssetUrl(slotConfig.mobileVideo)}
-                              poster={resolveGreenhouseAssetUrl(slotConfig.mobile)}
                               muted
                               loop
                               playsInline
+                              preload="metadata"
                               controls
                               className="h-full w-full object-cover object-center"
                             />
@@ -1248,6 +1248,7 @@ export function AdminPage() {
                           muted
                           loop
                           playsInline
+                          preload="metadata"
                           controls
                           className="h-full w-full object-cover object-center"
                         />
