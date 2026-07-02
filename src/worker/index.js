@@ -74,6 +74,10 @@ export default {
         return await handleDeleteAdminImage(request, env, corsHeaders);
       }
 
+      if (url.pathname === "/admin/api/images" && request.method === "PATCH") {
+        return await handleRenameAdminImage(request, env, corsHeaders);
+      }
+
       if (url.pathname === "/api/fan/on" && request.method === "POST") {
         return await handleFanCommand(env, "on", corsHeaders);
       }
@@ -277,6 +281,53 @@ async function handleDeleteAdminImage(request, env, corsHeaders) {
   await bucket.delete(key);
 
   return jsonResponse({ ok: true, deleted: key }, 200, corsHeaders);
+}
+
+async function handleRenameAdminImage(request, env, corsHeaders) {
+  const bucket = getAssetBucket(env);
+  if (!bucket) {
+    return jsonResponse({ ok: false, error: "R2 bucket is not configured" }, 500, corsHeaders);
+  }
+
+  const body = await request.json().catch(() => null);
+  const key = String(body?.key || "");
+  const requestedFilename = sanitizeFilename(body?.filename || "");
+
+  if (!isAllowedImageKey(key)) {
+    return jsonResponse({ ok: false, error: "Invalid image key" }, 400, corsHeaders);
+  }
+
+  if (!requestedFilename) {
+    return jsonResponse({ ok: false, error: "Missing filename" }, 400, corsHeaders);
+  }
+
+  const object = await bucket.get(key);
+  if (!object) {
+    return jsonResponse({ ok: false, error: "Image not found" }, 404, corsHeaders);
+  }
+
+  const currentMetadata = object.customMetadata || {};
+  const currentFilename = currentMetadata.originalName || key.split("/").pop() || "";
+  const currentExtension = getFilenameExtension(currentFilename || key);
+  const requestedExtension = getFilenameExtension(requestedFilename);
+
+  if (!currentExtension || requestedExtension !== currentExtension) {
+    return jsonResponse({ ok: false, error: "Filename extension cannot be changed" }, 400, corsHeaders);
+  }
+
+  await bucket.put(key, object.body, {
+    httpMetadata: {
+      contentType: object.httpMetadata?.contentType || "application/octet-stream",
+      cacheControl: object.httpMetadata?.cacheControl || "public, max-age=31536000, immutable",
+    },
+    customMetadata: {
+      ...currentMetadata,
+      originalName: requestedFilename,
+    },
+  });
+
+  const image = await getImageMetadata(bucket, key);
+  return jsonResponse({ ok: true, data: image }, 200, corsHeaders);
 }
 
 async function listAdminImages(env) {
@@ -535,6 +586,11 @@ function sanitizeFilename(value) {
     .replace(/[/\\?%*:|"<>]/g, "-")
     .replace(/\s+/g, "-")
     .slice(0, 96) || "image";
+}
+
+function getFilenameExtension(filename) {
+  const match = String(filename || "").toLowerCase().match(/\.([a-z0-9]+)$/);
+  return match?.[1] || "";
 }
 
 async function handleCleanupKvHistory(request, env, corsHeaders) {

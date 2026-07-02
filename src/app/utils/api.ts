@@ -430,6 +430,23 @@ export async function deleteAdminImage(key: string): Promise<void> {
   }
 }
 
+export async function renameAdminImage(key: string, filename: string): Promise<AdminImage> {
+  const res = await fetch(greenhouseApiUrl("/admin/api/images"), {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ key, filename }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`API error: ${res.status}`);
+  }
+
+  const json = await res.json();
+  return json.data;
+}
+
 export async function fetchGreenhouseStats24h(): Promise<GreenhouseStats24h> {
   const res = await fetch(greenhouseApiUrl("/api/stats24h"), {
     method: "GET",

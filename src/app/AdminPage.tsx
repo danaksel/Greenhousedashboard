@@ -7,6 +7,7 @@ import {
   fetchLatestGreenhouseData,
   fetchWeatherData,
   logoFontOptions,
+  renameAdminImage,
   resolveGreenhouseAssetUrl,
   saveAdminSiteConfig,
   uploadAdminAsset,
@@ -33,11 +34,11 @@ const statusLabels: Array<{ key: keyof SiteConfig["visibleStatuses"]; label: str
 type AdminSection = "logo" | "visibility" | "data" | "metadata" | "header";
 
 const adminSections: Array<{ key: AdminSection; label: string }> = [
-  { key: "logo", label: "Logo" },
   { key: "visibility", label: "Visning" },
+  { key: "header", label: "Headerbilde" },
+  { key: "logo", label: "Logo" },
   { key: "data", label: "Data" },
   { key: "metadata", label: "Metadata" },
-  { key: "header", label: "Headerbilde" },
 ];
 
 type HomeyIngestDoc = {
@@ -147,6 +148,21 @@ function getFileFormatTag(filename: string | undefined, fallback: string) {
   return extension && extension.length <= 5 ? extension : fallback;
 }
 
+function splitFilename(filename: string) {
+  const match = filename.match(/^(.*?)(\.[^.]+)$/);
+  if (!match) return { base: filename, extension: "" };
+  return { base: match[1], extension: match[2] };
+}
+
+function sanitizeFilenameBase(value: string) {
+  return value
+    .replace(/[/\\?%*:|"<>]/g, "-")
+    .replace(/\s+/g, "-")
+    .replace(/\.+$/g, "")
+    .trim()
+    .slice(0, 80);
+}
+
 function getUploadSizeGuidance(format: HeaderImageFormat) {
   if (format === "desktop") {
     return "Anbefalt 2400 x 800 px for retina. Minimum 1200 x 400 px. Format 3:1.";
@@ -220,9 +236,11 @@ export function AdminPage() {
   const [latest, setLatest] = useState<LatestData | null>(null);
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
   const [weatherFetchedAt, setWeatherFetchedAt] = useState<Date | null>(null);
-  const [activeSection, setActiveSection] = useState<AdminSection>("logo");
+  const [activeSection, setActiveSection] = useState<AdminSection>("visibility");
   const [selectedHeaderSlot, setSelectedHeaderSlot] = useState<HeaderImageSlot>("normal");
   const [selectedHeaderAssetKind, setSelectedHeaderAssetKind] = useState<HeaderAssetKind>("desktop");
+  const [editingImageKey, setEditingImageKey] = useState<string | null>(null);
+  const [editingFilenameBase, setEditingFilenameBase] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -600,6 +618,39 @@ export function AdminPage() {
     }
   };
 
+  const startRenameImage = (image: AdminImage) => {
+    const { base } = splitFilename(image.filename);
+    setEditingImageKey(image.key);
+    setEditingFilenameBase(base);
+  };
+
+  const cancelRenameImage = () => {
+    setEditingImageKey(null);
+    setEditingFilenameBase("");
+  };
+
+  const saveRenameImage = async (image: AdminImage) => {
+    const { base, extension } = splitFilename(image.filename);
+    const nextBase = sanitizeFilenameBase(editingFilenameBase);
+
+    if (!nextBase || nextBase === base) {
+      cancelRenameImage();
+      return;
+    }
+
+    setError(null);
+    setMessage(null);
+
+    try {
+      const renamed = await renameAdminImage(image.key, `${nextBase}${extension}`);
+      setImages((current) => current.map((item) => (item.key === renamed.key ? renamed : item)));
+      setMessage("Filnavnet er endret.");
+      cancelRenameImage();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Kunne ikke endre filnavnet");
+    }
+  };
+
   const handleReloadAdminData = () => {
     if (
       hasUnsavedChanges &&
@@ -767,7 +818,7 @@ export function AdminPage() {
             onClick={() => openHeaderLibrary(kind)}
             className={adminPrimaryButtonClass}
           >
-            Velg fra bibliotek
+            Bibliotek
           </button>
           {isVideo ? (
             <>
@@ -777,7 +828,7 @@ export function AdminPage() {
                 className={adminSecondaryButtonClass}
                 disabled={!value}
               >
-                Fjern video
+                Fjern
               </button>
               <label className={adminPrimaryButtonClass}>
                 {videoUploading ? "Laster opp" : "Last opp"}
@@ -795,13 +846,6 @@ export function AdminPage() {
             </>
           ) : (
             <>
-              <button
-                type="button"
-                onClick={() => setImage(slot, kind, defaultSiteConfig.headerImages[slot][kind])}
-                className={adminSecondaryButtonClass}
-              >
-                Bruk standard
-              </button>
               <label className={adminPrimaryButtonClass}>
                 {uploading ? "Laster opp" : "Last opp"}
                 <input
@@ -841,9 +885,16 @@ export function AdminPage() {
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {assets.map((asset) => {
           const isSelected = selectedUrl === asset.url;
+          const { extension } = splitFilename(asset.filename);
+          const isEditing = editingImageKey === asset.key;
           return (
-            <article key={asset.key} className="rounded-lg border border-[#d8ded1] bg-[#f7f8f5] p-3">
-              <div className={`overflow-hidden rounded-lg bg-stone-200 ${kind === "desktop" ? "aspect-[3/1]" : isVideo ? "aspect-video" : "aspect-[390/200]"}`}>
+            <article
+              key={asset.key}
+              className={`rounded-lg border bg-[#f7f8f5] p-3 transition ${
+                isSelected ? "border-[#5d7342] ring-2 ring-[#5d7342]" : "border-[#d8ded1]"
+              }`}
+            >
+              <div className={`relative overflow-hidden rounded-lg bg-stone-200 ${kind === "desktop" ? "aspect-[3/1]" : isVideo ? "aspect-video" : "aspect-[390/200]"}`}>
                 {isVideo ? (
                   renderAdminVideoPreview(asset.url, asset.filename)
                 ) : (
@@ -853,15 +904,53 @@ export function AdminPage() {
                     className="h-full w-full object-cover object-center"
                   />
                 )}
+                {isSelected && (
+                  <span className="absolute right-2 top-2 rounded-md border border-[#2d3a21] bg-white/95 px-2 py-1 text-[11px] font-semibold leading-none text-[#2d3a21] shadow-sm">
+                    Valgt
+                  </span>
+                )}
               </div>
               <div className="mt-3 flex items-start gap-3">
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold">{asset.filename}</p>
+                  {isEditing ? (
+                    <form
+                      className="flex min-w-0 items-center gap-1"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        void saveRenameImage(asset);
+                      }}
+                    >
+                      <input
+                        type="text"
+                        value={editingFilenameBase}
+                        onChange={(event) => setEditingFilenameBase(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Escape") cancelRenameImage();
+                        }}
+                        autoFocus
+                        className="min-w-0 flex-1 rounded-md border border-[#9daa8f] bg-white px-2 py-1 text-sm font-semibold text-[#2d3a21]"
+                      />
+                      <span className="shrink-0 text-sm font-semibold text-stone-500">{extension}</span>
+                      <button type="submit" className="rounded-md bg-[#5d7342] px-2 py-1 text-xs font-semibold text-white">
+                        Lagre
+                      </button>
+                      <button type="button" onClick={cancelRenameImage} className="rounded-md border border-[#cbd3c2] bg-white px-2 py-1 text-xs font-semibold text-[#4d5d3e]">
+                        Avbryt
+                      </button>
+                    </form>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => startRenameImage(asset)}
+                      className="block max-w-full truncate text-left text-sm font-semibold text-[#2d3a21] underline-offset-2 hover:underline"
+                      title="Klikk for å endre filnavn"
+                    >
+                      {asset.filename}
+                    </button>
+                  )}
                   <p className="text-xs text-stone-500">{formatBytes(asset.size)}</p>
                 </div>
-                {isSelected ? (
-                  <span className={adminSelectedTagClass}>Valgt</span>
-                ) : (
+                {!isSelected && (
                   <button
                     type="button"
                     onClick={() => {
