@@ -14,9 +14,12 @@
         (() => {
           try {
             const storedMode = localStorage.getItem("darkMode");
+            const storedDarkThemeColor = localStorage.getItem("greenhouseLastDarkThemeColor");
             const hour = new Date().getHours();
             const isDark = storedMode === null ? hour >= 20 || hour < 6 : storedMode === "true";
-            const themeColor = isDark ? "#2d3a21" : "#e8ede3";
+            const themeColor = isDark && /^#[0-9a-fA-F]{6}$/.test(storedDarkThemeColor || "")
+              ? storedDarkThemeColor
+              : isDark ? "#2d3a21" : "#e8ede3";
             document.documentElement.style.backgroundColor = themeColor;
             document.addEventListener("DOMContentLoaded", () => {
               document.body.style.backgroundColor = themeColor;
@@ -37,11 +40,11 @@
       <link rel="apple-touch-icon" href="/apple-touch-icon.svg" />
       <link rel="manifest" href="/manifest.webmanifest" />
       <title>Kristins drivhus</title>
-      <script type="module" crossorigin src="/assets/index-CscWgIvt.js"></script>
+      <script type="module" crossorigin src="/assets/index-BV06JACA.js"></script>
       <link rel="modulepreload" crossorigin href="/assets/vendor-_WRE1uPC.js">
       <link rel="modulepreload" crossorigin href="/assets/weather-DlpT_U0l.js">
       <link rel="modulepreload" crossorigin href="/assets/radix-Ce_0p_Iy.js">
-      <link rel="stylesheet" crossorigin href="/assets/index-BmuEs-3m.css">
+      <link rel="stylesheet" crossorigin href="/assets/index-C3fw7gXB.css">
     </head>
 
     <body>

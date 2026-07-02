@@ -63,6 +63,12 @@ function getHeaderImageSlot(temperature: number | null, symbolCode: string | nul
   return "hot";
 }
 
+function getStoredDarkThemeColor() {
+  if (typeof window === "undefined") return "#2d3a21";
+  const raw = localStorage.getItem("greenhouseLastDarkThemeColor") || "";
+  return /^#[0-9a-fA-F]{6}$/.test(raw) ? raw : "#2d3a21";
+}
+
 type ChartPoint = { time: string; value: number; min?: number; max?: number; range?: [number, number]; id: string };
 type HistoryPoint = { time: string; value: number | null; min?: number | null; max?: number | null; timestamp: string | null; bucketStart: string | null };
 type MetricMinMax = { min: number | undefined; max: number | undefined };
@@ -480,13 +486,16 @@ export default function App() {
       document.head.appendChild(metaThemeColor);
     }
     const activeHeaderSlot =
-      siteConfigReady && temperature !== null && weatherReady
+      siteConfigReady && temperature !== null && weatherReady && weatherData?.symbolCode
         ? getHeaderImageSlot(temperature, weatherData?.symbolCode)
         : null;
     const activeHeaderConfig = activeHeaderSlot
       ? siteConfig.headerImages[activeHeaderSlot] ?? defaultSiteConfig.headerImages[activeHeaderSlot]
       : null;
-    const browserBackgroundColor = darkMode ? activeHeaderConfig?.darkModeColor ?? '#2d3a21' : '#e8ede3';
+    const browserBackgroundColor = darkMode ? activeHeaderConfig?.darkModeColor ?? getStoredDarkThemeColor() : '#e8ede3';
+    if (darkMode && activeHeaderConfig?.darkModeColor) {
+      localStorage.setItem("greenhouseLastDarkThemeColor", activeHeaderConfig.darkModeColor);
+    }
     metaThemeColor.setAttribute('content', browserBackgroundColor);
     document.documentElement.style.backgroundColor = browserBackgroundColor;
     document.body.style.backgroundColor = browserBackgroundColor;
@@ -682,12 +691,12 @@ export default function App() {
   };
 
   const safeWindowCount = Math.min(Math.max(windowCount ?? 0, 0), 3);
-  const heroStateReady = siteConfigReady && temperature !== null && weatherReady;
+  const heroStateReady = siteConfigReady && temperature !== null && weatherReady && Boolean(weatherData?.symbolCode);
   const heroImageSlot = heroStateReady ? getHeaderImageSlot(temperature, weatherData?.symbolCode) : null;
   const heroImageConfig = heroImageSlot
     ? siteConfig.headerImages[heroImageSlot] ?? defaultSiteConfig.headerImages[heroImageSlot]
     : null;
-  const browserBackgroundColor = darkMode ? heroImageConfig?.darkModeColor ?? "#2d3a21" : "#e8ede3";
+  const browserBackgroundColor = darkMode ? heroImageConfig?.darkModeColor ?? getStoredDarkThemeColor() : "#e8ede3";
   const headerTextClass = darkMode ? "text-[#e8ede3]" : "text-[#2d3a21]";
   const headerButtonClass = darkMode
     ? "bg-[#e8ede3]/12 hover:bg-[#e8ede3]/18"
