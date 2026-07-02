@@ -370,19 +370,99 @@ async function handleSiteImage(request, env, corsHeaders) {
     return jsonResponse({ ok: false, error: "Image not found" }, 404, corsHeaders);
   }
 
+  const rangeHeader = request.headers.get("Range");
+
+  if (rangeHeader) {
+    const head = await bucket.head(key);
+    if (!head) {
+      return jsonResponse({ ok: false, error: "Image not found" }, 404, corsHeaders);
+    }
+
+    const range = parseRangeHeader(rangeHeader, head.size);
+    if (!range) {
+      return new Response(null, {
+        status: 416,
+        headers: {
+          "Content-Range": `bytes */${head.size}`,
+          "Accept-Ranges": "bytes",
+          ...corsHeaders,
+        },
+      });
+    }
+
+    const object = await bucket.get(key, {
+      range: {
+        offset: range.start,
+        length: range.end - range.start + 1,
+      },
+    });
+
+    if (!object) {
+      return jsonResponse({ ok: false, error: "Image not found" }, 404, corsHeaders);
+    }
+
+    return new Response(object.body, {
+      status: 206,
+      headers: {
+        "Content-Type": object.httpMetadata?.contentType || head.httpMetadata?.contentType || "application/octet-stream",
+        "Cache-Control": object.httpMetadata?.cacheControl || head.httpMetadata?.cacheControl || "public, max-age=3600",
+        "Accept-Ranges": "bytes",
+        "Content-Length": String(range.end - range.start + 1),
+        "Content-Range": `bytes ${range.start}-${range.end}/${head.size}`,
+        ...corsHeaders,
+      },
+    });
+  }
+
   const object = await bucket.get(key);
   if (!object) {
     return jsonResponse({ ok: false, error: "Image not found" }, 404, corsHeaders);
   }
 
+  const headers = {
+    "Content-Type": object.httpMetadata?.contentType || "application/octet-stream",
+    "Cache-Control": object.httpMetadata?.cacheControl || "public, max-age=3600",
+    "Accept-Ranges": "bytes",
+    ...corsHeaders,
+  };
+
+  if (object.size) {
+    headers["Content-Length"] = String(object.size);
+  }
+
   return new Response(object.body, {
     status: 200,
-    headers: {
-      "Content-Type": object.httpMetadata?.contentType || "application/octet-stream",
-      "Cache-Control": object.httpMetadata?.cacheControl || "public, max-age=3600",
-      ...corsHeaders,
-    },
+    headers,
   });
+}
+
+function parseRangeHeader(rangeHeader, size) {
+  const match = String(rangeHeader || "").match(/^bytes=(\d*)-(\d*)$/);
+  if (!match || !Number.isFinite(size) || size <= 0) return null;
+
+  const [, startRaw, endRaw] = match;
+  let start;
+  let end;
+
+  if (!startRaw && !endRaw) return null;
+
+  if (!startRaw) {
+    const suffixLength = Number(endRaw);
+    if (!Number.isFinite(suffixLength) || suffixLength <= 0) return null;
+    start = Math.max(size - suffixLength, 0);
+    end = size - 1;
+  } else {
+    start = Number(startRaw);
+    end = endRaw ? Number(endRaw) : size - 1;
+  }
+
+  if (!Number.isInteger(start) || !Number.isInteger(end)) return null;
+  if (start < 0 || end < start || start >= size) return null;
+
+  return {
+    start,
+    end: Math.min(end, size - 1),
+  };
 }
 
 async function handleSiteManifest(env, corsHeaders) {
