@@ -765,7 +765,8 @@ function withPublicAssetUrls(config, env) {
     slot.mobileVideo = rewrite(slot.mobileVideo);
   }
 
-  next.branding.logo.url = rewrite(next.branding.logo.url);
+  const logoKey = getImageKeyFromReference(next.branding.logo.url);
+  next.branding.logo.url = logoKey ? getProxyAssetUrl(logoKey) : next.branding.logo.url;
   next.branding.favicon.svg = rewrite(next.branding.favicon.svg);
   next.branding.favicon.png32 = rewrite(next.branding.favicon.png32);
   next.branding.favicon.appleTouchIcon = rewrite(next.branding.favicon.appleTouchIcon);
