@@ -64,7 +64,7 @@ export default {
       }
 
       if (url.pathname === "/admin/api/config" && request.method === "GET") {
-        const config = await getSiteConfig(env);
+        const config = await getStoredSiteConfig(env);
         return jsonResponse({ ok: true, data: config }, 200, corsHeaders);
       }
 
@@ -374,6 +374,10 @@ const LOGO_FONT_OPTIONS = [
 ];
 
 async function getSiteConfig(env) {
+  return withPublicAssetUrls(await getStoredSiteConfig(env), env);
+}
+
+async function getStoredSiteConfig(env) {
   const bucket = getAssetBucket(env);
   const stored = bucket ? await readR2Json(bucket, SITE_CONFIG_KEY) : null;
   return normalizeSiteConfig(stored);
@@ -445,7 +449,7 @@ async function handleUploadAdminImage(request, env, corsHeaders) {
     },
   });
 
-  const image = await getImageMetadata(bucket, key);
+  const image = await getImageMetadata(env, bucket, key);
   return jsonResponse({ ok: true, data: image }, 201, corsHeaders);
 }
 
@@ -510,7 +514,7 @@ async function handleRenameAdminImage(request, env, corsHeaders) {
     },
   });
 
-  const image = await getImageMetadata(bucket, key);
+  const image = await getImageMetadata(env, bucket, key);
   return jsonResponse({ ok: true, data: image }, 200, corsHeaders);
 }
 
@@ -532,7 +536,7 @@ async function listAdminImages(env) {
     cursor = page.truncated ? page.cursor : undefined;
   } while (cursor);
 
-  const images = await Promise.all(objects.map((object) => getImageMetadata(bucket, object.key, object)));
+  const images = await Promise.all(objects.map((object) => getImageMetadata(env, bucket, object.key, object)));
   return images
     .filter(Boolean)
     .sort((a, b) => new Date(b.uploadedAt || b.updatedAt) - new Date(a.uploadedAt || a.updatedAt));
@@ -709,7 +713,65 @@ function getAssetBucket(env) {
   return env.GREENHOUSE_ASSETS || env.GREENHOUSE_HISTORY || null;
 }
 
-async function getImageMetadata(bucket, key, objectInfo = null) {
+function getPublicAssetBaseUrl(env) {
+  const raw = String(env.R2_PUBLIC_BASE_URL || "").trim().replace(/\/+$/, "");
+  return /^https:\/\//i.test(raw) ? raw : "";
+}
+
+function getAssetUrl(env, key) {
+  const publicBaseUrl = getPublicAssetBaseUrl(env);
+  if (publicBaseUrl) return `${publicBaseUrl}/${key.split("/").map(encodeURIComponent).join("/")}`;
+  return getProxyAssetUrl(key);
+}
+
+function getProxyAssetUrl(key) {
+  return `/api/site-image?key=${encodeURIComponent(key)}`;
+}
+
+function getImageKeyFromReference(value) {
+  const raw = String(value || "").trim();
+  if (isAllowedImageKey(raw)) return raw;
+
+  if (raw.startsWith("/api/site-image?")) {
+    try {
+      const url = new URL(raw, "https://internal.invalid");
+      const key = url.searchParams.get("key") || "";
+      return isAllowedImageKey(key) ? key : "";
+    } catch {
+      return "";
+    }
+  }
+
+  return "";
+}
+
+function withPublicAssetUrls(config, env) {
+  const publicBaseUrl = getPublicAssetBaseUrl(env);
+  if (!publicBaseUrl) return config;
+
+  const next = structuredClone(config);
+  const rewrite = (value) => {
+    const key = getImageKeyFromReference(value);
+    return key ? getAssetUrl(env, key) : value;
+  };
+
+  for (const slot of Object.values(next.headerImages)) {
+    slot.mobile = rewrite(slot.mobile);
+    slot.desktop = rewrite(slot.desktop);
+    slot.mobileVideo = rewrite(slot.mobileVideo);
+  }
+
+  next.branding.logo.url = rewrite(next.branding.logo.url);
+  next.branding.favicon.svg = rewrite(next.branding.favicon.svg);
+  next.branding.favicon.png32 = rewrite(next.branding.favicon.png32);
+  next.branding.favicon.appleTouchIcon = rewrite(next.branding.favicon.appleTouchIcon);
+  next.branding.favicon.png192 = rewrite(next.branding.favicon.png192);
+  next.branding.favicon.png512 = rewrite(next.branding.favicon.png512);
+
+  return next;
+}
+
+async function getImageMetadata(env, bucket, key, objectInfo = null) {
   if (!isAllowedImageKey(key)) return null;
 
   const object = objectInfo && objectInfo.customMetadata ? objectInfo : await bucket.head(key);
@@ -719,7 +781,7 @@ async function getImageMetadata(bucket, key, objectInfo = null) {
 
   return {
     key,
-    url: `/api/site-image?key=${encodeURIComponent(key)}`,
+    url: getProxyAssetUrl(key),
     filename: customMetadata.originalName || key.split("/").pop(),
     contentType: object.httpMetadata?.contentType || "",
     size: object.size || null,
