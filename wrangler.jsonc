@@ -9,9 +9,6 @@
   "triggers": {
     "crons": ["*/15 * * * *"]
   },
-  "vars": {
-    "R2_PUBLIC_BASE_URL": "https://media.danaksel.no"
-  },
   "assets": {
     "binding": "ASSETS",
     "directory": "./dist",
