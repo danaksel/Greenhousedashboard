@@ -378,13 +378,13 @@ async function getSiteConfig(env) {
 }
 
 async function getStoredSiteConfig(env) {
-  const bucket = getAssetBucket(env);
+  const bucket = getConfigBucket(env);
   const stored = bucket ? await readR2Json(bucket, SITE_CONFIG_KEY) : null;
   return normalizeSiteConfig(stored);
 }
 
 async function handleSaveSiteConfig(request, env, corsHeaders) {
-  const bucket = getAssetBucket(env);
+  const bucket = getConfigBucket(env);
   if (!bucket) {
     return jsonResponse({ ok: false, error: "R2 bucket is not configured" }, 500, corsHeaders);
   }
@@ -707,6 +707,10 @@ async function handleSiteManifest(env, corsHeaders) {
       },
     }
   );
+}
+
+function getConfigBucket(env) {
+  return env.GREENHOUSE_HISTORY || env.GREENHOUSE_ASSETS || null;
 }
 
 function getAssetBucket(env) {
