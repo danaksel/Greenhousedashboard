@@ -1,4 +1,10 @@
+import SunCalc from "suncalc";
+
 export default {
+  async scheduled(controller, env, ctx) {
+    ctx.waitUntil(refreshWeatherCache(env));
+  },
+
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
@@ -27,6 +33,11 @@ export default {
       if (url.pathname === "/api/latest" && request.method === "GET") {
         const latest = await getLatest(env);
         return jsonResponse({ ok: true, data: latest }, 200, corsHeaders);
+      }
+
+      if (url.pathname === "/api/weather" && request.method === "GET") {
+        const weather = await getCachedWeather(env, ctx);
+        return jsonResponse({ ok: true, data: weather }, 200, corsHeaders);
       }
 
       if (url.pathname === "/api/history" && request.method === "GET") {
@@ -96,7 +107,7 @@ export default {
       }
 
       if (env.ASSETS) {
-        return env.ASSETS.fetch(request);
+        return await handleAssetRequest(request, env);
       }
 
       return jsonResponse({ ok: false, error: "Not found" }, 404, corsHeaders);
@@ -114,6 +125,14 @@ export default {
   },
 };
 
+const WEATHER_CACHE_KEY = "latest:weather";
+const WEATHER_CACHE_MAX_AGE_MS = 15 * 60 * 1000;
+const WEATHER_LATITUDE = 59.87;
+const WEATHER_LONGITUDE = 10.67;
+const GREENHOUSE_LATITUDE = 59.8667;
+const GREENHOUSE_LONGITUDE = 10.7167;
+const COLD_TEMPERATURE_THRESHOLD = 12;
+
 const DEFAULT_SITE_CONFIG = {
   showHeroImage: true,
   visibleStatuses: {
@@ -122,12 +141,37 @@ const DEFAULT_SITE_CONFIG = {
     window: true,
   },
   headerImages: {
+    coldNight: {
+      label: "Kald natt",
+      description: "Natt og under 12°C",
+      mobile: "/cold.jpg",
+      desktop: "/cold.jpg",
+      mobileVideo: "",
+      darkModeColor: "#2d3a21",
+    },
+    night: {
+      label: "Natt",
+      description: "Etter solnedgang og før soloppgang",
+      mobile: "/drivhus.png",
+      desktop: "/drivhus.png",
+      mobileVideo: "",
+      darkModeColor: "#2d3a21",
+    },
     cold: {
       label: "Kaldt",
       description: "Under 12°C",
       mobile: "/cold.jpg",
       desktop: "/cold.jpg",
       mobileVideo: "",
+      darkModeColor: "#2d3a21",
+    },
+    rain: {
+      label: "Regn",
+      description: "Regn eller torden fra Yr",
+      mobile: "/drivhus.png",
+      desktop: "/drivhus.png",
+      mobileVideo: "",
+      darkModeColor: "#2d3a21",
     },
     normal: {
       label: "Normalt",
@@ -135,6 +179,7 @@ const DEFAULT_SITE_CONFIG = {
       mobile: "/drivhus.png",
       desktop: "/drivhus.png",
       mobileVideo: "",
+      darkModeColor: "#2d3a21",
     },
     warm: {
       label: "Varmt",
@@ -142,6 +187,7 @@ const DEFAULT_SITE_CONFIG = {
       mobile: "/warm.jpg",
       desktop: "/warm.jpg",
       mobileVideo: "",
+      darkModeColor: "#2d3a21",
     },
     hot: {
       label: "Svært varmt",
@@ -149,6 +195,7 @@ const DEFAULT_SITE_CONFIG = {
       mobile: "/hot.jpg",
       desktop: "/hot.jpg",
       mobileVideo: "",
+      darkModeColor: "#2d3a21",
     },
   },
   branding: {
@@ -174,6 +221,143 @@ const DEFAULT_SITE_CONFIG = {
     },
   },
 };
+
+const WEATHER_DESCRIPTIONS = {
+  clearsky_day: "Sol",
+  clearsky_night: "Klar himmel",
+  fair_day: "Lettskyet",
+  fair_night: "Lettskyet",
+  partlycloudy_day: "Delvis skyet",
+  partlycloudy_night: "Delvis skyet",
+  cloudy: "Overskyet",
+  fog: "Tåke",
+  lightrainshowers_day: "Lette regnbyger",
+  lightrainshowers_night: "Lette regnbyger",
+  rainshowers_day: "Regnbyger",
+  rainshowers_night: "Regnbyger",
+  heavyrainshowers_day: "Kraftige regnbyger",
+  heavyrainshowers_night: "Kraftige regnbyger",
+  lightrain: "Lett regn",
+  rain: "Regn",
+  heavyrain: "Kraftig regn",
+  lightsleetshowers_day: "Lette sluddbyger",
+  lightsleetshowers_night: "Lette sluddbyger",
+  sleetshowers_day: "Sluddbyger",
+  sleetshowers_night: "Sluddbyger",
+  heavysleetshowers_day: "Kraftige sluddbyger",
+  heavysleetshowers_night: "Kraftige sluddbyger",
+  lightsleet: "Lett sludd",
+  sleet: "Sludd",
+  heavysleet: "Kraftig sludd",
+  lightsnowshowers_day: "Lette snøbyger",
+  lightsnowshowers_night: "Lette snøbyger",
+  snowshowers_day: "Snøbyger",
+  snowshowers_night: "Snøbyger",
+  heavysnowshowers_day: "Kraftige snøbyger",
+  heavysnowshowers_night: "Kraftige snøbyger",
+  lightsnow: "Lett snø",
+  snow: "Snø",
+  heavysnow: "Kraftig snø",
+  thunderstorm: "Tordenvær",
+  lightrainshowersandthunder_day: "Lette regnbyger og torden",
+  lightrainshowersandthunder_night: "Lette regnbyger og torden",
+  rainshowersandthunder_day: "Regnbyger og torden",
+  rainshowersandthunder_night: "Regnbyger og torden",
+  heavyrainshowersandthunder_day: "Kraftige regnbyger og torden",
+  heavyrainshowersandthunder_night: "Kraftige regnbyger og torden",
+  lightrainandthunder: "Lett regn og torden",
+  rainandthunder: "Regn og torden",
+  heavyrainandthunder: "Kraftig regn og torden",
+  lightsleetshowersandthunder_day: "Lette sluddbyger og torden",
+  lightsleetshowersandthunder_night: "Lette sluddbyger og torden",
+  sleetshowersandthunder_day: "Sluddbyger og torden",
+  sleetshowersandthunder_night: "Sluddbyger og torden",
+  heavysleetshowersandthunder_day: "Kraftige sluddbyger og torden",
+  heavysleetshowersandthunder_night: "Kraftige sluddbyger og torden",
+  lightsleetandthunder: "Lett sludd og torden",
+  sleetandthunder: "Sludd og torden",
+  heavysleetandthunder: "Kraftig sludd og torden",
+  lightsnowshowersandthunder_day: "Lette snøbyger og torden",
+  lightsnowshowersandthunder_night: "Lette snøbyger og torden",
+  snowshowersandthunder_day: "Snøbyger og torden",
+  snowshowersandthunder_night: "Snøbyger og torden",
+  heavysnowshowersandthunder_day: "Kraftige snøbyger og torden",
+  heavysnowshowersandthunder_night: "Kraftige snøbyger og torden",
+  lightsnowandthunder: "Lett snø og torden",
+  snowandthunder: "Snø og torden",
+  heavysnowandthunder: "Kraftig snø og torden",
+};
+
+async function handleAssetRequest(request, env) {
+  const response = await env.ASSETS.fetch(request);
+
+  if (request.method !== "GET" || !isHtmlNavigation(request, response)) {
+    return response;
+  }
+
+  const preloadLink = await getHeroVideoPreloadLink(env).catch((error) => {
+    console.error("Failed to build hero preload link", error);
+    return "";
+  });
+
+  if (!preloadLink) return response;
+
+  const headers = new Headers(response.headers);
+  headers.append("Link", preloadLink);
+
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+function isHtmlNavigation(request, response) {
+  const accept = request.headers.get("Accept") || "";
+  const contentType = response.headers.get("Content-Type") || "";
+  return accept.includes("text/html") && contentType.includes("text/html");
+}
+
+async function getHeroVideoPreloadLink(env) {
+  const [config, latest, weather] = await Promise.all([
+    getSiteConfig(env),
+    getLatest(env).catch(() => null),
+    env.GREENHOUSE_DATA.get(WEATHER_CACHE_KEY, "json").catch(() => null),
+  ]);
+
+  if (!config.showHeroImage || !latest || !weather?.symbolCode) return "";
+
+  const slot = getHeaderImageSlot(latest.temperature, weather.symbolCode);
+  const slotConfig = config.headerImages?.[slot];
+  const videoUrl = slotConfig?.mobileVideo;
+
+  if (!videoUrl) return "";
+
+  return `<${videoUrl}>; rel=preload; as=video; type="video/mp4"; media="(max-width: 767px)"`;
+}
+
+function getHeaderImageSlot(temperature, symbolCode, now = new Date()) {
+  const isCold = typeof temperature === "number" && temperature < COLD_TEMPERATURE_THRESHOLD;
+  if (isNightNow(now)) return isCold ? "coldNight" : "night";
+  if (isCold) return "cold";
+  if (isRainWeatherSymbol(symbolCode)) return "rain";
+  if (temperature == null) return "normal";
+  if (temperature < 23) return "normal";
+  if (temperature <= 28) return "warm";
+  return "hot";
+}
+
+function isNightNow(now = new Date()) {
+  const sunTimes = SunCalc.getTimes(now, GREENHOUSE_LATITUDE, GREENHOUSE_LONGITUDE);
+  return now < sunTimes.sunrise || now >= sunTimes.sunset;
+}
+
+function isRainWeatherSymbol(symbolCode) {
+  const symbol = String(symbolCode || "").toLowerCase();
+  if (!symbol) return false;
+  if (symbol.includes("snow") || symbol.includes("sleet")) return false;
+  return symbol.includes("rain") || symbol.includes("thunder");
+}
 
 const SITE_CONFIG_KEY = "admin/site-config.json";
 const ADMIN_IMAGE_PREFIX = "admin/images/";
@@ -363,19 +547,99 @@ async function handleSiteImage(request, env, corsHeaders) {
     return jsonResponse({ ok: false, error: "Image not found" }, 404, corsHeaders);
   }
 
+  const rangeHeader = request.headers.get("Range");
+
+  if (rangeHeader) {
+    const head = await bucket.head(key);
+    if (!head) {
+      return jsonResponse({ ok: false, error: "Image not found" }, 404, corsHeaders);
+    }
+
+    const range = parseRangeHeader(rangeHeader, head.size);
+    if (!range) {
+      return new Response(null, {
+        status: 416,
+        headers: {
+          "Content-Range": `bytes */${head.size}`,
+          "Accept-Ranges": "bytes",
+          ...corsHeaders,
+        },
+      });
+    }
+
+    const object = await bucket.get(key, {
+      range: {
+        offset: range.start,
+        length: range.end - range.start + 1,
+      },
+    });
+
+    if (!object) {
+      return jsonResponse({ ok: false, error: "Image not found" }, 404, corsHeaders);
+    }
+
+    return new Response(object.body, {
+      status: 206,
+      headers: {
+        "Content-Type": object.httpMetadata?.contentType || head.httpMetadata?.contentType || "application/octet-stream",
+        "Cache-Control": object.httpMetadata?.cacheControl || head.httpMetadata?.cacheControl || "public, max-age=3600",
+        "Accept-Ranges": "bytes",
+        "Content-Length": String(range.end - range.start + 1),
+        "Content-Range": `bytes ${range.start}-${range.end}/${head.size}`,
+        ...corsHeaders,
+      },
+    });
+  }
+
   const object = await bucket.get(key);
   if (!object) {
     return jsonResponse({ ok: false, error: "Image not found" }, 404, corsHeaders);
   }
 
+  const headers = {
+    "Content-Type": object.httpMetadata?.contentType || "application/octet-stream",
+    "Cache-Control": object.httpMetadata?.cacheControl || "public, max-age=3600",
+    "Accept-Ranges": "bytes",
+    ...corsHeaders,
+  };
+
+  if (object.size) {
+    headers["Content-Length"] = String(object.size);
+  }
+
   return new Response(object.body, {
     status: 200,
-    headers: {
-      "Content-Type": object.httpMetadata?.contentType || "application/octet-stream",
-      "Cache-Control": object.httpMetadata?.cacheControl || "public, max-age=3600",
-      ...corsHeaders,
-    },
+    headers,
   });
+}
+
+function parseRangeHeader(rangeHeader, size) {
+  const match = String(rangeHeader || "").match(/^bytes=(\d*)-(\d*)$/);
+  if (!match || !Number.isFinite(size) || size <= 0) return null;
+
+  const [, startRaw, endRaw] = match;
+  let start;
+  let end;
+
+  if (!startRaw && !endRaw) return null;
+
+  if (!startRaw) {
+    const suffixLength = Number(endRaw);
+    if (!Number.isFinite(suffixLength) || suffixLength <= 0) return null;
+    start = Math.max(size - suffixLength, 0);
+    end = size - 1;
+  } else {
+    start = Number(startRaw);
+    end = endRaw ? Number(endRaw) : size - 1;
+  }
+
+  if (!Number.isInteger(start) || !Number.isInteger(end)) return null;
+  if (start < 0 || end < start || start >= size) return null;
+
+  return {
+    start,
+    end: Math.min(end, size - 1),
+  };
 }
 
 async function handleSiteManifest(env, corsHeaders) {
@@ -528,6 +792,7 @@ function normalizeSiteConfig(config) {
       mobile: normalizeImageReference(image.mobile, defaultImage.mobile),
       desktop: normalizeImageReference(image.desktop, defaultImage.desktop),
       mobileVideo: normalizeImageReference(image.mobileVideo, defaultImage.mobileVideo),
+      darkModeColor: normalizeHexColor(image.darkModeColor, defaultImage.darkModeColor),
     };
   }
 
@@ -545,6 +810,11 @@ function normalizeImageReference(value, fallback) {
 function normalizeText(value, fallback, maxLength) {
   const raw = String(value || "").replace(/\s+/g, " ").trim();
   return raw ? raw.slice(0, maxLength) : fallback;
+}
+
+function normalizeHexColor(value, fallback) {
+  const raw = String(value || "").trim();
+  return /^#[0-9a-fA-F]{6}$/.test(raw) ? raw.toLowerCase() : fallback;
 }
 
 function normalizeNumber(value, fallback, min, max) {
@@ -803,6 +1073,110 @@ async function getEnvSecretValue(env, key) {
   }
 
   return String(value).trim();
+}
+
+async function getCachedWeather(env, ctx) {
+  const cached = await env.GREENHOUSE_DATA.get(WEATHER_CACHE_KEY, "json");
+  const cachedAt = cached?.cachedAt ? new Date(cached.cachedAt).getTime() : 0;
+  const isFresh = cachedAt && Date.now() - cachedAt < WEATHER_CACHE_MAX_AGE_MS;
+
+  if (cached && isFresh) return cached;
+
+  if (cached) {
+    ctx?.waitUntil?.(refreshWeatherCache(env).catch((error) => console.error("Failed to refresh weather cache", error)));
+    return cached;
+  }
+
+  return refreshWeatherCache(env);
+}
+
+async function refreshWeatherCache(env) {
+  const weather = await fetchWeatherSnapshot();
+  const cachedWeather = {
+    ...weather,
+    cachedAt: new Date().toISOString(),
+  };
+
+  await env.GREENHOUSE_DATA.put(WEATHER_CACHE_KEY, JSON.stringify(cachedWeather));
+  return cachedWeather;
+}
+
+async function fetchWeatherSnapshot() {
+  const yrRes = await fetch(
+    `https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${WEATHER_LATITUDE}&lon=${WEATHER_LONGITUDE}`,
+    {
+      headers: {
+        "User-Agent": "KristinsDrivhus/1.0 drivhus.danaksel.no",
+      },
+    }
+  );
+
+  if (!yrRes.ok) {
+    throw new Error(`Weather API error: ${yrRes.status}`);
+  }
+
+  const yrJson = await yrRes.json();
+  const current = yrJson.properties?.timeseries?.[0];
+
+  if (!current) {
+    throw new Error("No weather data available");
+  }
+
+  const updatedAtString = yrJson.properties?.meta?.updated_at;
+  const updatedAt = normalizeIsoDate(updatedAtString) ?? new Date().toISOString();
+  const rawSymbolCode =
+    current.data?.next_1_hours?.summary?.symbol_code ||
+    current.data?.next_6_hours?.summary?.symbol_code ||
+    "cloudy";
+  const baseSymbol = rawSymbolCode.split("_polarlight")[0].split("_polartwilight")[0];
+  const details = current.data?.instant?.details || {};
+  const temperature = typeof details.air_temperature === "number" ? details.air_temperature : 0;
+  const hasFog =
+    (details.fog_area_fraction !== undefined && details.fog_area_fraction > 0.5) ||
+    (details.visibility !== undefined && details.visibility < 1000) ||
+    baseSymbol.includes("fog");
+  const symbolCode = hasFog ? "fog" : baseSymbol;
+  let description = WEATHER_DESCRIPTIONS[baseSymbol] || WEATHER_DESCRIPTIONS[rawSymbolCode] || `Ukjent (${baseSymbol})`;
+
+  if (hasFog) {
+    if (baseSymbol === "cloudy") {
+      description = "Overskyet med tåke";
+    } else if (baseSymbol.includes("partlycloudy")) {
+      description = "Delvis skyet med tåke";
+    } else if (!baseSymbol.includes("fog")) {
+      description = `${description} og tåke`;
+    }
+  }
+
+  let uvIndex;
+  try {
+    const uvRes = await fetch(
+      `https://api.open-meteo.com/v1/forecast?latitude=${WEATHER_LATITUDE}&longitude=${WEATHER_LONGITUDE}&current=uv_index`
+    );
+
+    if (uvRes.ok) {
+      const uvJson = await uvRes.json();
+      if (typeof uvJson.current?.uv_index === "number") {
+        uvIndex = uvJson.current.uv_index;
+      }
+    }
+  } catch (error) {
+    console.warn("Failed to fetch UV data from Open-Meteo", error);
+  }
+
+  return {
+    temperature,
+    symbolCode,
+    description,
+    updatedAt,
+    uvIndex,
+  };
+}
+
+function normalizeIsoDate(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
 async function getLatest(env) {

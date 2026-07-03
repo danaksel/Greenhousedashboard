@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import SunCalc from "suncalc";
 import {
   defaultSiteConfig,
   deleteAdminImage,
@@ -20,10 +21,13 @@ import {
   type SiteConfig,
   type WeatherData,
 } from "./utils/api";
+import { thresholds } from "../config/thresholds";
 
-const imageSlots: HeaderImageSlot[] = ["cold", "normal", "warm", "hot"];
-const headerVideoGuidance = "MP4/MPEG-4 (H.264), ikke MOV. Uten lyd, sømløs loop. Anbefalt 1920 x 1080 px, 16:9, 3-6 sekunder, maks 10 MB.";
+const imageSlots: HeaderImageSlot[] = ["coldNight", "night", "cold", "rain", "normal", "warm", "hot"];
+const headerVideoGuidance = "MP4/MPEG-4 (H.264), ikke MOV. Web optimized/fast start, uten lyd, sømløs loop. Anbefalt 1920 x 1080 px, 16:9, 3-6 sekunder, maks 10 MB.";
 const headerVideoMaxBytes = 10 * 1024 * 1024;
+const greenhouseLatitude = 59.8667;
+const greenhouseLongitude = 10.7167;
 
 const statusLabels: Array<{ key: keyof SiteConfig["visibleStatuses"]; label: string }> = [
   { key: "door", label: "Dør" },
@@ -128,12 +132,32 @@ const adminSecondaryButtonClass =
 const adminDangerButtonClass =
   "inline-flex min-h-9 cursor-pointer items-center justify-center rounded-lg border border-red-200 bg-white px-4 py-2 text-xs font-semibold text-red-700 shadow-sm shadow-black/5 transition hover:bg-red-50";
 
-function getActiveSlot(temperature: number | null | undefined): HeaderImageSlot {
+function isRainWeatherSymbol(symbolCode: string | null | undefined) {
+  const symbol = String(symbolCode || "").toLowerCase();
+  if (!symbol) return false;
+  if (symbol.includes("snow") || symbol.includes("sleet")) return false;
+  return symbol.includes("rain") || symbol.includes("thunder");
+}
+
+function isNightNow(now = new Date()) {
+  const sunTimes = SunCalc.getTimes(now, greenhouseLatitude, greenhouseLongitude);
+  return now < sunTimes.sunrise || now >= sunTimes.sunset;
+}
+
+function getActiveSlot(temperature: number | null | undefined, symbolCode?: string | null, now = new Date()): HeaderImageSlot {
+  const isCold = temperature != null && temperature < thresholds.temperature.min;
+  if (isNightNow(now)) return isCold ? "coldNight" : "night";
+  if (isCold) return "cold";
+  if (isRainWeatherSymbol(symbolCode)) return "rain";
   if (temperature == null) return "normal";
-  if (temperature < 12) return "cold";
   if (temperature < 23) return "normal";
   if (temperature <= 28) return "warm";
   return "hot";
+}
+
+function getValidHexColor(value: string | undefined, fallback: string) {
+  const raw = String(value || "").trim();
+  return /^#[0-9a-fA-F]{6}$/.test(raw) ? raw : fallback;
 }
 
 function formatBytes(size: number | null) {
@@ -251,7 +275,15 @@ export function AdminPage() {
   const [error, setError] = useState<string | null>(null);
   const headerLibraryRef = useRef<HTMLElement | null>(null);
 
-  const activeSlot = useMemo(() => getActiveSlot(latest?.temperature), [latest?.temperature]);
+  const activeSlot = useMemo(
+    () => getActiveSlot(latest?.temperature, weatherData?.symbolCode),
+    [latest?.temperature, weatherData?.symbolCode]
+  );
+  const selectedHeaderConfig = config.headerImages[selectedHeaderSlot];
+  const selectedDarkModeColor = getValidHexColor(
+    selectedHeaderConfig.darkModeColor,
+    defaultSiteConfig.headerImages[selectedHeaderSlot].darkModeColor
+  );
   const configSnapshot = useMemo(() => JSON.stringify(config), [config]);
   const hasUnsavedChanges = !loading && configSnapshot !== savedConfigSnapshot;
 
@@ -354,6 +386,19 @@ export function AdminPage() {
         [slot]: {
           ...current.headerImages[slot],
           mobileVideo: value,
+        },
+      },
+    }));
+  };
+
+  const setHeaderDarkModeColor = (slot: HeaderImageSlot, value: string) => {
+    updateConfig((current) => ({
+      ...current,
+      headerImages: {
+        ...current.headerImages,
+        [slot]: {
+          ...current.headerImages[slot],
+          darkModeColor: value,
         },
       },
     }));
@@ -910,70 +955,73 @@ export function AdminPage() {
                   </span>
                 )}
               </div>
-              <div className="mt-3 flex items-start gap-3">
-                <div className="min-w-0 flex-1">
-                  {isEditing ? (
-                    <form
-                      className="space-y-2"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        void saveRenameImage(asset);
-                      }}
-                    >
-                      <div className="flex min-w-0 items-center gap-1.5">
-                        <input
-                          type="text"
-                          value={editingFilenameBase}
-                          onChange={(event) => setEditingFilenameBase(event.target.value)}
-                          onKeyDown={(event) => {
-                            if (event.key === "Escape") cancelRenameImage();
-                          }}
-                          autoFocus
-                          className="min-w-0 flex-1 rounded-md border border-[#9daa8f] bg-white px-3 py-2 text-sm font-semibold text-[#2d3a21]"
-                        />
-                        <span className="shrink-0 text-sm font-semibold text-stone-500">{extension}</span>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <button type="submit" className="rounded-md bg-[#5d7342] px-3 py-1.5 text-xs font-semibold text-white">
-                          Lagre
-                        </button>
-                        <button type="button" onClick={cancelRenameImage} className="rounded-md border border-[#cbd3c2] bg-white px-3 py-1.5 text-xs font-semibold text-[#4d5d3e]">
-                          Avbryt
-                        </button>
-                      </div>
-                    </form>
-                  ) : (
+              <div className="mt-3 space-y-3">
+                {isEditing ? (
+                  <form
+                    className="space-y-2"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void saveRenameImage(asset);
+                    }}
+                  >
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <input
+                        type="text"
+                        value={editingFilenameBase}
+                        onChange={(event) => setEditingFilenameBase(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Escape") cancelRenameImage();
+                        }}
+                        autoFocus
+                        className="min-w-0 flex-1 rounded-md border border-[#9daa8f] bg-white px-3 py-2 text-sm font-semibold text-[#2d3a21]"
+                      />
+                      <span className="shrink-0 text-sm font-semibold text-stone-500">{extension}</span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button type="submit" className="rounded-md bg-[#5d7342] px-3 py-1.5 text-xs font-semibold text-white">
+                        Lagre
+                      </button>
+                      <button type="button" onClick={cancelRenameImage} className="rounded-md border border-[#cbd3c2] bg-white px-3 py-1.5 text-xs font-semibold text-[#4d5d3e]">
+                        Avbryt
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <div>
                     <button
                       type="button"
                       onClick={() => startRenameImage(asset)}
-                      className="block max-w-full truncate text-left text-sm font-semibold text-[#2d3a21] underline-offset-2 hover:underline"
+                      className="block max-w-full break-words text-left text-sm font-semibold leading-snug text-[#2d3a21] underline-offset-2 hover:underline"
                       title="Klikk for å endre filnavn"
                     >
                       {asset.filename}
                     </button>
-                  )}
-                  <p className="text-xs text-stone-500">{formatBytes(asset.size)}</p>
-                </div>
-                {!isEditing && !isSelected && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (isVideo) applyVideo(slot, asset);
-                      else applyImage(slot, kind, asset);
-                    }}
-                    className={adminPrimaryButtonClass}
-                  >
-                    Bruk
-                  </button>
+                    <p className="mt-1 text-xs text-stone-500">{formatBytes(asset.size)}</p>
+                  </div>
                 )}
+
                 {!isEditing && (
-                  <button
-                    type="button"
-                    onClick={() => void handleDeleteImage(asset)}
-                    className={adminDangerButtonClass}
-                  >
-                    Slett
-                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    {!isSelected && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (isVideo) applyVideo(slot, asset);
+                          else applyImage(slot, kind, asset);
+                        }}
+                        className={adminPrimaryButtonClass}
+                      >
+                        Bruk
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => void handleDeleteImage(asset)}
+                      className={adminDangerButtonClass}
+                    >
+                      Slett
+                    </button>
+                  </div>
                 )}
               </div>
             </article>
@@ -1561,10 +1609,42 @@ export function AdminPage() {
                     <article className="rounded-lg border border-[#d8ded1] bg-[#f7f8f5] p-4">
                       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
                         <div>
-                          <h3 className="text-lg font-semibold">{config.headerImages[selectedHeaderSlot].label}</h3>
-                          <p className="text-sm text-stone-500">{config.headerImages[selectedHeaderSlot].description}</p>
+                          <h3 className="text-lg font-semibold">{selectedHeaderConfig.label}</h3>
+                          <p className="text-sm text-stone-500">{selectedHeaderConfig.description}</p>
                         </div>
                         {selectedHeaderSlot === activeSlot && <span className={adminSelectedTagClass}>Brukes akkurat nå</span>}
+                      </div>
+
+                      <div className="mb-4 rounded-lg border border-[#d8ded1] bg-white/70 p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold">Darkmode/theme-farge</p>
+                            <p className="text-xs text-stone-500">
+                              Brukes som mørk bakgrunn og mobil theme-color når denne staten er aktiv.
+                            </p>
+                          </div>
+                          <label className="flex items-center gap-2 text-sm font-semibold text-[#2d3a21]">
+                            <span
+                              className="h-9 w-9 rounded-lg border border-[#cbd3c2]"
+                              style={{ backgroundColor: selectedDarkModeColor }}
+                              aria-hidden="true"
+                            />
+                            <input
+                              type="color"
+                              value={selectedDarkModeColor}
+                              onChange={(event) => setHeaderDarkModeColor(selectedHeaderSlot, event.target.value)}
+                              className="h-9 w-12 cursor-pointer rounded border border-[#cbd3c2] bg-white p-1"
+                              aria-label="Velg darkmode/theme-farge"
+                            />
+                            <input
+                              type="text"
+                              value={selectedHeaderConfig.darkModeColor}
+                              onChange={(event) => setHeaderDarkModeColor(selectedHeaderSlot, event.target.value)}
+                              className="w-24 rounded-lg border border-[#cbd3c2] bg-white px-3 py-2 text-sm"
+                              pattern="#[0-9a-fA-F]{6}"
+                            />
+                          </label>
+                        </div>
                       </div>
 
                       <div className="grid gap-3 xl:grid-cols-3">

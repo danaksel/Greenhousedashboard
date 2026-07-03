@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from "react";
+import SunCalc from "suncalc";
 import { AdminPage } from "./AdminPage";
 import { ChartSkeleton } from "./components/chart-skeleton";
 import {
@@ -35,6 +36,38 @@ const WeatherWidget = lazy(async () => {
   const module = await import("./components/weather-widget");
   return { default: module.WeatherWidget };
 });
+
+const greenhouseLatitude = 59.8667;
+const greenhouseLongitude = 10.7167;
+
+function isRainWeatherSymbol(symbolCode: string | null | undefined) {
+  const symbol = String(symbolCode || "").toLowerCase();
+  if (!symbol) return false;
+  if (symbol.includes("snow") || symbol.includes("sleet")) return false;
+  return symbol.includes("rain") || symbol.includes("thunder");
+}
+
+function isNightNow(now = new Date()) {
+  const sunTimes = SunCalc.getTimes(now, greenhouseLatitude, greenhouseLongitude);
+  return now < sunTimes.sunrise || now >= sunTimes.sunset;
+}
+
+function getHeaderImageSlot(temperature: number | null, symbolCode: string | null | undefined, now = new Date()): HeaderImageSlot {
+  const isCold = temperature !== null && temperature < thresholds.temperature.min;
+  if (isNightNow(now)) return isCold ? "coldNight" : "night";
+  if (isCold) return "cold";
+  if (isRainWeatherSymbol(symbolCode)) return "rain";
+  if (temperature === null) return "normal";
+  if (temperature < 23) return "normal";
+  if (temperature <= 28) return "warm";
+  return "hot";
+}
+
+function getStoredDarkThemeColor() {
+  if (typeof window === "undefined") return "#2d3a21";
+  const raw = localStorage.getItem("greenhouseLastDarkThemeColor") || "";
+  return /^#[0-9a-fA-F]{6}$/.test(raw) ? raw : "#2d3a21";
+}
 
 type ChartPoint = { time: string; value: number; min?: number; max?: number; range?: [number, number]; id: string };
 type HistoryPoint = { time: string; value: number | null; min?: number | null; max?: number | null; timestamp: string | null; bucketStart: string | null };
@@ -170,6 +203,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [weatherLoading, setWeatherLoading] = useState(true);
+  const [weatherReady, setWeatherReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
@@ -201,6 +235,21 @@ export default function App() {
         if (includeWeather) setWeatherLoading(true);
       }
       setError(null);
+
+      const weatherPromise = includeWeather ? (async () => {
+        try {
+          setWeatherLoading(true);
+          const weather = await fetchWeatherData();
+          console.log('Weather data fetched:', weather);
+          setWeatherData(weather);
+        } catch (weatherErr) {
+          console.error('Failed to fetch weather data:', weatherErr);
+          // Don't set error state for weather failures - just skip showing weather
+        } finally {
+          setWeatherReady(true);
+          setWeatherLoading(false);
+        }
+      })() : Promise.resolve();
 
       // Fetch latest data
       const latest = await fetchLatestGreenhouseData();
@@ -381,20 +430,6 @@ export default function App() {
         }
       })() : Promise.resolve();
 
-      const weatherPromise = includeWeather ? (async () => {
-        try {
-          setWeatherLoading(true);
-          const weather = await fetchWeatherData();
-          console.log('Weather data fetched:', weather);
-          setWeatherData(weather);
-        } catch (weatherErr) {
-          console.error('Failed to fetch weather data:', weatherErr);
-          // Don't set error state for weather failures - just skip showing weather
-        } finally {
-          setWeatherLoading(false);
-        }
-      })() : Promise.resolve();
-
       await Promise.allSettled([historyPromise, weatherPromise]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load data");
@@ -450,7 +485,17 @@ export default function App() {
       metaThemeColor.setAttribute('name', 'theme-color');
       document.head.appendChild(metaThemeColor);
     }
-    const browserBackgroundColor = darkMode ? '#2d3a21' : '#e8ede3';
+    const activeHeaderSlot =
+      siteConfigReady && temperature !== null && weatherReady && weatherData?.symbolCode
+        ? getHeaderImageSlot(temperature, weatherData?.symbolCode)
+        : null;
+    const activeHeaderConfig = activeHeaderSlot
+      ? siteConfig.headerImages[activeHeaderSlot] ?? defaultSiteConfig.headerImages[activeHeaderSlot]
+      : null;
+    const browserBackgroundColor = darkMode ? activeHeaderConfig?.darkModeColor ?? getStoredDarkThemeColor() : '#e8ede3';
+    if (darkMode && activeHeaderConfig?.darkModeColor) {
+      localStorage.setItem("greenhouseLastDarkThemeColor", activeHeaderConfig.darkModeColor);
+    }
     metaThemeColor.setAttribute('content', browserBackgroundColor);
     document.documentElement.style.backgroundColor = browserBackgroundColor;
     document.body.style.backgroundColor = browserBackgroundColor;
@@ -463,7 +508,7 @@ export default function App() {
       document.head.appendChild(appleStatusBar);
     }
     appleStatusBar.setAttribute('content', darkMode ? 'black-translucent' : 'default');
-  }, [darkMode]);
+  }, [darkMode, lastUpdated, siteConfig, siteConfigReady, temperature, weatherData?.symbolCode, weatherReady]);
 
   useEffect(() => {
     if (!siteConfigReady) return;
@@ -645,28 +690,45 @@ export default function App() {
     });
   };
 
-  const bgColor = darkMode ? 'bg-[#2d3a21]' : 'bg-[#e8ede3]';
+  const safeWindowCount = Math.min(Math.max(windowCount ?? 0, 0), 3);
+  const heroStateReady = siteConfigReady && temperature !== null && weatherReady && Boolean(weatherData?.symbolCode);
+  const heroImageSlot = heroStateReady ? getHeaderImageSlot(temperature, weatherData?.symbolCode) : null;
+  const heroImageConfig = heroImageSlot
+    ? siteConfig.headerImages[heroImageSlot] ?? defaultSiteConfig.headerImages[heroImageSlot]
+    : null;
+  const browserBackgroundColor = darkMode ? heroImageConfig?.darkModeColor ?? getStoredDarkThemeColor() : "#e8ede3";
   const headerTextClass = darkMode ? "text-[#e8ede3]" : "text-[#2d3a21]";
   const headerButtonClass = darkMode
     ? "bg-[#e8ede3]/12 hover:bg-[#e8ede3]/18"
     : "bg-[#2d3a21]/10 hover:bg-[#2d3a21]/15";
-  const safeWindowCount = Math.min(Math.max(windowCount ?? 0, 0), 3);
-  const heroImageSlot: HeaderImageSlot =
-    temperature === null
-      ? "normal"
-      : temperature < 12
-        ? "cold"
-        : temperature < 23
-          ? "normal"
-          : temperature <= 28
-            ? "warm"
-            : "hot";
-  const heroImageConfig = siteConfig.headerImages[heroImageSlot] ?? defaultSiteConfig.headerImages[heroImageSlot];
-  const heroMobileImageSrc = resolveGreenhouseAssetUrl(heroImageConfig.mobile);
-  const heroDesktopImageSrc = resolveGreenhouseAssetUrl(heroImageConfig.desktop);
-  const heroMobileVideoSrc = resolveGreenhouseAssetUrl(heroImageConfig.mobileVideo);
+  const heroMobileImageSrc = heroImageConfig ? resolveGreenhouseAssetUrl(heroImageConfig.mobile) : "";
+  const heroDesktopImageSrc = heroImageConfig ? resolveGreenhouseAssetUrl(heroImageConfig.desktop) : "";
+  const heroMobileVideoSrc = heroImageConfig ? resolveGreenhouseAssetUrl(heroImageConfig.mobileVideo) : "";
   const customLogoSrc = siteConfigReady && siteConfig.branding.logo.url ? resolveGreenhouseAssetUrl(siteConfig.branding.logo.url) : "";
   const logoSize = siteConfig.branding.logo.size;
+
+  useEffect(() => {
+    const selector = 'link[rel="preload"][as="video"][data-hero-video="true"]';
+    const existing = document.querySelector(selector) as HTMLLinkElement | null;
+
+    if (!heroMobileVideoSrc) {
+      existing?.remove();
+      return;
+    }
+
+    const link = existing ?? document.createElement("link");
+    link.setAttribute("rel", "preload");
+    link.setAttribute("as", "video");
+    link.setAttribute("type", "video/mp4");
+    link.setAttribute("href", heroMobileVideoSrc);
+    link.setAttribute("media", "(max-width: 767px)");
+    link.setAttribute("data-hero-video", "true");
+
+    if (!existing) {
+      document.head.appendChild(link);
+    }
+  }, [heroMobileVideoSrc]);
+
   const temperatureAlert: TemperatureAlert | null =
     temperature === null
       ? null
@@ -772,7 +834,7 @@ export default function App() {
         : "h-1.5 w-1.5 rounded-full bg-[#9daa8f]/55 transition-all";
 
   return (
-    <div className={`min-h-screen transition-colors duration-300 ${bgColor}`}>
+    <div className="min-h-screen transition-colors duration-300" style={{ backgroundColor: browserBackgroundColor }}>
       <div className="relative mx-auto max-w-md md:max-w-7xl md:px-8 xl:px-10">
         {/* Offline Indicator */}
         <div
@@ -877,28 +939,32 @@ export default function App() {
               <section>
                 {/* Hero Image */}
                 <div className={`relative h-[200px] w-full overflow-hidden md:mb-0 md:aspect-[3/1] md:h-auto md:rounded-2xl ${temperatureAlert ? "mb-0" : "mb-6"}`}>
-                  {heroMobileVideoSrc ? (
-                    <video
-                      className="h-full w-full object-cover object-center md:hidden"
-                      autoPlay
-                      muted
-                      loop
-                      playsInline
-                      preload="metadata"
-                      poster={heroMobileImageSrc}
-                      aria-label="Drivhus"
-                    >
-                      <source src={heroMobileVideoSrc} type="video/mp4" />
-                    </video>
+                  {heroImageConfig ? (
+                    <>
+                      {heroMobileVideoSrc ? (
+                        <video
+                          key={heroMobileVideoSrc}
+                          className="h-full w-full object-cover object-center md:hidden"
+                          autoPlay
+                          muted
+                          loop
+                          playsInline
+                          preload="auto"
+                          poster={heroMobileImageSrc}
+                          src={heroMobileVideoSrc}
+                          aria-label="Drivhus"
+                        />
+                      ) : null}
+                      <picture className={heroMobileVideoSrc ? "hidden h-full w-full md:block" : "block h-full w-full"}>
+                        <source media="(min-width: 768px)" srcSet={heroDesktopImageSrc} />
+                        <ImageWithFallback
+                          src={heroMobileImageSrc}
+                          alt="Drivhus"
+                          className="h-full w-full object-cover object-center"
+                        />
+                      </picture>
+                    </>
                   ) : null}
-                  <picture className={heroMobileVideoSrc ? "hidden h-full w-full md:block" : "block h-full w-full"}>
-                    <source media="(min-width: 768px)" srcSet={heroDesktopImageSrc} />
-                    <ImageWithFallback
-                      src={heroMobileImageSrc}
-                      alt="Drivhus" 
-                      className="h-full w-full object-cover object-center"
-                    />
-                  </picture>
                   {temperatureAlert && (
                     <div
                       className="pointer-events-none absolute inset-0 opacity-45"
