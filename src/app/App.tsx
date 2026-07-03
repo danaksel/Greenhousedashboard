@@ -706,6 +706,29 @@ export default function App() {
   const heroMobileVideoSrc = heroImageConfig ? resolveGreenhouseAssetUrl(heroImageConfig.mobileVideo) : "";
   const customLogoSrc = siteConfigReady && siteConfig.branding.logo.url ? resolveGreenhouseAssetUrl(siteConfig.branding.logo.url) : "";
   const logoSize = siteConfig.branding.logo.size;
+
+  useEffect(() => {
+    const selector = 'link[rel="preload"][as="video"][data-hero-video="true"]';
+    const existing = document.querySelector(selector) as HTMLLinkElement | null;
+
+    if (!heroMobileVideoSrc) {
+      existing?.remove();
+      return;
+    }
+
+    const link = existing ?? document.createElement("link");
+    link.setAttribute("rel", "preload");
+    link.setAttribute("as", "video");
+    link.setAttribute("type", "video/mp4");
+    link.setAttribute("href", heroMobileVideoSrc);
+    link.setAttribute("media", "(max-width: 767px)");
+    link.setAttribute("data-hero-video", "true");
+
+    if (!existing) {
+      document.head.appendChild(link);
+    }
+  }, [heroMobileVideoSrc]);
+
   const temperatureAlert: TemperatureAlert | null =
     temperature === null
       ? null

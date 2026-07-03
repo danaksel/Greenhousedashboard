@@ -24,7 +24,7 @@ import {
 import { thresholds } from "../config/thresholds";
 
 const imageSlots: HeaderImageSlot[] = ["coldNight", "night", "cold", "rain", "normal", "warm", "hot"];
-const headerVideoGuidance = "MP4/MPEG-4 (H.264), ikke MOV. Uten lyd, sømløs loop. Anbefalt 1920 x 1080 px, 16:9, 3-6 sekunder, maks 10 MB.";
+const headerVideoGuidance = "MP4/MPEG-4 (H.264), ikke MOV. Web optimized/fast start, uten lyd, sømløs loop. Anbefalt 1920 x 1080 px, 16:9, 3-6 sekunder, maks 10 MB.";
 const headerVideoMaxBytes = 10 * 1024 * 1024;
 const greenhouseLatitude = 59.8667;
 const greenhouseLongitude = 10.7167;

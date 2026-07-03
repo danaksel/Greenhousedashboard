@@ -1,3 +1,5 @@
+import SunCalc from "suncalc";
+
 export default {
   async scheduled(controller, env, ctx) {
     ctx.waitUntil(refreshWeatherCache(env));
@@ -105,7 +107,7 @@ export default {
       }
 
       if (env.ASSETS) {
-        return env.ASSETS.fetch(request);
+        return await handleAssetRequest(request, env);
       }
 
       return jsonResponse({ ok: false, error: "Not found" }, 404, corsHeaders);
@@ -127,6 +129,9 @@ const WEATHER_CACHE_KEY = "latest:weather";
 const WEATHER_CACHE_MAX_AGE_MS = 15 * 60 * 1000;
 const WEATHER_LATITUDE = 59.87;
 const WEATHER_LONGITUDE = 10.67;
+const GREENHOUSE_LATITUDE = 59.8667;
+const GREENHOUSE_LONGITUDE = 10.7167;
+const COLD_TEMPERATURE_THRESHOLD = 12;
 
 const DEFAULT_SITE_CONFIG = {
   showHeroImage: true,
@@ -282,6 +287,77 @@ const WEATHER_DESCRIPTIONS = {
   snowandthunder: "Snø og torden",
   heavysnowandthunder: "Kraftig snø og torden",
 };
+
+async function handleAssetRequest(request, env) {
+  const response = await env.ASSETS.fetch(request);
+
+  if (request.method !== "GET" || !isHtmlNavigation(request, response)) {
+    return response;
+  }
+
+  const preloadLink = await getHeroVideoPreloadLink(env).catch((error) => {
+    console.error("Failed to build hero preload link", error);
+    return "";
+  });
+
+  if (!preloadLink) return response;
+
+  const headers = new Headers(response.headers);
+  headers.append("Link", preloadLink);
+
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+function isHtmlNavigation(request, response) {
+  const accept = request.headers.get("Accept") || "";
+  const contentType = response.headers.get("Content-Type") || "";
+  return accept.includes("text/html") && contentType.includes("text/html");
+}
+
+async function getHeroVideoPreloadLink(env) {
+  const [config, latest, weather] = await Promise.all([
+    getSiteConfig(env),
+    getLatest(env).catch(() => null),
+    env.GREENHOUSE_DATA.get(WEATHER_CACHE_KEY, "json").catch(() => null),
+  ]);
+
+  if (!config.showHeroImage || !latest || !weather?.symbolCode) return "";
+
+  const slot = getHeaderImageSlot(latest.temperature, weather.symbolCode);
+  const slotConfig = config.headerImages?.[slot];
+  const videoUrl = slotConfig?.mobileVideo;
+
+  if (!videoUrl) return "";
+
+  return `<${videoUrl}>; rel=preload; as=video; type="video/mp4"; media="(max-width: 767px)"`;
+}
+
+function getHeaderImageSlot(temperature, symbolCode, now = new Date()) {
+  const isCold = typeof temperature === "number" && temperature < COLD_TEMPERATURE_THRESHOLD;
+  if (isNightNow(now)) return isCold ? "coldNight" : "night";
+  if (isCold) return "cold";
+  if (isRainWeatherSymbol(symbolCode)) return "rain";
+  if (temperature == null) return "normal";
+  if (temperature < 23) return "normal";
+  if (temperature <= 28) return "warm";
+  return "hot";
+}
+
+function isNightNow(now = new Date()) {
+  const sunTimes = SunCalc.getTimes(now, GREENHOUSE_LATITUDE, GREENHOUSE_LONGITUDE);
+  return now < sunTimes.sunrise || now >= sunTimes.sunset;
+}
+
+function isRainWeatherSymbol(symbolCode) {
+  const symbol = String(symbolCode || "").toLowerCase();
+  if (!symbol) return false;
+  if (symbol.includes("snow") || symbol.includes("sleet")) return false;
+  return symbol.includes("rain") || symbol.includes("thunder");
+}
 
 const SITE_CONFIG_KEY = "admin/site-config.json";
 const ADMIN_IMAGE_PREFIX = "admin/images/";
