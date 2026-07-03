@@ -39,7 +39,7 @@ export interface WeatherData {
   uvIndex?: number;
 }
 
-export type HeaderImageSlot = "coldNight" | "night" | "cold" | "rain" | "normal" | "warm" | "hot";
+export type HeaderImageSlot = "cold" | "normal" | "warm" | "hot";
 export type HeaderImageFormat = "mobile" | "desktop";
 
 export const logoFontOptions = [
@@ -61,7 +61,6 @@ export interface HeaderImageConfig {
   mobile: string;
   desktop: string;
   mobileVideo: string;
-  darkModeColor: string;
 }
 
 export interface SiteConfig {
@@ -132,37 +131,12 @@ export const defaultSiteConfig: SiteConfig = {
     window: true,
   },
   headerImages: {
-    coldNight: {
-      label: "Kald natt",
-      description: "Natt og under 12°C",
-      mobile: "/cold.jpg",
-      desktop: "/cold.jpg",
-      mobileVideo: "",
-      darkModeColor: "#2d3a21",
-    },
-    night: {
-      label: "Natt",
-      description: "Etter solnedgang og før soloppgang",
-      mobile: "/drivhus.png",
-      desktop: "/drivhus.png",
-      mobileVideo: "",
-      darkModeColor: "#2d3a21",
-    },
     cold: {
       label: "Kaldt",
       description: "Under 12°C",
       mobile: "/cold.jpg",
       desktop: "/cold.jpg",
       mobileVideo: "",
-      darkModeColor: "#2d3a21",
-    },
-    rain: {
-      label: "Regn",
-      description: "Regn eller torden fra Yr",
-      mobile: "/drivhus.png",
-      desktop: "/drivhus.png",
-      mobileVideo: "",
-      darkModeColor: "#2d3a21",
     },
     normal: {
       label: "Normalt",
@@ -170,7 +144,6 @@ export const defaultSiteConfig: SiteConfig = {
       mobile: "/drivhus.png",
       desktop: "/drivhus.png",
       mobileVideo: "",
-      darkModeColor: "#2d3a21",
     },
     warm: {
       label: "Varmt",
@@ -178,7 +151,6 @@ export const defaultSiteConfig: SiteConfig = {
       mobile: "/warm.jpg",
       desktop: "/warm.jpg",
       mobileVideo: "",
-      darkModeColor: "#2d3a21",
     },
     hot: {
       label: "Svært varmt",
@@ -186,7 +158,6 @@ export const defaultSiteConfig: SiteConfig = {
       mobile: "/hot.jpg",
       desktop: "/hot.jpg",
       mobileVideo: "",
-      darkModeColor: "#2d3a21",
     },
   },
   branding: {
@@ -242,13 +213,10 @@ function normalizeSiteConfig(data: Partial<SiteConfig> | null | undefined): Site
       window: typeof visibleStatuses.window === "boolean" ? visibleStatuses.window : defaultSiteConfig.visibleStatuses.window,
     },
     headerImages: {
-      coldNight: normalizeHeaderImageConfig(headerImages.coldNight, defaultSiteConfig.headerImages.coldNight),
-      night: normalizeHeaderImageConfig(headerImages.night, defaultSiteConfig.headerImages.night),
-      cold: normalizeHeaderImageConfig(headerImages.cold, defaultSiteConfig.headerImages.cold),
-      rain: normalizeHeaderImageConfig(headerImages.rain, defaultSiteConfig.headerImages.rain),
-      normal: normalizeHeaderImageConfig(headerImages.normal, defaultSiteConfig.headerImages.normal),
-      warm: normalizeHeaderImageConfig(headerImages.warm, defaultSiteConfig.headerImages.warm),
-      hot: normalizeHeaderImageConfig(headerImages.hot, defaultSiteConfig.headerImages.hot),
+      cold: { ...defaultSiteConfig.headerImages.cold, ...(headerImages.cold ?? {}) },
+      normal: { ...defaultSiteConfig.headerImages.normal, ...(headerImages.normal ?? {}) },
+      warm: { ...defaultSiteConfig.headerImages.warm, ...(headerImages.warm ?? {}) },
+      hot: { ...defaultSiteConfig.headerImages.hot, ...(headerImages.hot ?? {}) },
     },
     branding: {
       siteName,
@@ -287,22 +255,6 @@ function normalizeSiteConfig(data: Partial<SiteConfig> | null | undefined): Site
       },
     },
   };
-}
-
-function normalizeHeaderImageConfig(
-  input: Partial<HeaderImageConfig> | undefined,
-  fallback: HeaderImageConfig
-): HeaderImageConfig {
-  return {
-    ...fallback,
-    ...(input ?? {}),
-    darkModeColor: normalizeHexColor(input?.darkModeColor, fallback.darkModeColor),
-  };
-}
-
-function normalizeHexColor(value: unknown, fallback: string) {
-  const raw = String(value || "").trim();
-  return /^#[0-9a-fA-F]{6}$/.test(raw) ? raw.toLowerCase() : fallback;
 }
 
 export async function fetchLatestGreenhouseData(): Promise<LatestData> {
@@ -622,26 +574,104 @@ const weatherDescriptions: Record<string, string> = {
 };
 
 export async function fetchWeatherData(): Promise<WeatherData> {
-  const res = await fetch(greenhouseApiUrl("/api/weather"), {
-    method: "GET",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    cache: "no-store"
-  });
+  // Coordinates for Høybråten, Nesodden
+  const lat = 59.87;
+  const lon = 10.67;
+  
+  // Fetch weather data from Yr (temperature + symbol)
+  const res = await fetch(
+    `https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${lat}&lon=${lon}`
+  );
 
   if (!res.ok) {
-    throw new Error(`API error: ${res.status}`);
+    throw new Error(`Weather API error: ${res.status}`);
   }
 
   const json = await res.json();
-  const data = json.data || {};
+  const current = json.properties?.timeseries?.[0];
+  
+  if (!current) {
+    throw new Error("No weather data available");
+  }
+
+  // Get the actual update timestamp from Yr's metadata
+  const updatedAtString = json.properties?.meta?.updated_at;
+  let updatedAt: Date;
+  
+  if (updatedAtString) {
+    // Safari is strict about date formats, so ensure it's valid
+    try {
+      updatedAt = new Date(updatedAtString);
+      // Check if date is valid
+      if (isNaN(updatedAt.getTime())) {
+        updatedAt = new Date();
+      }
+    } catch {
+      updatedAt = new Date();
+    }
+  } else {
+    updatedAt = new Date();
+  }
+
+  const symbolCode = current.data?.next_1_hours?.summary?.symbol_code || 
+                     current.data?.next_6_hours?.summary?.symbol_code || 
+                     "cloudy";
+  const temperature = current.data?.instant?.details?.air_temperature || 0;
+  
+  // Fetch UV index from Open-Meteo (Yr doesn't provide UV data)
+  let uvIndex: number | undefined;
+  try {
+    const uvRes = await fetch(
+      `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=uv_index`
+    );
+    
+    if (uvRes.ok) {
+      const uvJson = await uvRes.json();
+      uvIndex = uvJson.current?.uv_index;
+    }
+  } catch (error) {
+    console.warn('Failed to fetch UV data from Open-Meteo:', error);
+    // Continue without UV data
+  }
+  
+  // Get base symbol without polarity variants (_polarlight, _polartwilight)
+  const baseSymbol = symbolCode.split("_polarlight")[0].split("_polartwilight")[0];
+  
+  // Check for fog conditions - Yr combines fog with other weather symbols
+  const details = current.data?.instant?.details;
+  const fogCondition = details?.fog_area_fraction;
+  const visibility = details?.visibility;
+  
+  // Fog detection: Only trust Yr's actual fog data or symbol code
+  // fog_area_fraction and visibility are often undefined in the API response
+  const hasFog = (fogCondition !== undefined && fogCondition > 0.5) || 
+                 (visibility !== undefined && visibility < 1000) ||
+                 baseSymbol.includes('fog'); // Trust Yr's symbol code if it explicitly says fog
+  
+  // Debug: Log the symbol code and fog conditions
+  console.log('Yr symbol code:', symbolCode, '-> base:', baseSymbol);
+  console.log('Fog conditions - fog_area_fraction:', fogCondition, 'visibility:', visibility, 'hasFog:', hasFog);
+  
+  // Adjust description based on fog conditions
+  let description = weatherDescriptions[baseSymbol] || weatherDescriptions[symbolCode] || `Ukjent (${baseSymbol})`;
+  
+  // If we detect fog conditions, modify the description
+  if (hasFog) {
+    if (baseSymbol === 'cloudy') {
+      description = 'Overskyet med tåke';
+    } else if (baseSymbol.includes('partlycloudy')) {
+      description = 'Delvis skyet med tåke';
+    } else if (!baseSymbol.includes('fog')) {
+      // Add fog to other conditions if not already mentioned
+      description = `${description} og tåke`;
+    }
+  }
 
   return {
-    temperature: data.temperature ?? 0,
-    symbolCode: data.symbolCode ?? "cloudy",
-    description: data.description ?? "Ukjent",
-    updatedAt: data.updatedAt ? new Date(data.updatedAt) : undefined,
-    uvIndex: data.uvIndex,
+    temperature,
+    symbolCode: hasFog ? 'fog' : baseSymbol,
+    description,
+    updatedAt,
+    uvIndex
   };
 }
