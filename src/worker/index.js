@@ -1,8 +1,11 @@
 import SunCalc from "suncalc";
+import { getDefaultDisplayThemeForSlot, getDisplaySlotTheme } from "../shared/display-theme.js";
 
 export default {
   async scheduled(controller, env, ctx) {
     ctx.waitUntil(refreshWeatherCache(env));
+    ctx.waitUntil(refreshStats24hCache(env));
+    ctx.waitUntil(refreshDailyPlantAnalysisIfDue(env));
   },
 
   async fetch(request, env, ctx) {
@@ -27,7 +30,7 @@ export default {
       }
 
       if (url.pathname === "/ingest" && request.method === "POST") {
-        return await handleIngest(request, env, corsHeaders);
+        return await handleIngest(request, env, corsHeaders, ctx);
       }
 
       if (url.pathname === "/api/latest" && request.method === "GET") {
@@ -46,13 +49,39 @@ export default {
       }
 
       if (url.pathname === "/api/stats24h" && request.method === "GET") {
-        const stats24h = await getStats24h(env);
+        const stats24h = await getCachedStats24h(env, ctx);
         return jsonResponse({ ok: true, data: stats24h }, 200, corsHeaders);
+      }
+
+      if (url.pathname === "/api/plant-analysis" && request.method === "GET") {
+        return await handleGetPlantAnalysis(env, corsHeaders);
+      }
+
+      if (url.pathname === "/admin/api/plant-analysis" && request.method === "POST") {
+        return await handlePlantAnalysis(env, corsHeaders);
       }
 
       if (url.pathname === "/api/site-config" && request.method === "GET") {
         const config = await getSiteConfig(env);
         return jsonResponse({ ok: true, data: config }, 200, corsHeaders);
+      }
+
+      if (url.pathname === "/api/display-config" && request.method === "GET") {
+        const config = await getSiteConfig(env);
+        return jsonResponse({ ok: true, data: buildDisplayConfig(config, request.url) }, 200, corsHeaders);
+      }
+
+      if (url.pathname === "/api/display-stats" && request.method === "GET") {
+        const stats = await getDisplayStats(env);
+        return jsonResponse({ ok: true, data: stats }, 200, corsHeaders);
+      }
+
+      if (url.pathname === "/api/display-log" && request.method === "GET") {
+        return await handleGetDisplayLog(env, corsHeaders);
+      }
+
+      if (url.pathname === "/api/display-log" && request.method === "POST") {
+        return await handlePostDisplayLog(request, env, corsHeaders);
       }
 
       if (url.pathname === "/api/site-image" && request.method === "GET") {
@@ -127,11 +156,72 @@ export default {
 
 const WEATHER_CACHE_KEY = "latest:weather";
 const WEATHER_CACHE_MAX_AGE_MS = 15 * 60 * 1000;
+const STATS_24H_CACHE_KEY = "stats:24h";
+const STATS_24H_CACHE_MAX_AGE_MS = 15 * 60 * 1000;
+const PLANT_ANALYSIS_KEY = "plant-analysis:latest";
+const PLANT_ANALYSIS_DAILY_KEY = "plant-analysis:last-daily-date";
+const PLANT_ANALYSIS_DAILY_HOUR_OSLO = 6;
 const WEATHER_LATITUDE = 59.87;
 const WEATHER_LONGITUDE = 10.67;
 const GREENHOUSE_LATITUDE = 59.8667;
 const GREENHOUSE_LONGITUDE = 10.7167;
 const COLD_TEMPERATURE_THRESHOLD = 12;
+
+const DEFAULT_PLANT_ANALYSIS_THEME = {
+  light: {
+    cardBg: "#ffffff",
+    cardBorder: "#d9ded2",
+    titleColor: "#505d41",
+    ingressColor: "#505d41",
+    watchTextColor: "#78716c",
+    thrivingPillBg: "#668b39",
+    watchPillBg: "#d28c31",
+    stressPillBg: "#c44747",
+    pillTextColor: "#ffffff",
+  },
+  dark: {
+    cardBg: "#25341d",
+    cardBorder: "#4e6240",
+    titleColor: "#e8ede3",
+    ingressColor: "#e8ede3",
+    watchTextColor: "#8d9d7e",
+    thrivingPillBg: "#668b39",
+    watchPillBg: "#d28c31",
+    stressPillBg: "#c44747",
+    pillTextColor: "#ffffff",
+  },
+};
+
+const PLANT_TYPE_OPTIONS = ["Blomst", "Urte", "Frukt", "Grønnsak"];
+const SEED_LOCATION_OPTIONS = ["Innendørs", "Utendørs", "Drivhus"];
+const DEFAULT_PLANT_LIBRARY = [
+  { id: "san-marazano-tomater", name: "San Marazano tomater", plantType: "Grønnsak", description: "", image: "" },
+  { id: "cherrytomater", name: "Cherrytomater", plantType: "Grønnsak", description: "", image: "" },
+  { id: "agurk", name: "Agurk", plantType: "Grønnsak", description: "", image: "" },
+  { id: "druer", name: "Druer", plantType: "Frukt", description: "", image: "" },
+  { id: "basilikum", name: "Basilikum", plantType: "Urte", description: "Basilikum er en varmekjær urt som dyrkes for sine aromatiske blader.", image: "" },
+  { id: "kryptimian", name: "Kryptimian", plantType: "Urte", description: "", image: "" },
+  { id: "kiwibaer", name: "Kiwibær", plantType: "Frukt", description: "", image: "" },
+  { id: "hvit-fersken", name: "Hvit fersken", plantType: "Frukt", description: "", image: "" },
+  { id: "carolina-reaper", name: "Carolina Reaper", plantType: "Grønnsak", description: "", image: "" },
+  { id: "gul-habanero", name: "Gul Habanero", plantType: "Grønnsak", description: "", image: "" },
+];
+const DEFAULT_PLANT_SEASONS = {
+  "2026": DEFAULT_PLANT_LIBRARY.map((plant) => ({
+    id: `${plant.id}-2026`,
+    year: 2026,
+    libraryId: plant.id,
+    acquisition: "plant",
+    seedDate: "",
+    seedLocation: "",
+    greenhouseDate: "",
+    purchaseSource: "",
+    harvestDate: "",
+    plantingPlace: "",
+    active: true,
+    note: "",
+  })),
+};
 
 const DEFAULT_SITE_CONFIG = {
   showHeroImage: true,
@@ -139,7 +229,26 @@ const DEFAULT_SITE_CONFIG = {
     door: true,
     fan: true,
     window: true,
+    plantAnalysis: true,
+    charts: true,
   },
+  plants: [
+    { id: "san-marazano-tomater", name: "San Marazano tomater", plantType: "Tomat", plantingPlace: "", active: true, note: "", image: "" },
+    { id: "cherrytomater", name: "Cherrytomater", plantType: "Cherrytomat", plantingPlace: "", active: true, note: "", image: "" },
+    { id: "agurk", name: "Agurk", plantType: "Agurk", plantingPlace: "", active: true, note: "", image: "" },
+    { id: "druer", name: "Druer", plantType: "Drue", plantingPlace: "", active: true, note: "", image: "" },
+    { id: "basilikum", name: "Basilikum", plantType: "Urt", plantingPlace: "", active: true, note: "", image: "" },
+    { id: "kryptimian", name: "Kryptimian", plantType: "Urt", plantingPlace: "", active: true, note: "", image: "" },
+    { id: "kiwibaer", name: "Kiwibær", plantType: "Kiwibær", plantingPlace: "", active: true, note: "", image: "" },
+    { id: "hvit-fersken", name: "Hvit fersken", plantType: "Fersken", plantingPlace: "", active: true, note: "", image: "" },
+    { id: "carolina-reaper", name: "Carolina Reaper", plantType: "Chili", plantingPlace: "", active: true, note: "", image: "" },
+    { id: "gul-habanero", name: "Gul Habanero", plantType: "Chili", plantingPlace: "", active: true, note: "", image: "" },
+  ],
+  activePlantSeasonYear: 2026,
+  plantLibrary: DEFAULT_PLANT_LIBRARY,
+  plantSeasons: DEFAULT_PLANT_SEASONS,
+  plantAnalysisNotes: "",
+  plantAnalysisTheme: DEFAULT_PLANT_ANALYSIS_THEME,
   headerImages: {
     coldNight: {
       label: "Kald natt",
@@ -148,6 +257,9 @@ const DEFAULT_SITE_CONFIG = {
       desktop: "/cold.jpg",
       mobileVideo: "",
       darkModeColor: "#2d3a21",
+      display: { image: "", binary: "", source: "/cold.jpg", zoom: 1, offsetX: 0, offsetY: 0, size: 466, width: 164, height: 466, x: 302, y: 0 },
+      displayTheme: getDefaultDisplayThemeForSlot("coldNight"),
+      plantAnalysisTheme: DEFAULT_PLANT_ANALYSIS_THEME,
     },
     night: {
       label: "Natt",
@@ -156,6 +268,9 @@ const DEFAULT_SITE_CONFIG = {
       desktop: "/drivhus.png",
       mobileVideo: "",
       darkModeColor: "#2d3a21",
+      display: { image: "", binary: "", source: "/drivhus.png", zoom: 1, offsetX: 0, offsetY: 0, size: 466, width: 164, height: 466, x: 302, y: 0 },
+      displayTheme: getDefaultDisplayThemeForSlot("night"),
+      plantAnalysisTheme: DEFAULT_PLANT_ANALYSIS_THEME,
     },
     cold: {
       label: "Kaldt",
@@ -164,6 +279,9 @@ const DEFAULT_SITE_CONFIG = {
       desktop: "/cold.jpg",
       mobileVideo: "",
       darkModeColor: "#2d3a21",
+      display: { image: "", binary: "", source: "/cold.jpg", zoom: 1, offsetX: 0, offsetY: 0, size: 466, width: 164, height: 466, x: 302, y: 0 },
+      displayTheme: getDefaultDisplayThemeForSlot("cold"),
+      plantAnalysisTheme: DEFAULT_PLANT_ANALYSIS_THEME,
     },
     rain: {
       label: "Regn",
@@ -172,6 +290,9 @@ const DEFAULT_SITE_CONFIG = {
       desktop: "/drivhus.png",
       mobileVideo: "",
       darkModeColor: "#2d3a21",
+      display: { image: "", binary: "", source: "/drivhus.png", zoom: 1, offsetX: 0, offsetY: 0, size: 466, width: 164, height: 466, x: 302, y: 0 },
+      displayTheme: getDefaultDisplayThemeForSlot("rain"),
+      plantAnalysisTheme: DEFAULT_PLANT_ANALYSIS_THEME,
     },
     normal: {
       label: "Normalt",
@@ -180,6 +301,9 @@ const DEFAULT_SITE_CONFIG = {
       desktop: "/drivhus.png",
       mobileVideo: "",
       darkModeColor: "#2d3a21",
+      display: { image: "", binary: "", source: "/drivhus.png", zoom: 1, offsetX: 0, offsetY: 0, size: 466, width: 164, height: 466, x: 302, y: 0 },
+      displayTheme: getDefaultDisplayThemeForSlot("normal"),
+      plantAnalysisTheme: DEFAULT_PLANT_ANALYSIS_THEME,
     },
     warm: {
       label: "Varmt",
@@ -188,6 +312,9 @@ const DEFAULT_SITE_CONFIG = {
       desktop: "/warm.jpg",
       mobileVideo: "",
       darkModeColor: "#2d3a21",
+      display: { image: "", binary: "", source: "/warm.jpg", zoom: 1, offsetX: 0, offsetY: 0, size: 466, width: 164, height: 466, x: 302, y: 0 },
+      displayTheme: getDefaultDisplayThemeForSlot("warm"),
+      plantAnalysisTheme: DEFAULT_PLANT_ANALYSIS_THEME,
     },
     hot: {
       label: "Svært varmt",
@@ -196,6 +323,9 @@ const DEFAULT_SITE_CONFIG = {
       desktop: "/hot.jpg",
       mobileVideo: "",
       darkModeColor: "#2d3a21",
+      display: { image: "", binary: "", source: "/hot.jpg", zoom: 1, offsetX: 0, offsetY: 0, size: 466, width: 164, height: 466, x: 302, y: 0 },
+      displayTheme: getDefaultDisplayThemeForSlot("hot"),
+      plantAnalysisTheme: DEFAULT_PLANT_ANALYSIS_THEME,
     },
   },
   branding: {
@@ -361,6 +491,9 @@ function isRainWeatherSymbol(symbolCode) {
 
 const SITE_CONFIG_KEY = "admin/site-config.json";
 const ADMIN_IMAGE_PREFIX = "admin/images/";
+const DISPLAY_LOG_KEY = "display:log";
+const DISPLAY_LOG_PREFIX = "display:log:";
+const DISPLAY_LOG_MAX_ENTRIES = 200;
 const HEADER_VIDEO_MAX_BYTES = 10 * 1024 * 1024;
 const LOGO_FONT_OPTIONS = [
   "Cinzel Decorative",
@@ -763,6 +896,11 @@ function withPublicAssetUrls(config, env) {
     slot.mobile = rewrite(slot.mobile);
     slot.desktop = rewrite(slot.desktop);
     slot.mobileVideo = rewrite(slot.mobileVideo);
+    if (slot.display && typeof slot.display === "object") {
+      slot.display.image = rewrite(slot.display.image);
+      slot.display.binary = rewrite(slot.display.binary);
+      slot.display.source = rewrite(slot.display.source);
+    }
   }
 
   const logoKey = getImageKeyFromReference(next.branding.logo.url);
@@ -772,8 +910,75 @@ function withPublicAssetUrls(config, env) {
   next.branding.favicon.appleTouchIcon = rewrite(next.branding.favicon.appleTouchIcon);
   next.branding.favicon.png192 = rewrite(next.branding.favicon.png192);
   next.branding.favicon.png512 = rewrite(next.branding.favicon.png512);
+  next.plantLibrary = (next.plantLibrary || []).map((plant) => ({
+    ...plant,
+    image: rewrite(plant.image),
+  }));
+  next.plants = (next.plants || []).map((plant) => ({
+    ...plant,
+    image: rewrite(plant.image),
+  }));
 
   return next;
+}
+
+function buildDisplayConfig(config, requestUrl) {
+  const slots = {};
+
+  for (const [key, image] of Object.entries(config.headerImages || {})) {
+    const display = image.display || {};
+    const theme = getDisplaySlotTheme(key, image.displayTheme?.dark);
+    slots[key] = {
+      label: image.label || key,
+      backgroundColor: image.darkModeColor || "#2d3a21",
+      background: parseHexColorNumber(image.darkModeColor, 0x2d3a21),
+      labelColor: parseHexColorNumber(theme.labelColor, 0xffffff),
+      labelOpacity: Math.round((theme.labelOpacity ?? 1) * 255),
+      temperatureValueColor: parseHexColorNumber(theme.temperatureValueColor, 0xd0dec8),
+      humidityValueColor: parseHexColorNumber(theme.humidityValueColor, 0xd3deca),
+      unitColor: parseHexColorNumber(theme.unitColor, 0xb3bea3),
+      symbolColor: parseHexColorNumber(theme.symbolColor, 0x8d9d7e),
+      auxColor: parseHexColorNumber(theme.symbolColor || theme.auxColor, 0x8d9d7e),
+      graphPanelBg: parseHexColorNumber(theme.graphPanelBg, 0x25341d),
+      graphPanelBorder: parseHexColorNumber(theme.graphPanelBorder, 0x4e6240),
+      image: absoluteUrl(display.image || "", requestUrl),
+      binary: absoluteUrl(display.binary || "", requestUrl),
+      format: display.binary ? "rgb565" : "",
+      width: display.width || 164,
+      height: display.height || 466,
+      x: display.x || 302,
+      y: display.y || 0,
+    };
+    addOptionalHexColor(slots[key], "doorIconColor", theme.doorIconColor);
+    addOptionalHexColor(slots[key], "windowIconColor", theme.windowIconColor);
+    addOptionalHexColor(slots[key], "fanIconColor", theme.fanIconColor);
+  }
+
+  return {
+    version: "display-rgb565-164x466-v1",
+    width: 164,
+    height: 466,
+    screenSize: 466,
+    slots,
+  };
+}
+
+function absoluteUrl(value, requestUrl) {
+  if (!value) return "";
+  return new URL(value, requestUrl).toString();
+}
+
+function parseHexColorNumber(value, fallback) {
+  const raw = String(value || "").trim().replace(/^#/, "");
+  if (!/^[0-9a-fA-F]{6}$/.test(raw)) return fallback;
+  return parseInt(raw, 16);
+}
+
+function addOptionalHexColor(target, key, value) {
+  const raw = String(value || "").trim().replace(/^#/, "");
+  if (/^[0-9a-fA-F]{6}$/.test(raw)) {
+    target[key] = parseInt(raw, 16);
+  }
 }
 
 async function getImageMetadata(env, bucket, key, objectInfo = null) {
@@ -783,25 +988,41 @@ async function getImageMetadata(env, bucket, key, objectInfo = null) {
   if (!object) return null;
 
   const customMetadata = object.customMetadata || {};
+  const filename = customMetadata.originalName || key.split("/").pop();
+  const contentType = object.httpMetadata?.contentType || "";
+  const format = customMetadata.format || key.split("/")[3] || "image";
+  const extension = getFilenameExtension(filename || key);
+  const assetType =
+    customMetadata.assetType ||
+    (contentType.startsWith("video/") || extension === "mp4" || format === "mobile-video"
+      ? "header-video"
+      : "header");
 
   return {
     key,
     url: getProxyAssetUrl(key),
-    filename: customMetadata.originalName || key.split("/").pop(),
-    contentType: object.httpMetadata?.contentType || "",
+    filename,
+    contentType,
     size: object.size || null,
     uploadedAt: customMetadata.uploadedAt || object.uploaded?.toISOString?.() || null,
     updatedAt: object.uploaded?.toISOString?.() || null,
     slot: customMetadata.slot || key.split("/")[2] || "general",
-    format: customMetadata.format || key.split("/")[3] || "image",
-    assetType: customMetadata.assetType || "header",
+    format,
+    assetType,
   };
 }
 
 function normalizeSiteConfig(config) {
   const input = config && typeof config === "object" ? config : {};
   const visibleStatuses = input.visibleStatuses && typeof input.visibleStatuses === "object" ? input.visibleStatuses : {};
+  const plants = Array.isArray(input.plants) ? input.plants : DEFAULT_SITE_CONFIG.plants;
+  const activePlantSeasonYear = normalizePlantYear(input.activePlantSeasonYear, 2026);
+  const plantLibrary = normalizePlantLibrary(input.plantLibrary, plants);
+  const plantSeasons = normalizePlantSeasons(input.plantSeasons, plantLibrary, plants, activePlantSeasonYear);
+  const activeSeasonPlants = derivePlantsFromSeason(plantLibrary, plantSeasons[String(activePlantSeasonYear)] || []);
+  const plantAnalysisTheme = input.plantAnalysisTheme && typeof input.plantAnalysisTheme === "object" ? input.plantAnalysisTheme : {};
   const headerImages = input.headerImages && typeof input.headerImages === "object" ? input.headerImages : {};
+  const legacyDisplayThemeConfig = input.displayTheme && typeof input.displayTheme === "object" ? input.displayTheme : null;
   const branding = input.branding && typeof input.branding === "object" ? input.branding : {};
   const logo = branding.logo && typeof branding.logo === "object" ? branding.logo : {};
   const logoText = branding.logoText && typeof branding.logoText === "object" ? branding.logoText : {};
@@ -817,7 +1038,15 @@ function normalizeSiteConfig(config) {
       door: typeof visibleStatuses.door === "boolean" ? visibleStatuses.door : DEFAULT_SITE_CONFIG.visibleStatuses.door,
       fan: typeof visibleStatuses.fan === "boolean" ? visibleStatuses.fan : DEFAULT_SITE_CONFIG.visibleStatuses.fan,
       window: typeof visibleStatuses.window === "boolean" ? visibleStatuses.window : DEFAULT_SITE_CONFIG.visibleStatuses.window,
+      plantAnalysis: typeof visibleStatuses.plantAnalysis === "boolean" ? visibleStatuses.plantAnalysis : DEFAULT_SITE_CONFIG.visibleStatuses.plantAnalysis,
+      charts: typeof visibleStatuses.charts === "boolean" ? visibleStatuses.charts : DEFAULT_SITE_CONFIG.visibleStatuses.charts,
     },
+    plants: activeSeasonPlants.length ? activeSeasonPlants : normalizePlants(plants),
+    activePlantSeasonYear,
+    plantLibrary,
+    plantSeasons,
+    plantAnalysisNotes: normalizeText(input.plantAnalysisNotes, DEFAULT_SITE_CONFIG.plantAnalysisNotes, 1200),
+    plantAnalysisTheme: normalizePlantAnalysisTheme(plantAnalysisTheme),
     headerImages: {},
     branding: {
       siteName,
@@ -860,10 +1089,236 @@ function normalizeSiteConfig(config) {
       desktop: normalizeImageReference(image.desktop, defaultImage.desktop),
       mobileVideo: normalizeImageReference(image.mobileVideo, defaultImage.mobileVideo),
       darkModeColor: normalizeHexColor(image.darkModeColor, defaultImage.darkModeColor),
+      display: normalizeDisplayImageConfig(image.display, defaultImage.display),
+      displayTheme: normalizeDisplayThemeConfig(image.displayTheme || legacyDisplayThemeConfig, defaultImage.displayTheme),
+      plantAnalysisTheme: normalizePlantAnalysisTheme(image.plantAnalysisTheme || plantAnalysisTheme || defaultImage.plantAnalysisTheme),
     };
   }
 
   return normalized;
+}
+
+function normalizePlantYear(value, fallback) {
+  const year = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(year) ? Math.min(Math.max(Math.round(year), 2020), 2100) : fallback;
+}
+
+function normalizePlantType(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (raw === "blomst") return "Blomst";
+  if (raw === "urte" || raw === "urt") return "Urte";
+  if (raw === "frukt" || raw.includes("drue") || raw.includes("fersken") || raw.includes("kiwi")) return "Frukt";
+  return "Grønnsak";
+}
+
+function normalizePlantLibrary(library, legacyPlants) {
+  const input = Array.isArray(library) && library.length ? library : legacyPlants;
+  const seen = new Set();
+  const normalized = (Array.isArray(input) ? input : [])
+    .map((plant, index) => {
+      const item = plant && typeof plant === "object" ? plant : {};
+      const name = normalizeText(item.name, "", 80);
+      if (!name) return null;
+      let id = normalizeText(item.id, slugifyPlantName(name) || `plante-${index + 1}`, 80);
+      if (seen.has(id)) id = `${id}-${index + 1}`;
+      seen.add(id);
+      return {
+        id,
+        name,
+        plantType: normalizePlantType(item.plantType),
+        description: normalizeText(item.description, "", 500),
+        image: normalizeImageReference(item.image, ""),
+      };
+    })
+    .filter(Boolean);
+
+  return normalized.length ? normalized : DEFAULT_PLANT_LIBRARY;
+}
+
+function normalizePlantSeasons(seasons, library, legacyPlants, activeYear) {
+  const input = seasons && typeof seasons === "object" ? seasons : {};
+  const normalized = {};
+
+  for (const [yearKey, entries] of Object.entries(input)) {
+    const year = normalizePlantYear(yearKey, activeYear);
+    normalized[String(year)] = (Array.isArray(entries) ? entries : [])
+      .map((entry, index) => normalizePlantSeasonEntry(entry, library, year, index))
+      .filter(Boolean);
+  }
+
+  if (Object.keys(normalized).length === 0) {
+    const legacy = normalizePlants(legacyPlants);
+    normalized[String(activeYear)] = legacy.map((plant, index) => ({
+      id: `${plant.id}-${activeYear}-${index}`,
+      year: activeYear,
+      libraryId: plant.id,
+      acquisition: "plant",
+      seedDate: "",
+      seedLocation: "",
+      greenhouseDate: "",
+      purchaseSource: "",
+      harvestDate: "",
+      plantingPlace: plant.plantingPlace,
+      active: plant.active,
+      note: plant.note,
+    }));
+  }
+
+  for (const key of Object.keys(normalized)) {
+    normalized[key] = normalized[key].filter((entry) => library.some((plant) => plant.id === entry.libraryId));
+  }
+
+  return normalized;
+}
+
+function normalizePlantSeasonEntry(entry, library, year, index) {
+  const item = entry && typeof entry === "object" ? entry : {};
+  const fallbackLibraryId = library[index]?.id || library[0]?.id || "";
+  const libraryId = normalizeText(item.libraryId || item.id, fallbackLibraryId, 80);
+  if (!libraryId) return null;
+  return {
+    id: normalizeText(item.id, `${libraryId}-${year}-${index}`, 100),
+    year,
+    libraryId,
+    acquisition: item.acquisition === "seed" ? "seed" : "plant",
+    seedDate: normalizeDateOnly(item.seedDate),
+    seedLocation: SEED_LOCATION_OPTIONS.includes(item.seedLocation) ? item.seedLocation : "",
+    greenhouseDate: normalizeDateOnly(item.greenhouseDate),
+    purchaseSource: normalizeText(item.purchaseSource, "", 160),
+    harvestDate: normalizeDateOnly(item.harvestDate),
+    plantingPlace: normalizeText(item.plantingPlace, "", 120),
+    active: typeof item.active === "boolean" ? item.active : true,
+    note: normalizeText(item.note, "", 360),
+  };
+}
+
+function normalizeDateOnly(value) {
+  const raw = String(value || "").trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : "";
+}
+
+function derivePlantsFromSeason(library, season) {
+  const byId = new Map(library.map((plant) => [plant.id, plant]));
+  return season.map((entry) => {
+    const plant = byId.get(entry.libraryId);
+    if (!plant) return null;
+    return {
+      id: entry.id,
+      name: plant.name,
+      plantType: plant.plantType,
+      plantingPlace: entry.plantingPlace,
+      active: entry.active,
+      note: entry.note,
+      image: plant.image,
+    };
+  }).filter(Boolean);
+}
+
+function normalizePlants(plants) {
+  const input = Array.isArray(plants) ? plants : [];
+  const normalized = input
+    .map((plant, index) => {
+      const item = plant && typeof plant === "object" ? plant : {};
+      const name = normalizeText(item.name, "", 80);
+      if (!name) return null;
+      return {
+        id: normalizeText(item.id, slugifyPlantName(name) || `plante-${index + 1}`, 80),
+        name,
+        plantType: normalizeText(item.plantType, "", 80),
+        plantingPlace: normalizeText(item.plantingPlace, "", 80),
+        active: typeof item.active === "boolean" ? item.active : true,
+        note: normalizeText(item.note, "", 240),
+        image: normalizeImageReference(item.image, ""),
+      };
+    })
+    .filter(Boolean);
+
+  return normalized.length ? normalized : DEFAULT_SITE_CONFIG.plants;
+}
+
+function normalizePlantAnalysisTheme(theme) {
+  const input = theme && typeof theme === "object" ? theme : {};
+  return {
+    light: normalizePlantAnalysisThemeMode(input.light, DEFAULT_SITE_CONFIG.plantAnalysisTheme.light),
+    dark: normalizePlantAnalysisThemeMode(input.dark, DEFAULT_SITE_CONFIG.plantAnalysisTheme.dark),
+  };
+}
+
+function normalizePlantAnalysisThemeMode(value, fallback) {
+  const input = value && typeof value === "object" ? value : {};
+  return {
+    cardBg: normalizeHexColor(input.cardBg, fallback.cardBg),
+    cardBorder: normalizeHexColor(input.cardBorder, fallback.cardBorder),
+    titleColor: normalizeHexColor(input.titleColor, fallback.titleColor),
+    ingressColor: normalizeHexColor(input.ingressColor, fallback.ingressColor),
+    watchTextColor: normalizeHexColor(input.watchTextColor, fallback.watchTextColor),
+    thrivingPillBg: normalizeHexColor(input.thrivingPillBg, fallback.thrivingPillBg),
+    watchPillBg: normalizeHexColor(input.watchPillBg, fallback.watchPillBg),
+    stressPillBg: normalizeHexColor(input.stressPillBg, fallback.stressPillBg),
+    pillTextColor: normalizeHexColor(input.pillTextColor, fallback.pillTextColor),
+  };
+}
+
+function slugifyPlantName(name) {
+  return String(name || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function normalizeDisplayImageConfig(value, fallback) {
+  const input = value && typeof value === "object" ? value : {};
+  return {
+    image: normalizeImageReference(input.image, fallback.image),
+    binary: normalizeImageReference(input.binary, fallback.binary),
+    source: normalizeImageReference(input.source, fallback.source),
+    zoom: normalizeFloat(input.zoom, fallback.zoom, 0.6, 3),
+    offsetX: normalizeNumber(input.offsetX, fallback.offsetX, -2000, 2000),
+    offsetY: normalizeNumber(input.offsetY, fallback.offsetY, -2000, 2000),
+    size: 466,
+    width: 164,
+    height: 466,
+    x: 302,
+    y: 0,
+  };
+}
+
+function normalizeDisplayThemeConfig(value, fallback) {
+  const input = value && typeof value === "object" ? value : {};
+  return {
+    dark: normalizeDisplayThemeModeConfig(input.dark, fallback.dark),
+    light: normalizeDisplayThemeModeConfig(input.light, fallback.light),
+  };
+}
+
+function normalizeDisplayThemeModeConfig(value, fallback) {
+  const input = value && typeof value === "object" ? value : {};
+  return {
+    labelColor: normalizeHexColor(input.labelColor, fallback.labelColor),
+    labelOpacity: normalizeFloat(input.labelOpacity, fallback.labelOpacity, 0, 1),
+    unitColor: normalizeHexColor(input.unitColor, fallback.unitColor),
+    defaultValueColor: normalizeHexColor(input.defaultValueColor, fallback.defaultValueColor),
+    temperatureValueColor: normalizeHexColor(input.temperatureValueColor, fallback.temperatureValueColor),
+    normalTemperatureColor: normalizeHexColor(input.normalTemperatureColor, fallback.normalTemperatureColor),
+    coldTemperatureColor: normalizeHexColor(input.coldTemperatureColor, fallback.coldTemperatureColor),
+    warmTemperatureColor: normalizeHexColor(input.warmTemperatureColor, fallback.warmTemperatureColor),
+    hotTemperatureColor: normalizeHexColor(input.hotTemperatureColor, fallback.hotTemperatureColor),
+    coldPulseColor: normalizeHexColor(input.coldPulseColor, fallback.coldPulseColor),
+    hotPulseColor: normalizeHexColor(input.hotPulseColor, fallback.hotPulseColor),
+    warningPulseColor: normalizeHexColor(input.warningPulseColor, fallback.warningPulseColor),
+    coldTickerColor: normalizeHexColor(input.coldTickerColor, fallback.coldTickerColor),
+    hotTickerColor: normalizeHexColor(input.hotTickerColor, fallback.hotTickerColor),
+    mutedColor: normalizeHexColor(input.mutedColor, fallback.mutedColor),
+    symbolColor: normalizeHexColor(input.symbolColor, fallback.symbolColor),
+    graphPanelBg: normalizeHexColor(input.graphPanelBg, fallback.graphPanelBg),
+    graphPanelBorder: normalizeHexColor(input.graphPanelBorder, fallback.graphPanelBorder),
+    logoColor: normalizeHexColor(input.logoColor, fallback.logoColor),
+    doorIconColor: normalizeOptionalHexColor(input.doorIconColor, fallback.doorIconColor),
+    windowIconColor: normalizeOptionalHexColor(input.windowIconColor, fallback.windowIconColor),
+    fanIconColor: normalizeOptionalHexColor(input.fanIconColor, fallback.fanIconColor),
+  };
 }
 
 function normalizeImageReference(value, fallback) {
@@ -879,15 +1334,39 @@ function normalizeText(value, fallback, maxLength) {
   return raw ? raw.slice(0, maxLength) : fallback;
 }
 
+function normalizeSummaryText(value, fallback, maxLength) {
+  const raw = String(value || "").replace(/\s+/g, " ").trim();
+  if (!raw) return fallback;
+  if (raw.length <= maxLength) return raw;
+
+  const clipped = raw.slice(0, maxLength);
+  const sentenceEnd = Math.max(clipped.lastIndexOf(". "), clipped.lastIndexOf("! "), clipped.lastIndexOf("? "));
+  if (sentenceEnd > 120) return clipped.slice(0, sentenceEnd + 1).trim();
+  const lastSpace = clipped.lastIndexOf(" ");
+  return `${clipped.slice(0, lastSpace > 120 ? lastSpace : maxLength).trim()}...`;
+}
+
 function normalizeHexColor(value, fallback) {
   const raw = String(value || "").trim();
   return /^#[0-9a-fA-F]{6}$/.test(raw) ? raw.toLowerCase() : fallback;
+}
+
+function normalizeOptionalHexColor(value, fallback) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return fallback || "";
+  return /^#[0-9a-fA-F]{6}$/.test(raw) ? raw.toLowerCase() : fallback || "";
 }
 
 function normalizeNumber(value, fallback, min, max) {
   const number = Number(value);
   if (!Number.isFinite(number)) return fallback;
   return Math.min(Math.max(Math.round(number), min), max);
+}
+
+function normalizeFloat(value, fallback, min, max) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.min(Math.max(number, min), max);
 }
 
 function isAllowedImageKey(key) {
@@ -897,7 +1376,14 @@ function isAllowedImageKey(key) {
 function isAllowedUploadType(assetType, contentType, format) {
   if (assetType === "logo") return contentType === "image/svg+xml";
   if (assetType === "favicon") return contentType === "image/svg+xml" || contentType === "image/png";
+  if (assetType === "plant-image") return ["image/jpeg", "image/png"].includes(contentType) && format === "square";
   if (assetType === "header-video") return contentType === "video/mp4" && format === "mobile-video";
+  if (assetType === "display-image") {
+    return (
+      (contentType === "image/png" && ["display-164x466", "round-466"].includes(format)) ||
+      (contentType === "application/octet-stream" && format === "display-rgb565-164x466")
+    );
+  }
   return ["image/jpeg", "image/png"].includes(contentType) && ["desktop", "mobile", "image"].includes(format);
 }
 
@@ -905,6 +1391,7 @@ function getUploadExtension(contentType) {
   if (contentType === "image/svg+xml") return "svg";
   if (contentType === "image/png") return "png";
   if (contentType === "video/mp4") return "mp4";
+  if (contentType === "application/octet-stream") return "bin";
   return "jpg";
 }
 
@@ -973,7 +1460,7 @@ async function handleCleanupKvHistory(request, env, corsHeaders) {
   );
 }
 
-async function handleIngest(request, env, corsHeaders) {
+async function handleIngest(request, env, corsHeaders, ctx) {
   const authHeader = request.headers.get("Authorization") || "";
   const expected = `Bearer ${env.INGEST_TOKEN}`;
 
@@ -1072,6 +1559,8 @@ async function handleIngest(request, env, corsHeaders) {
         },
       });
     }
+
+    ctx?.waitUntil(refreshStats24hCache(env));
   }
 
   const latest = await getLatest(env);
@@ -1086,6 +1575,46 @@ async function handleIngest(request, env, corsHeaders) {
     corsHeaders
   );
 }
+
+async function handleGetDisplayLog(env, corsHeaders) {
+  const page = await env.GREENHOUSE_DATA.list({
+    prefix: DISPLAY_LOG_PREFIX,
+    limit: 1000,
+  });
+  const entries = await Promise.all(page.keys.map((key) => env.GREENHOUSE_DATA.get(key.name, "json")));
+  const legacyLog = (await env.GREENHOUSE_DATA.get(DISPLAY_LOG_KEY, "json")) || [];
+  const data = [...(Array.isArray(legacyLog) ? legacyLog : []), ...entries.filter(Boolean)]
+    .sort((a, b) => String(a.timestamp || "").localeCompare(String(b.timestamp || "")))
+    .slice(-DISPLAY_LOG_MAX_ENTRIES);
+
+  return jsonResponse({ ok: true, data }, 200, corsHeaders);
+}
+
+async function handlePostDisplayLog(request, env, corsHeaders) {
+  const contentType = request.headers.get("Content-Type") || "";
+  if (!contentType.includes("application/json")) {
+    return jsonResponse({ ok: false, error: "Content-Type must be application/json" }, 400, corsHeaders);
+  }
+
+  const body = await request.json().catch(() => null);
+  const message = String(body?.message || "").replace(/\s+/g, " ").trim().slice(0, 240);
+  if (!message) {
+    return jsonResponse({ ok: false, error: "Missing message" }, 400, corsHeaders);
+  }
+
+  const entry = {
+    timestamp: new Date().toISOString(),
+    device: String(body?.device || "esp32-display").slice(0, 64),
+    message,
+  };
+  const random = crypto.randomUUID();
+  await env.GREENHOUSE_DATA.put(`${DISPLAY_LOG_PREFIX}${entry.timestamp}:${random}`, JSON.stringify(entry), {
+    expirationTtl: 60 * 60 * 24 * 7,
+  });
+
+  return jsonResponse({ ok: true }, 200, corsHeaders);
+}
+
 async function handleFanCommand(env, state, corsHeaders) {
   const webhookUrl = await getEnvSecretValue(env, state === "on" ? "fan_on" : "fan_off");
 
@@ -1145,11 +1674,12 @@ async function getEnvSecretValue(env, key) {
 async function getCachedWeather(env, ctx) {
   const cached = await env.GREENHOUSE_DATA.get(WEATHER_CACHE_KEY, "json");
   const cachedAt = cached?.cachedAt ? new Date(cached.cachedAt).getTime() : 0;
-  const isFresh = cachedAt && Date.now() - cachedAt < WEATHER_CACHE_MAX_AGE_MS;
+  const hasForecast = Array.isArray(cached?.forecastToday);
+  const isFresh = cachedAt && hasForecast && Date.now() - cachedAt < WEATHER_CACHE_MAX_AGE_MS;
 
   if (cached && isFresh) return cached;
 
-  if (cached) {
+  if (cached && hasForecast) {
     ctx?.waitUntil?.(refreshWeatherCache(env).catch((error) => console.error("Failed to refresh weather cache", error)));
     return cached;
   }
@@ -1191,6 +1721,7 @@ async function fetchWeatherSnapshot() {
 
   const updatedAtString = yrJson.properties?.meta?.updated_at;
   const updatedAt = normalizeIsoDate(updatedAtString) ?? new Date().toISOString();
+  const timeseries = Array.isArray(yrJson.properties?.timeseries) ? yrJson.properties.timeseries : [];
   const rawSymbolCode =
     current.data?.next_1_hours?.summary?.symbol_code ||
     current.data?.next_6_hours?.summary?.symbol_code ||
@@ -1237,7 +1768,41 @@ async function fetchWeatherSnapshot() {
     description,
     updatedAt,
     uvIndex,
+    forecastToday: compactWeatherForecastToday(timeseries),
   };
+}
+
+function compactWeatherForecastToday(timeseries) {
+  const now = new Date();
+  const today = getOsloDateKey(now);
+  const entries = [];
+
+  for (const item of timeseries) {
+    const time = new Date(item?.time);
+    if (Number.isNaN(time.getTime()) || time < now || getOsloDateKey(time) !== today) continue;
+
+    const details = item.data?.instant?.details || {};
+    const rawSymbol =
+      item.data?.next_1_hours?.summary?.symbol_code ||
+      item.data?.next_6_hours?.summary?.symbol_code ||
+      "";
+    const baseSymbol = rawSymbol.split("_polarlight")[0].split("_polartwilight")[0];
+    const precipitation =
+      numberOrNull(item.data?.next_1_hours?.details?.precipitation_amount) ??
+      numberOrNull(item.data?.next_6_hours?.details?.precipitation_amount);
+
+    entries.push({
+      time: formatTimeLabel(time),
+      outdoorTemperature: numberOrNull(details.air_temperature),
+      precipitation,
+      symbolCode: baseSymbol || rawSymbol,
+      description: WEATHER_DESCRIPTIONS[baseSymbol] || WEATHER_DESCRIPTIONS[rawSymbol] || baseSymbol || rawSymbol || "ukjent",
+    });
+
+    if (entries.length >= 10) break;
+  }
+
+  return entries;
 }
 
 function normalizeIsoDate(value) {
@@ -1333,6 +1898,440 @@ async function getStats24h(env) {
     temperature: getNumericStats(temperatureEntries),
     humidity: getNumericStats(humidityEntries),
   };
+}
+
+async function getCachedStats24h(env, ctx) {
+  const cached = await env.GREENHOUSE_DATA.get(STATS_24H_CACHE_KEY, "json");
+  if (isFreshCache(cached, STATS_24H_CACHE_MAX_AGE_MS)) {
+    return cached.data;
+  }
+
+  if (cached?.data) {
+    ctx?.waitUntil(refreshStats24hCache(env));
+    return cached.data;
+  }
+
+  return refreshStats24hCache(env);
+}
+
+async function refreshStats24hCache(env) {
+  const data = await getStats24h(env);
+  await env.GREENHOUSE_DATA.put(
+    STATS_24H_CACHE_KEY,
+    JSON.stringify({
+      updatedAt: new Date().toISOString(),
+      data,
+    }),
+    { expirationTtl: 60 * 60 }
+  );
+  return data;
+}
+
+function isFreshCache(cached, maxAgeMs) {
+  if (!cached?.updatedAt) return false;
+  const updatedAt = new Date(cached.updatedAt).getTime();
+  return Number.isFinite(updatedAt) && Date.now() - updatedAt < maxAgeMs;
+}
+
+async function getDisplayStats(env) {
+  const now = new Date();
+  const since = new Date(now.getTime() - 12 * 60 * 60 * 1000);
+
+  const [temperatureEntries, humidityEntries] = await Promise.all([
+    listSensorHistoryEntries(env, "temperature", since),
+    listSensorHistoryEntries(env, "humidity", since),
+  ]);
+
+  return {
+    hours: 12,
+    intervalMinutes: 30,
+    temperature: aggregateDisplaySeries(temperatureEntries, since, now, 30),
+    humidity: aggregateDisplaySeries(humidityEntries, since, now, 30),
+  };
+}
+
+async function handlePlantAnalysis(env, corsHeaders) {
+  try {
+    const analysis = await generatePlantAnalysis(env);
+    await env.GREENHOUSE_DATA.put(PLANT_ANALYSIS_KEY, JSON.stringify(analysis));
+    return jsonResponse({ ok: true, data: analysis }, 200, corsHeaders);
+  } catch (error) {
+    return jsonResponse(
+      { ok: false, error: error instanceof Error ? error.message : "Kunne ikke lage planteanalyse." },
+      error?.statusCode || 502,
+      corsHeaders
+    );
+  }
+}
+
+async function handleGetPlantAnalysis(env, corsHeaders) {
+  const analysis = await env.GREENHOUSE_DATA.get(PLANT_ANALYSIS_KEY, "json");
+  if (!analysis) {
+    return jsonResponse({ ok: true, data: null }, 200, corsHeaders);
+  }
+
+  return jsonResponse({ ok: true, data: analysis }, 200, corsHeaders);
+}
+
+async function refreshDailyPlantAnalysisIfDue(env) {
+  const now = new Date();
+  const osloParts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Oslo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(now);
+  const parts = Object.fromEntries(osloParts.map((part) => [part.type, part.value]));
+  const today = `${parts.year}-${parts.month}-${parts.day}`;
+  const hour = Number(parts.hour);
+
+  if (hour !== PLANT_ANALYSIS_DAILY_HOUR_OSLO) return;
+
+  const lastRun = await env.GREENHOUSE_DATA.get(PLANT_ANALYSIS_DAILY_KEY);
+  if (lastRun === today) return;
+
+  try {
+    const analysis = await generatePlantAnalysis(env);
+    await Promise.all([
+      env.GREENHOUSE_DATA.put(PLANT_ANALYSIS_KEY, JSON.stringify(analysis)),
+      env.GREENHOUSE_DATA.put(PLANT_ANALYSIS_DAILY_KEY, today),
+    ]);
+  } catch (error) {
+    console.error("Failed to refresh daily plant analysis", error);
+  }
+}
+
+async function generatePlantAnalysis(env) {
+  if (!env.OPENAI_API_KEY) {
+    const error = new Error("OPENAI_API_KEY mangler i Cloudflare Worker secrets.");
+    error.statusCode = 503;
+    throw error;
+  }
+
+  const config = await getSiteConfig(env);
+  const now = new Date();
+  const activeYear = config.activePlantSeasonYear || 2026;
+  const libraryById = new Map((config.plantLibrary || []).map((plant) => [plant.id, plant]));
+  const seasonEntries = (config.plantSeasons?.[String(activeYear)] || []);
+  const plants = seasonEntries
+    .filter((entry) => entry.active && !isPlantSeasonFinished(entry, now))
+    .map((entry) => {
+      const library = libraryById.get(entry.libraryId);
+      if (!library) return null;
+      const history = Object.entries(config.plantSeasons || {})
+        .flatMap(([year, entries]) => (entries || [])
+          .filter((season) => season.libraryId === entry.libraryId && Number(year) !== activeYear)
+          .map((season) => ({ year: Number(year), ...season })));
+      return { ...entry, ...library, seasonId: entry.id, libraryId: library.id, history: compactPlantHistory(history) };
+    })
+    .filter(Boolean);
+
+  if (plants.length === 0) {
+    const error = new Error("Ingen aktive planter er satt opp i admin.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const since = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const [latest, stats24h, weather, temperatureEntries, humidityEntries] = await Promise.all([
+    getLatest(env),
+    getCachedStats24h(env),
+    getCachedWeather(env, null).catch(() => null),
+    listSensorHistoryEntries(env, "temperature", since),
+    listSensorHistoryEntries(env, "humidity", since),
+  ]);
+
+  const payload = {
+    gen: now.toISOString(),
+    month: getNorwegianMonth(now),
+    season: getNorwegianSeason(now),
+    year: activeYear,
+    gh: {
+      notes: config.plantAnalysisNotes,
+      rain: latest.rainToday,
+      t24: stats24h.temperature,
+      h24: stats24h.humidity,
+      t: compactSensorEntries(temperatureEntries),
+      h: compactSensorEntries(humidityEntries),
+      weather: weather
+        ? {
+            d: weather.description,
+            s: weather.symbolCode,
+            temp: weather.temperature,
+            uv: weather.uvIndex,
+            fc: compactWeatherForecast(weather.forecastToday || []),
+          }
+        : null,
+    },
+    plants: plants.map((plant) => ({
+      id: plant.seasonId,
+      lib: plant.libraryId,
+      name: plant.name,
+      type: plant.plantType,
+      place: plant.plantingPlace,
+      note: plant.note,
+      acq: plant.acquisition,
+      seed: plant.seedDate,
+      seedLoc: plant.seedLocation,
+      ghDate: plant.greenhouseDate,
+      bought: plant.purchaseSource,
+      done: plant.harvestDate,
+      hist: plant.history,
+    })),
+  };
+
+  const response = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: env.OPENAI_MODEL || "gpt-5.5",
+      reasoning: { effort: "low" },
+      text: { format: { type: "json_object" } },
+      instructions:
+        "Du er en nøktern norsk gartner og veksthusrådgiver. Lag praktiske plantevurderinger basert på temperatur og luftfuktighet siste 24 timer, værprognose for resten av dagen, måned og årstid. Ikke gi bastante diagnoser. Skriv kort, faglig og forståelig. Returner bare gyldig JSON.",
+      input:
+        "Returner JSON nøyaktig på denne formen: {\"generatedAt\":\"ISO\",\"month\":\"juli\",\"season\":\"sommer\",\"contextSummary\":\"maks to korte setninger\",\"items\":[{\"id\":\"samme id som input\",\"libraryId\":\"samme libraryId som input\",\"name\":\"samme name som input\",\"status\":\"trives|følg med|stress\",\"summary\":\"én konkret setning\",\"watch\":\"én konkret setning\",\"detail\":\"én ekstra konkret setning\",\"forecast\":\"valgfri prognose\"}]}. " +
+        "Det må være ett item for hver inputplante, og id må være helt identisk med inputplantens id. Ikke bruk generiske fallback-tekster. contextSummary skal analysere siste døgn og gi praktisk dagsråd for i dag, ikke live-status. Bruk generell driftstekst, plantetype, årets sesongdata og kompakt historikk når det er relevant. " +
+        "Forecast skal tilpasses plantetype: Grønnsak=Antatt høsteklar, Frukt=Forventet modning, Urte=Kan begynne å høstes, Blomst=Forventet blomstring. Utelat forecast hvis grunnlaget er for tynt. Feltmap: lib=libraryId,type=plantType,place=plantingPlace,acq=acquisition,gh=greenhouse,t/h=sensorprøver. Data:\n" +
+        JSON.stringify(payload),
+      max_output_tokens: 3200,
+    }),
+  });
+
+  const result = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(result?.error?.message || `OpenAI API svarte ${response.status}`);
+  }
+
+  const text = extractOpenAIText(result);
+  let parsed;
+  try {
+    parsed = parseJsonObjectFromOpenAIText(text);
+  } catch {
+    throw new Error("OpenAI svarte ikke med gyldig JSON.");
+  }
+
+  return normalizePlantAnalysis(parsed, payload, plants, result?.usage);
+}
+
+function isPlantSeasonFinished(entry, now = new Date()) {
+  const raw = String(entry?.harvestDate || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return false;
+  const finishedAt = new Date(`${raw}T23:59:59`);
+  return Number.isFinite(finishedAt.getTime()) && finishedAt <= now;
+}
+
+function extractOpenAIText(result) {
+  if (typeof result?.output_text === "string") return result.output_text;
+  const chunks = [];
+  for (const item of result?.output || []) {
+    for (const content of item?.content || []) {
+      if (content?.type === "output_text" && typeof content.text === "string") {
+        chunks.push(content.text);
+      }
+    }
+  }
+  return chunks.join("\n");
+}
+
+function parseJsonObjectFromOpenAIText(text) {
+  const raw = String(text || "").trim();
+  const withoutFence = raw
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+
+  try {
+    return JSON.parse(withoutFence);
+  } catch {
+    const start = withoutFence.indexOf("{");
+    const end = withoutFence.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+      return JSON.parse(withoutFence.slice(start, end + 1));
+    }
+    throw new Error("No JSON object found");
+  }
+}
+
+function normalizePlantAnalysis(parsed, payload, plants, usage) {
+  const allowedStatuses = new Set(["trives", "følg med", "stress"]);
+  const items = Array.isArray(parsed?.items)
+    ? parsed.items
+    : Array.isArray(parsed?.plants)
+      ? parsed.plants
+      : Array.isArray(parsed?.analysis)
+        ? parsed.analysis
+        : Array.isArray(parsed?.plantAnalysis)
+          ? parsed.plantAnalysis
+          : [];
+  const normalizeKey = (value) => String(value || "").trim().toLowerCase();
+  const byId = new Map(items.map((item) => [normalizeKey(item?.id), item]).filter(([key]) => key));
+  const byLibraryId = new Map(items.map((item) => [normalizeKey(item?.libraryId), item]).filter(([key]) => key));
+  const byName = new Map(items.map((item) => [normalizeKey(item?.name || item?.plantName), item]).filter(([key]) => key));
+  const pickText = (item, keys, fallback, maxLength) => {
+    for (const key of keys) {
+      const value = item?.[key];
+      if (typeof value === "string" && value.trim()) return normalizeText(value, fallback, maxLength);
+    }
+    return normalizeText("", fallback, maxLength);
+  };
+  const normalizeStatus = (value) => {
+    const raw = normalizeKey(value);
+    if (allowedStatuses.has(raw)) return raw;
+    if (["ok", "god", "bra", "thriving", "trives godt"].includes(raw)) return "trives";
+    if (["stress", "kritisk", "alvorlig", "problem"].includes(raw)) return "stress";
+    return "følg med";
+  };
+  const fallbackStatus = () => {
+    const maxTemp = numberOrNull(payload?.gh?.t24?.max);
+    const minTemp = numberOrNull(payload?.gh?.t24?.min);
+    const maxHumidity = numberOrNull(payload?.gh?.h24?.max);
+    if ((typeof maxTemp === "number" && maxTemp > 30) || (typeof minTemp === "number" && minTemp < 12) || (typeof maxHumidity === "number" && maxHumidity > 82)) {
+      return "følg med";
+    }
+    return "trives";
+  };
+  const fallbackSummary = (plant) => {
+    const type = plant.plantType || "plante";
+    if (type === "Urte") return `${plant.name} har gode vekstforhold når varme, lys og jevn fukt holdes stabile gjennom dagen.`;
+    if (type === "Blomst") return `${plant.name} vurderes mot blomstring og etablering, med særlig vekt på jevn fukt og temperatur uten store sprang.`;
+    if (type === "Frukt") return `${plant.name} vurderes mot videre utvikling og modning, der stabil varme og god lufting er viktigst nå.`;
+    return `${plant.name} har et brukbart vekstgrunnlag, men temperaturtopper og vannbalanse bør følges tett.`;
+  };
+  const fallbackWatch = (plant) => {
+    if (plant.acquisition === "seed" && plant.seedDate) return "Følg ekstra med på rotsonen og jevn vanning siden planten er registrert fra frø denne sesongen.";
+    if (plant.plantingPlace) return `Sjekk fuktigheten jevnlig i ${plant.plantingPlace.toLowerCase()}, særlig etter varme perioder.`;
+    return "Hold luftingen stabil og unngå raske skift mellom tørr og våt rotsonen.";
+  };
+  const fallbackForecast = (plant) => {
+    if (plant.plantType === "Urte") return "Kan begynne å høstes: når planten har tett nyvekst og tåler lett klipping.";
+    if (plant.plantType === "Blomst") return "Forventet blomstring: vurderes etter videre etablering og temperatur de neste ukene.";
+    if (plant.plantType === "Frukt") return "Forventet modning: avhenger av videre varme og lys gjennom resten av sesongen.";
+    if (plant.plantType === "Grønnsak") return "Antatt høsteklar: vurderes etter videre vekst og stabil sommervarme.";
+    return "";
+  };
+
+  return {
+    generatedAt: normalizeIsoDate(parsed?.generatedAt) || payload.gen,
+    month: normalizeText(parsed?.month, payload.month, 24),
+    season: normalizeText(parsed?.season, payload.season, 24),
+    contextSummary: normalizeSummaryText(parsed?.contextSummary, "Basert på siste 24 timer i drivhuset.", 360),
+    usage: usage && typeof usage === "object"
+      ? {
+          inputTokens: numberOrNull(usage.input_tokens),
+          outputTokens: numberOrNull(usage.output_tokens),
+          totalTokens: numberOrNull(usage.total_tokens),
+        }
+      : undefined,
+    items: plants.map((plant) => {
+      const item =
+        byId.get(normalizeKey(plant.seasonId || plant.id)) ||
+        byLibraryId.get(normalizeKey(plant.libraryId)) ||
+        byName.get(normalizeKey(plant.name)) ||
+        {};
+      const hasItem = Object.keys(item).length > 0;
+      const status = hasItem ? normalizeStatus(item.status || item.state || item.condition) : fallbackStatus();
+      return {
+        id: plant.seasonId || plant.id,
+        libraryId: plant.libraryId || "",
+        name: plant.name,
+        plantType: plant.plantType || "",
+        plantingPlace: plant.plantingPlace || "",
+        status,
+        summary: pickText(item, ["summary", "assessment", "vurdering", "message"], fallbackSummary(plant), 180),
+        watch: pickText(item, ["watch", "advice", "råd", "warning", "attention"], fallbackWatch(plant), 180),
+        detail: pickText(item, ["detail", "details", "nextStep", "tiltak", "note"], "", 180),
+        forecast: pickText(item, ["forecast", "expectedDevelopment", "prediction", "prognose"], hasItem ? "" : fallbackForecast(plant), 120),
+      };
+    }),
+  };
+}
+
+function compactSensorEntries(entries) {
+  const points = entries.slice(-96);
+  const stride = Math.max(1, Math.ceil(points.length / 8));
+  return points.filter((_, index) => index % stride === 0 || index === points.length - 1).map((entry) => ({
+    time: entry.bucketStart || entry.timestamp,
+    value: numberOrNull(entry.value),
+    min: numberOrNull(entry.min ?? entry.value),
+    max: numberOrNull(entry.max ?? entry.value),
+  }));
+}
+
+function compactWeatherForecast(forecast) {
+  return (Array.isArray(forecast) ? forecast : []).slice(0, 4).map((item) => ({
+    t: item.time || item.updatedAt || "",
+    d: item.description || item.symbolCode || "",
+    temp: numberOrNull(item.temperature),
+    rain: numberOrNull(item.precipitation),
+  }));
+}
+
+function compactPlantHistory(history) {
+  return history
+    .slice(-4)
+    .map((entry) => ({
+      year: entry.year,
+      acquisition: entry.acquisition,
+      seedDate: entry.seedDate,
+      seedLocation: entry.seedLocation,
+      greenhouseDate: entry.greenhouseDate,
+      harvestDate: entry.harvestDate,
+      plantingPlace: entry.plantingPlace,
+    }))
+    .filter((entry) => entry.seedDate || entry.greenhouseDate || entry.harvestDate || entry.plantingPlace);
+}
+
+function getNorwegianMonth(date) {
+  return new Intl.DateTimeFormat("nb-NO", { month: "long", timeZone: "Europe/Oslo" }).format(date);
+}
+
+function getNorwegianSeason(date) {
+  const month = Number(new Intl.DateTimeFormat("en-US", { month: "numeric", timeZone: "Europe/Oslo" }).format(date));
+  if (month === 12 || month <= 2) return "vinter";
+  if (month <= 5) return "vår";
+  if (month <= 8) return "sommer";
+  return "høst";
+}
+
+function aggregateDisplaySeries(entries, since, now, intervalMinutes) {
+  const intervalMs = intervalMinutes * 60 * 1000;
+  const bucketCount = Math.floor((now.getTime() - since.getTime()) / intervalMs) + 1;
+  const buckets = Array.from({ length: bucketCount }, () => ({ sum: 0, count: 0 }));
+
+  for (const entry of entries) {
+    const time = new Date(entry.bucketStart || entry.timestamp).getTime();
+    if (!Number.isFinite(time) || time < since.getTime() || time > now.getTime()) continue;
+
+    const value = numberOrNull(entry.value);
+    const min = numberOrNull(entry.min);
+    const max = numberOrNull(entry.max);
+    const numeric = value ?? (min !== null && max !== null ? (min + max) / 2 : min ?? max);
+    if (numeric === null) continue;
+
+    const index = Math.min(bucketCount - 1, Math.max(0, Math.floor((time - since.getTime()) / intervalMs)));
+    buckets[index].sum += numeric;
+    buckets[index].count += 1;
+  }
+
+  const values = [];
+  let lastValue = null;
+  for (const bucket of buckets) {
+    if (bucket.count > 0) {
+      lastValue = Math.round((bucket.sum / bucket.count) * 10) / 10;
+      values.push(lastValue);
+    } else {
+      values.push(lastValue);
+    }
+  }
+
+  return values;
 }
 
 function shouldStoreHistory(sensor) {
@@ -1649,6 +2648,18 @@ function getOsloHourKey(date) {
 
   const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   return `${map.year}-${map.month}-${map.day}T${map.hour}`;
+}
+
+function getOsloDateKey(date) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Oslo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+
+  const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${map.year}-${map.month}-${map.day}`;
 }
 
 function getLast24OsloHourSlots() {

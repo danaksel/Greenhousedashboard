@@ -1,5 +1,7 @@
 import { Card } from "./ui/card";
 import { Area, CartesianGrid, ComposedChart, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { getResolvedDisplayTheme } from "../../shared/display-theme";
+import type { DisplayThemeConfig } from "../utils/api";
 
 type ChartPoint = {
   time: string;
@@ -22,6 +24,7 @@ interface TrendChartProps {
     label: string;
     color: string;
   };
+  theme?: DisplayThemeConfig;
 }
 
 export function TrendChart({
@@ -32,21 +35,20 @@ export function TrendChart({
   darkMode = false,
   xAxisInterval = 0,
   thresholdLine,
+  theme,
 }: TrendChartProps) {
-  const bgClass = darkMode ? 'bg-[#2d3a21]' : 'bg-[#ebeee8]';
-  const titleColor = darkMode ? 'text-white/80' : 'text-stone-700';
-  const borderClass = darkMode ? 'border-white/10' : 'border-stone-200';
-  const gridColor = darkMode ? '#4d5d3e' : '#d6d3d1';
-  const axisColor = darkMode ? '#8d9d7e' : '#a8a29e';
-  const tickColor = darkMode ? '#adbca2' : '#78716c';
-  const tooltipBg = darkMode ? '#2d3a21' : 'white';
-  const tooltipBorder = darkMode ? '#5d6d4e' : '#d6d3d1';
+  const modeTheme = darkMode ? getResolvedDisplayTheme(theme).dark : getResolvedDisplayTheme(theme).light;
+  const gridColor = modeTheme.graphPanelBorder;
+  const axisColor = modeTheme.symbolColor;
+  const tickColor = modeTheme.mutedColor;
+  const tooltipBg = modeTheme.graphPanelBg;
+  const tooltipBorder = modeTheme.graphPanelBorder;
 
   if (data.length === 0) {
     return (
-      <Card className={`p-4 ${bgClass} backdrop-blur-sm shadow-lg border ${borderClass} transition-colors duration-300`}>
-        <h3 className={`text-sm mb-3 ${titleColor}`}>{title}</h3>
-        <div className={`flex h-[160px] items-center justify-center text-sm ${darkMode ? "text-white/45" : "text-stone-500"}`}>
+      <Card className="border p-4 shadow-lg backdrop-blur-sm transition-colors duration-300" style={{ backgroundColor: modeTheme.graphPanelBg, borderColor: modeTheme.graphPanelBorder }}>
+        <h3 className="mb-3 text-sm" style={{ color: modeTheme.labelColor, opacity: modeTheme.labelOpacity }}>{title}</h3>
+        <div className="flex h-[160px] items-center justify-center text-sm" style={{ color: modeTheme.mutedColor }}>
           Ingen historikk tilgjengelig
         </div>
       </Card>
@@ -90,8 +92,8 @@ export function TrendChart({
   }
   
   return (
-    <Card className={`p-4 md:p-5 ${bgClass} backdrop-blur-sm shadow-lg border ${borderClass} transition-colors duration-300`}>
-      <h3 className={`text-sm mb-3 ${titleColor}`}>{title}</h3>
+    <Card className="border p-4 shadow-lg backdrop-blur-sm transition-colors duration-300 md:p-5" style={{ backgroundColor: modeTheme.graphPanelBg, borderColor: modeTheme.graphPanelBorder }}>
+      <h3 className="mb-3 text-sm" style={{ color: modeTheme.labelColor, opacity: modeTheme.labelOpacity }}>{title}</h3>
       <ResponsiveContainer width="100%" height={220}>
         <ComposedChart data={data} margin={{ right: 20, left: -10, top: 5, bottom: 25 }}>
           <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />

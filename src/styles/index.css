@@ -51,6 +51,49 @@ body, html {
   animation: greenhouse-alert-marquee 24s linear infinite;
 }
 
+.greenhouse-no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.greenhouse-no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.greenhouse-horizontal-fade {
+  --greenhouse-fade-size: 24px;
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 var(--greenhouse-fade-size),
+    #000 calc(100% - var(--greenhouse-fade-size)),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 var(--greenhouse-fade-size),
+    #000 calc(100% - var(--greenhouse-fade-size)),
+    transparent 100%
+  );
+}
+
+.greenhouse-viewport-scroller {
+  margin-left: 0;
+  width: auto;
+}
+
+@media (min-width: 768px) {
+  .greenhouse-horizontal-fade {
+    --greenhouse-fade-size: 34px;
+  }
+
+  .greenhouse-viewport-scroller {
+    margin-left: calc(var(--spacing) * -8);
+    width: auto;
+  }
+}
+
 @keyframes chart-line-scan {
   0% {
     stroke-dashoffset: 330;

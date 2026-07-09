@@ -1,4 +1,5 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { Drawer as VaulDrawer } from "vaul";
 import SunCalc from "suncalc";
 import { AdminPage } from "./AdminPage";
 import { ChartSkeleton } from "./components/chart-skeleton";
@@ -8,9 +9,13 @@ import {
   fetchGreenhouseHistory,
   fetchGreenhouseStats24h,
   fetchSiteConfig,
+  fetchStoredPlantAnalysis,
   fetchWeatherData,
   resolveGreenhouseAssetUrl,
   type HeaderImageSlot,
+  type PlantAnalysisResponse,
+  type PlantLibraryEntry,
+  type PlantSeasonEntry,
   type SiteConfig,
   type WeatherData,
 } from "./utils/api";
@@ -21,7 +26,7 @@ import { thresholds } from "../config/thresholds";
 import { ClimateMetric } from "./components/climate-metric";
 import { ClimateMetricsSkeleton } from "./components/climate-metrics-skeleton";
 import { DeviceStatusRow } from "./components/device-status-row";
-import { AlertTriangleIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, MoonIcon, RefreshCwIcon, SunIcon, WifiOffIcon } from "./components/icons";
+import { AlertTriangleIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, MoonIcon, RefreshCwIcon, SunIcon, WifiOffIcon, XIcon } from "./components/icons";
 import { Carousel, CarouselContent, CarouselItem, type CarouselApi } from "./components/ui/carousel";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./components/ui/select";
 
@@ -36,6 +41,12 @@ const WeatherWidget = lazy(async () => {
   const module = await import("./components/weather-widget");
   return { default: module.WeatherWidget };
 });
+
+const chartLineColors = {
+  temperature: "#d28c31",
+  humidityDark: "#8fbc5f",
+  humidityLight: "#5d7342",
+};
 
 const greenhouseLatitude = 59.8667;
 const greenhouseLongitude = 10.7167;
@@ -72,6 +83,7 @@ function getStoredDarkThemeColor() {
 type ChartPoint = { time: string; value: number; min?: number; max?: number; range?: [number, number]; id: string };
 type HistoryPoint = { time: string; value: number | null; min?: number | null; max?: number | null; timestamp: string | null; bucketStart: string | null };
 type MetricMinMax = { min: number | undefined; max: number | undefined };
+type MetricStats = { min: number | null; max: number | null };
 type ChartRange = "12h" | "24h";
 type TemperatureAlert = {
   tone: "hot" | "cold";
@@ -108,12 +120,14 @@ function CollapsedChartPreview({
   temperatureData,
   humidityData,
   darkMode,
+  theme,
   loading,
   onClick,
 }: {
   temperatureData: ChartPoint[];
   humidityData: ChartPoint[];
   darkMode: boolean;
+  theme: SiteConfig["headerImages"][HeaderImageSlot]["displayTheme"];
   loading: boolean;
   onClick: () => void;
 }) {
@@ -121,22 +135,17 @@ function CollapsedChartPreview({
   const height = 22;
   const tempPath = buildPreviewPath(temperatureData, width, height, 3);
   const humidityPath = buildPreviewPath(humidityData, width, height, 3);
-  const previewChipClass = darkMode
-    ? "border-white/8 bg-white/[0.045] text-white/50"
-    : "border-[#dbe2d4] bg-white/45 text-[#65725d]";
+  const modeTheme = darkMode ? theme.dark : theme.light;
 
   return (
     <button
       type="button"
-      className={`group grid h-12 w-full grid-cols-2 gap-2 rounded-xl border p-1.5 text-left transition-all ${
-        darkMode
-          ? "border-white/8 bg-white/[0.035] hover:bg-white/[0.055]"
-          : "border-[#dde4d6] bg-white/35 shadow-sm hover:bg-white/55"
-      }`}
+      className="group grid h-12 w-full grid-cols-2 gap-2 rounded-xl border p-1.5 text-left shadow-sm transition-all"
+      style={{ backgroundColor: modeTheme.graphPanelBg, borderColor: modeTheme.graphPanelBorder }}
       onClick={onClick}
       aria-label="Åpne grafer"
     >
-      <div className={`flex min-w-0 items-center gap-2 rounded-lg border px-2 ${previewChipClass}`}>
+      <div className="flex min-w-0 items-center gap-2 rounded-lg border px-2" style={{ borderColor: modeTheme.graphPanelBorder, color: modeTheme.mutedColor }}>
         <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.04em]">Temp</span>
         <svg
           viewBox={`0 0 ${width} ${height}`}
@@ -147,7 +156,7 @@ function CollapsedChartPreview({
           <path
             d={tempPath || "M 3 15 C 20 8, 35 7, 51 11 S 78 16, 93 8"}
             fill="none"
-            stroke="#d28c31"
+            stroke={chartLineColors.temperature}
             strokeWidth="2.5"
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -155,7 +164,7 @@ function CollapsedChartPreview({
           />
         </svg>
       </div>
-      <div className={`flex min-w-0 items-center gap-2 rounded-lg border px-2 ${previewChipClass}`}>
+      <div className="flex min-w-0 items-center gap-2 rounded-lg border px-2" style={{ borderColor: modeTheme.graphPanelBorder, color: modeTheme.mutedColor }}>
         <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.04em]">Fukt</span>
         <svg
           viewBox={`0 0 ${width} ${height}`}
@@ -166,7 +175,7 @@ function CollapsedChartPreview({
           <path
             d={humidityPath || "M 3 9 C 18 13, 34 16, 50 12 S 76 6, 93 11"}
             fill="none"
-            stroke={darkMode ? "#8fbc5f" : "#5d7342"}
+            stroke={darkMode ? chartLineColors.humidityDark : chartLineColors.humidityLight}
             strokeWidth="2.5"
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -175,6 +184,14 @@ function CollapsedChartPreview({
         </svg>
       </div>
     </button>
+  );
+}
+
+function OpenAiIcon({ className = "", style }: { className?: string; style?: CSSProperties }) {
+  return (
+    <svg viewBox="0 0 24 24" role="img" aria-label="OpenAI" className={className} style={style} fill="currentColor">
+      <path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z" />
+    </svg>
   );
 }
 
@@ -207,6 +224,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
+  const [plantAnalysis, setPlantAnalysis] = useState<PlantAnalysisResponse | null>(null);
   const [siteConfig, setSiteConfig] = useState<SiteConfig>(defaultSiteConfig);
   const [siteConfigReady, setSiteConfigReady] = useState(false);
   const [darkMode, setDarkMode] = useState(() => {
@@ -218,9 +236,18 @@ export default function App() {
   });
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [chartRange, setChartRange] = useState<ChartRange>("12h");
+  const [plantAnalysisExpanded, setPlantAnalysisExpanded] = useState(true);
   const [chartsExpanded, setChartsExpanded] = useState(false);
   const [chartCarouselApi, setChartCarouselApi] = useState<CarouselApi>();
   const [activeChartSlide, setActiveChartSlide] = useState(0);
+  const [selectedPlantIndex, setSelectedPlantIndex] = useState<number | null>(null);
+  const [isDesktopViewport, setIsDesktopViewport] = useState(false);
+  const plantSectionRef = useRef<HTMLElement | null>(null);
+  const plantScrollerRef = useRef<HTMLDivElement | null>(null);
+  const plantButtonRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const plantDragRef = useRef({ pointerId: -1, startX: 0, scrollLeft: 0, moved: false });
+  const suppressPlantClickRef = useRef(false);
+  const [plantCardAnchor, setPlantCardAnchor] = useState({ left: 0, width: 720, arrowLeft: 48 });
 
   const loadData = async (isRefresh = false, options: { includeHistory?: boolean; includeWeather?: boolean } = {}) => {
     const includeHistory = options.includeHistory ?? true;
@@ -266,16 +293,37 @@ export default function App() {
       setHeating(latest.heating ?? null);
       setLoading(false);
 
+      const statsToMinMax = (stats?: MetricStats): MetricMinMax | null => {
+        if (!stats || typeof stats.min !== "number" || typeof stats.max !== "number") {
+          return null;
+        }
+
+        return {
+          min: stats.min,
+          max: stats.max,
+        };
+      };
+
+      const statsPromise = includeHistory ? (async () => {
+        try {
+          const stats24h = await fetchGreenhouseStats24h();
+          const temperatureStats = statsToMinMax(stats24h?.temperature);
+          const humidityStats = statsToMinMax(stats24h?.humidity);
+
+          if (temperatureStats) setTemperatureMinMax(temperatureStats);
+          if (humidityStats) setHumidityMinMax(humidityStats);
+
+          return stats24h;
+        } catch (statsErr) {
+          console.error('Failed to fetch 24h stats:', statsErr);
+          return null;
+        }
+      })() : Promise.resolve(null);
+
       const historyPromise = includeHistory ? (async () => {
         try {
           setHistoryLoading(true);
-          const [history, stats24h] = await Promise.all([
-            fetchGreenhouseHistory(),
-            fetchGreenhouseStats24h().catch((statsErr) => {
-              console.error('Failed to fetch 24h stats:', statsErr);
-              return null;
-            }),
-          ]);
+          const history = await fetchGreenhouseHistory();
 
           // Get current hour as the endpoint
           const now = new Date();
@@ -395,17 +443,6 @@ export default function App() {
             };
           };
 
-          const statsToMinMax = (stats?: { min: number | null; max: number | null }): MetricMinMax | null => {
-            if (!stats || typeof stats.min !== "number" || typeof stats.max !== "number") {
-              return null;
-            }
-
-            return {
-              min: stats.min,
-              max: stats.max,
-            };
-          };
-
           // Transform temperature and humidity history data
           const tempData12h = processHistoryData(history.temperature || [], 'temp12', hoursToShow12);
           const humData12h = processHistoryData(history.humidity || [], 'hum12', hoursToShow12);
@@ -417,12 +454,14 @@ export default function App() {
           setTemperatureData24h(tempData24h);
           setHumidityData24h(humData24h);
 
-          setTemperatureMinMax(
-            statsToMinMax(stats24h?.temperature) ?? getMinMaxForLast24Hours(history.temperature || [], latest.temperature)
-          );
-          setHumidityMinMax(
-            statsToMinMax(stats24h?.humidity) ?? getMinMaxForLast24Hours(history.humidity || [], latest.humidity)
-          );
+          void statsPromise.then((stats24h) => {
+            if (!statsToMinMax(stats24h?.temperature)) {
+              setTemperatureMinMax(getMinMaxForLast24Hours(history.temperature || [], latest.temperature));
+            }
+            if (!statsToMinMax(stats24h?.humidity)) {
+              setHumidityMinMax(getMinMaxForLast24Hours(history.humidity || [], latest.humidity));
+            }
+          });
         } catch (historyErr) {
           console.error('Failed to fetch greenhouse history:', historyErr);
         } finally {
@@ -430,7 +469,7 @@ export default function App() {
         }
       })() : Promise.resolve();
 
-      await Promise.allSettled([historyPromise, weatherPromise]);
+      await Promise.allSettled([statsPromise, historyPromise, weatherPromise]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load data");
     } finally {
@@ -475,6 +514,27 @@ export default function App() {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
+  }, []);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(min-width: 768px)");
+    const updateViewport = () => setIsDesktopViewport(mediaQuery.matches);
+
+    updateViewport();
+    mediaQuery.addEventListener("change", updateViewport);
+    return () => mediaQuery.removeEventListener("change", updateViewport);
+  }, []);
+
+  useEffect(() => {
+    const loadPlantAnalysis = () => {
+      fetchStoredPlantAnalysis()
+        .then(setPlantAnalysis)
+        .catch((err) => console.error("Failed to fetch plant analysis:", err));
+    };
+
+    loadPlantAnalysis();
+    const interval = setInterval(loadPlantAnalysis, 900000);
+    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -696,6 +756,8 @@ export default function App() {
   const heroImageConfig = heroImageSlot
     ? siteConfig.headerImages[heroImageSlot] ?? defaultSiteConfig.headerImages[heroImageSlot]
     : null;
+  const activeDisplayTheme = heroImageConfig?.displayTheme ?? defaultSiteConfig.headerImages.normal.displayTheme;
+  const activeModeTheme = darkMode ? activeDisplayTheme.dark : activeDisplayTheme.light;
   const browserBackgroundColor = darkMode ? heroImageConfig?.darkModeColor ?? getStoredDarkThemeColor() : "#e8ede3";
   const headerTextClass = darkMode ? "text-[#e8ede3]" : "text-[#2d3a21]";
   const headerButtonClass = darkMode
@@ -735,7 +797,7 @@ export default function App() {
       : temperature > thresholds.temperature.max
         ? {
             tone: "hot",
-            color: "#C44747",
+            color: activeModeTheme.hotTickerColor,
             label: "Høy temperatur",
             reading: `${temperature.toFixed(1)}°C`,
             comparisonLabel: "er over anbefalt maksimum på",
@@ -746,7 +808,7 @@ export default function App() {
         : temperature < thresholds.temperature.min
           ? {
               tone: "cold",
-              color: darkMode ? "#5190A1" : "#70ABB6",
+              color: activeModeTheme.coldTickerColor,
               label: "Lav temperatur",
               reading: `${temperature.toFixed(1)}°C`,
               comparisonLabel: "er under anbefalt minimum på",
@@ -812,6 +874,11 @@ export default function App() {
   const selectedHumidityData = chartRange === "12h" ? humidityData12h : humidityData24h;
   const chartRangeLabel = chartRange === "12h" ? "siste 12 timer" : "siste 24 timer";
   const chartXAxisInterval = chartRange === "12h" ? 0 : 2;
+  const analysisDate = plantAnalysis?.generatedAt ? new Date(plantAnalysis.generatedAt) : null;
+  const analysisDateLabel =
+    analysisDate && Number.isFinite(analysisDate.getTime())
+      ? analysisDate.toLocaleDateString("nb-NO", { day: "numeric", month: "long" })
+      : "";
   const chartSelectTriggerClass = darkMode
     ? "h-9 w-[132px] rounded-full border-white/10 bg-white/10 px-3 text-xs text-white shadow-none hover:bg-white/15 focus-visible:ring-white/20"
     : "h-9 w-[132px] rounded-full border-[#cbd3c2] bg-white/75 px-3 text-xs text-[#4d5d3e] shadow-sm hover:bg-white focus-visible:ring-[#8d9d7e]/30";
@@ -832,6 +899,329 @@ export default function App() {
       : darkMode
         ? "h-1.5 w-1.5 rounded-full bg-white/25 transition-all"
         : "h-1.5 w-1.5 rounded-full bg-[#9daa8f]/55 transition-all";
+  const activePlantAnalysisTheme = heroImageConfig?.plantAnalysisTheme ?? siteConfig.plantAnalysisTheme;
+  const plantTheme = darkMode ? activePlantAnalysisTheme.dark : activePlantAnalysisTheme.light;
+  const sectionHeaderTextStyle: CSSProperties = {
+    color: plantTheme.titleColor,
+    fontFamily: "Inter, sans-serif",
+    fontWeight: 500,
+  };
+  const activeSeason = siteConfig.plantSeasons[String(siteConfig.activePlantSeasonYear)] ?? [];
+  const libraryById = new Map(siteConfig.plantLibrary.map((plant) => [plant.id, plant]));
+  const seasonById = new Map(activeSeason.map((entry) => [entry.id, entry]));
+  const seasonByLibraryId = new Map(activeSeason.map((entry) => [entry.libraryId, entry]));
+  const plantById = new Map(siteConfig.plants.map((plant) => [plant.id, plant]));
+  const isPlantSeasonOver = (season: PlantSeasonEntry | undefined | null) => {
+    if (!season?.harvestDate) return false;
+    const date = new Date(`${season.harvestDate}T23:59:59`);
+    return Number.isFinite(date.getTime()) && date <= new Date();
+  };
+  const plantSortIndex = new Map<string, number>();
+  activeSeason.forEach((plant, index) => {
+    plantSortIndex.set(plant.id, index);
+    plantSortIndex.set(plant.libraryId, index);
+  });
+  const resolveSeasonEntryForItem = (item: PlantAnalysisResponse["items"][number]) =>
+    seasonById.get(item.id) ||
+    (item.libraryId ? seasonByLibraryId.get(item.libraryId) : undefined) ||
+    seasonByLibraryId.get(item.id);
+  const resolveLibraryEntryForItem = (item: PlantAnalysisResponse["items"][number]) => {
+    const season = resolveSeasonEntryForItem(item);
+    return season ? libraryById.get(season.libraryId) : (item.libraryId ? libraryById.get(item.libraryId) : libraryById.get(item.id));
+  };
+  const analysisBySeasonId = new Map((plantAnalysis?.items || []).map((item) => [item.id, item]));
+  const analysisByLibraryId = new Map((plantAnalysis?.items || []).map((item) => [item.libraryId || item.id, item]));
+  const sortedPlantAnalysisItems = activeSeason
+    .filter((season) => season.active)
+    .sort((a, b) => {
+      const aOver = isPlantSeasonOver(a);
+      const bOver = isPlantSeasonOver(b);
+      if (aOver !== bOver) return aOver ? 1 : -1;
+      return (plantSortIndex.get(a.id) ?? 9999) - (plantSortIndex.get(b.id) ?? 9999);
+    })
+    .map((season) => {
+      const library = libraryById.get(season.libraryId);
+      const analysis = analysisBySeasonId.get(season.id) || analysisByLibraryId.get(season.libraryId);
+      if (analysis) return { ...analysis, seasonOver: isPlantSeasonOver(season) };
+      return {
+        id: season.id,
+        libraryId: season.libraryId,
+        name: library?.name || "Plante",
+        plantType: library?.plantType || "",
+        plantingPlace: season.plantingPlace,
+        status: isPlantSeasonOver(season) ? "sesong over" : "følg med",
+        summary: "",
+        watch: "",
+        detail: "",
+        forecast: "",
+        seasonOver: isPlantSeasonOver(season),
+      };
+    });
+  const getPlantPillBg = (status: PlantAnalysisResponse["items"][number]["status"]) =>
+    status === "sesong over"
+      ? plantTheme.watchTextColor
+      :
+    status === "trives"
+      ? plantTheme.thrivingPillBg
+      : status === "følg med"
+        ? plantTheme.watchPillBg
+        : plantTheme.stressPillBg;
+  const activePlantItem =
+    selectedPlantIndex !== null && sortedPlantAnalysisItems[selectedPlantIndex]
+      ? sortedPlantAnalysisItems[selectedPlantIndex]
+      : null;
+  const plantAnalysisSummary =
+    plantAnalysis?.contextSummary ||
+    "Analyse og tips oppdateres når ny planteanalyse er kjørt.";
+  const activeSeasonEntry = activePlantItem ? resolveSeasonEntryForItem(activePlantItem) : null;
+  const activeLibraryEntry = activePlantItem ? resolveLibraryEntryForItem(activePlantItem) : null;
+  const plantTypeTagColor = (plantType: string | undefined) => {
+    switch (plantType) {
+      case "Urte":
+        return "#668b39";
+      case "Blomst":
+        return "#cf6f9b";
+      case "Frukt":
+        return "#d28c31";
+      default:
+        return "#5190a1";
+    }
+  };
+  const formatDate = (value: string) => {
+    if (!value) return "";
+    const date = new Date(`${value}T00:00:00`);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleDateString("nb-NO", { day: "numeric", month: "numeric", year: "numeric" });
+  };
+  const renderPlantFact = (label: string, lines: Array<string | undefined>) => {
+    const values = lines.filter((line): line is string => Boolean(line && line.trim()));
+    if (values.length === 0) return null;
+    return (
+      <div>
+        <dt className="text-xs font-semibold" style={{ color: plantTheme.titleColor }}>{label}</dt>
+        {values.map((value) => (
+          <dd key={value} className="mt-1 text-xs leading-snug" style={{ color: plantTheme.ingressColor }}>{value}</dd>
+        ))}
+      </div>
+    );
+  };
+  const renderPlantImage = (item: PlantAnalysisResponse["items"][number], sizeClass: string, labelClass = "text-[11px]") => {
+    const season = resolveSeasonEntryForItem(item);
+    const library = resolveLibraryEntryForItem(item);
+    const plant = plantById.get(item.id);
+    const image = library?.image || plant?.image ? resolveGreenhouseAssetUrl(library?.image || plant?.image || "") : "";
+
+    return image ? (
+      <img src={image} alt={item.name} className={`${sizeClass} object-cover`} />
+    ) : (
+      <span className={`grid ${sizeClass} place-items-center px-2 text-center ${labelClass}`} style={{ color: plantTheme.ingressColor }}>
+        Mangler bilde
+      </span>
+    );
+  };
+  const renderPlantBottomSheet = (
+    item: PlantAnalysisResponse["items"][number],
+    library: PlantLibraryEntry | null | undefined,
+    season: PlantSeasonEntry | null | undefined
+  ) => {
+    const plantName = library?.name || item.name;
+    const plantType = library?.plantType || item.plantType || "";
+    const image = library?.image ? resolveGreenhouseAssetUrl(library.image) : "";
+    const seasonOver = isPlantSeasonOver(season);
+    const factRows = [
+      renderPlantFact("Planten er sådd", season?.acquisition === "seed" ? [formatDate(season.seedDate), season.seedLocation] : []),
+      renderPlantFact("Anskaffelse", season?.acquisition === "plant" ? ["Anskaffet som plante", season.purchaseSource] : [season?.purchaseSource]),
+      renderPlantFact("Plassert i drivhuset", [formatDate(season?.greenhouseDate || "")]),
+      renderPlantFact("Utplanting / høsting", [formatDate(season?.harvestDate || "")]),
+      renderPlantFact("Plantested", [season?.plantingPlace]),
+    ].filter(Boolean);
+
+    const panelContent = (mobileDrawer: boolean, showTitle = true) => (
+      <>
+        {!mobileDrawer && (
+          <button
+            type="button"
+            onClick={() => setSelectedPlantIndex(null)}
+            className="absolute right-4 top-4 hidden size-9 place-items-center rounded-full border md:grid"
+            style={{ borderColor: plantTheme.cardBorder, color: plantTheme.titleColor }}
+            aria-label="Lukk plantekort"
+          >
+            <XIcon className="size-4" />
+          </button>
+        )}
+        {showTitle && <h3 className="pr-10 text-2xl font-medium leading-tight" style={{ color: plantTheme.titleColor }}>{plantName}</h3>}
+        {mobileDrawer ? (
+          <div className={showTitle ? "mt-4 grid grid-cols-[minmax(0,1fr)_128px] items-start gap-4" : "grid grid-cols-[minmax(0,1fr)_128px] items-start gap-4"}>
+            <div className="min-w-0">
+              {plantType && (
+                <span className="inline-flex rounded-md border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.04em]" style={{ borderColor: plantTypeTagColor(plantType), color: plantTypeTagColor(plantType) }}>
+                  {plantType}
+                </span>
+              )}
+              {library?.description && (
+                <p className="mt-3 text-sm italic leading-snug text-black" style={{ color: plantTheme.titleColor }}>
+                  {library.description}
+                </p>
+              )}
+            </div>
+            <div className="aspect-square overflow-hidden rounded-full">
+              {image ? (
+                <img src={image} alt={plantName} className="h-full w-full object-cover" />
+              ) : (
+                <div className="grid h-full w-full place-items-center bg-black/5 px-2 text-center text-xs">Mangler bilde</div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className={showTitle ? "mt-4 overflow-hidden rounded-none" : "overflow-hidden rounded-none"}>
+              {image ? (
+                <img src={image} alt={plantName} className="h-44 w-full object-cover" />
+              ) : (
+                <div className="grid h-44 w-full place-items-center bg-black/5 text-sm">Mangler bilde</div>
+              )}
+            </div>
+            {plantType && (
+              <span className="mt-4 inline-flex self-start rounded-md border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.04em]" style={{ borderColor: plantTypeTagColor(plantType), color: plantTypeTagColor(plantType) }}>
+                {plantType}
+              </span>
+            )}
+            {library?.description && (
+              <p className="mt-3 text-sm italic leading-snug text-black md:text-sm" style={{ color: plantTheme.titleColor }}>
+                {library.description}
+              </p>
+            )}
+          </>
+        )}
+        {seasonOver ? (
+          <section className="mt-5 rounded-lg border p-4" style={{ borderColor: plantTheme.cardBorder }}>
+            <span className="inline-flex rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.04em]" style={{ backgroundColor: plantTheme.watchTextColor, color: plantTheme.cardBg }}>
+              Sesong over
+            </span>
+            <p className="mt-3 text-sm leading-snug" style={{ color: plantTheme.titleColor }}>
+              Denne planten er markert som ferdig for sesongen og tas ikke med i ny AI-analyse.
+            </p>
+          </section>
+        ) : (
+          <section className="mt-5 rounded-lg border p-4" style={{ borderColor: plantTheme.cardBorder }}>
+            <div className="mb-3 flex items-center gap-2">
+              <OpenAiIcon className="size-5" style={{ color: plantTheme.watchTextColor }} />
+              <span className="rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.04em]" style={{ backgroundColor: getPlantPillBg(item.status), color: plantTheme.pillTextColor }}>
+                {item.status === "trives" ? "Planten trives" : item.status}
+              </span>
+            </div>
+            <p className="text-sm leading-snug" style={{ color: plantTheme.titleColor }}>{item.summary}</p>
+            <p className="mt-2 text-sm leading-snug" style={{ color: plantTheme.watchTextColor }}>{[item.watch, item.detail].filter(Boolean).join(" ")}</p>
+            {item.forecast && <p className="mt-4 text-sm font-semibold" style={{ color: plantTheme.titleColor }}>{item.forecast}</p>}
+          </section>
+        )}
+        {factRows.length > 0 && (
+          <dl className="mt-6 grid grid-cols-2 gap-x-8 gap-y-5">
+            {factRows}
+          </dl>
+        )}
+      </>
+    );
+
+    if (!isDesktopViewport) {
+      return (
+        <VaulDrawer.Root
+          open={selectedPlantIndex !== null}
+          onOpenChange={(open) => {
+            if (!open) setSelectedPlantIndex(null);
+          }}
+          direction="bottom"
+          dismissible
+          fixed
+          modal
+        >
+          <VaulDrawer.Portal>
+            <VaulDrawer.Overlay className="fixed inset-0 z-40 bg-black/25 backdrop-blur-[1px]" />
+            <VaulDrawer.Content
+              className="fixed inset-x-0 bottom-0 z-50 max-h-[88dvh] overflow-y-auto rounded-t-[28px] p-6 pb-[calc(72px+env(safe-area-inset-bottom))] pt-3 shadow-2xl outline-none"
+              style={{ backgroundColor: plantTheme.cardBg, color: plantTheme.ingressColor }}
+            >
+              <VaulDrawer.Title className="sr-only">{plantName}</VaulDrawer.Title>
+              <VaulDrawer.Description className="sr-only">
+                Analyse, plantetype og sesongdata for {plantName}.
+              </VaulDrawer.Description>
+              <VaulDrawer.Handle className="mx-auto mb-5 block h-1.5 w-12 rounded-full bg-black/20" />
+              {panelContent(true)}
+            </VaulDrawer.Content>
+          </VaulDrawer.Portal>
+        </VaulDrawer.Root>
+      );
+    }
+
+    return (
+      <>
+        <button
+          type="button"
+          className="fixed inset-0 z-40 bg-black/25 backdrop-blur-[1px]"
+          onClick={() => setSelectedPlantIndex(null)}
+          aria-label="Lukk plantekort"
+        />
+        <div
+          className="fixed inset-x-0 bottom-0 z-50 max-h-[88dvh] overflow-y-auto rounded-t-[28px] p-6 pb-[calc(39px+env(safe-area-inset-bottom))] pt-3 shadow-2xl md:bottom-auto md:left-1/2 md:top-1/2 md:w-[min(720px,calc(100vw-4rem))] md:max-w-2xl md:-translate-x-1/2 md:-translate-y-1/2 md:rounded-2xl md:p-8"
+          style={{ backgroundColor: plantTheme.cardBg, color: plantTheme.ingressColor }}
+        >
+          {panelContent(false)}
+        </div>
+      </>
+    );
+  };
+  const updatePlantCardAnchor = (index: number) => {
+    const section = plantSectionRef.current;
+    const scroller = plantScrollerRef.current;
+    const button = plantButtonRefs.current[index];
+    if (!section || !scroller || !button) return;
+
+    const sectionRect = section.getBoundingClientRect();
+    const buttonRect = button.getBoundingClientRect();
+    const cardWidth = Math.min(560, section.clientWidth);
+    const center = buttonRect.left - sectionRect.left + buttonRect.width / 2;
+    const maxLeft = Math.max(0, section.clientWidth - cardWidth);
+    const left = Math.min(Math.max(center - cardWidth / 2, 0), maxLeft);
+    const arrowLeft = Math.min(Math.max(center - left, 28), cardWidth - 28);
+    setPlantCardAnchor({ left, width: cardWidth, arrowLeft });
+  };
+  const handlePlantScrollerPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    const scroller = plantScrollerRef.current;
+    if (!scroller) return;
+
+    plantDragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      scrollLeft: scroller.scrollLeft,
+      moved: false,
+    };
+  };
+  const handlePlantScrollerPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const scroller = plantScrollerRef.current;
+    const drag = plantDragRef.current;
+    if (!scroller || drag.pointerId !== event.pointerId) return;
+
+    const deltaX = event.clientX - drag.startX;
+    if (Math.abs(deltaX) > 3) {
+      drag.moved = true;
+      scroller.scrollLeft = drag.scrollLeft - deltaX;
+      event.preventDefault();
+    }
+  };
+  const finishPlantScrollerDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = plantDragRef.current;
+    if (drag.pointerId !== event.pointerId) return;
+
+    if (drag.moved) {
+      suppressPlantClickRef.current = true;
+      window.setTimeout(() => {
+        suppressPlantClickRef.current = false;
+      }, 120);
+    }
+
+    plantDragRef.current = { pointerId: -1, startX: 0, scrollLeft: 0, moved: false };
+  };
 
   return (
     <div className="min-h-screen transition-colors duration-300" style={{ backgroundColor: browserBackgroundColor }}>
@@ -862,10 +1252,11 @@ export default function App() {
                 <>
                   {customLogoSrc ? (
                     <span
-                      className={`block shrink-0 ${darkMode ? "bg-[#e8ede3]" : "bg-[#2d3a21]"}`}
+                      className="block shrink-0"
                       style={{
                         width: logoSize,
                         height: logoSize,
+                        backgroundColor: activeModeTheme.logoColor,
                         WebkitMask: `url("${customLogoSrc}") center / contain no-repeat`,
                         mask: `url("${customLogoSrc}") center / contain no-repeat`,
                       }}
@@ -873,14 +1264,14 @@ export default function App() {
                     />
                   ) : (
                     <GreenhouseIcon
-                      className={`shrink-0 ${headerTextClass}`}
-                      style={{ width: logoSize, height: logoSize }}
+                      className="shrink-0"
+                      style={{ width: logoSize, height: logoSize, color: activeModeTheme.logoColor }}
                     />
                   )}
                   {siteConfig.branding.logoText.visible && (
                     <h1
-                      className={`text-xl ${headerTextClass}`}
-                      style={{ fontFamily: `'${siteConfig.branding.logoText.font}', serif`, fontWeight: 400 }}
+                      className="text-xl"
+                      style={{ fontFamily: `'${siteConfig.branding.logoText.font}', serif`, fontWeight: 400, color: activeModeTheme.logoColor }}
                     >
                       {siteConfig.branding.logoText.text}
                     </h1>
@@ -1020,7 +1411,7 @@ export default function App() {
                 }`}
               >
                 {loading ? (
-                  <ClimateMetricsSkeleton darkMode={darkMode} />
+                  <ClimateMetricsSkeleton darkMode={darkMode} theme={activeDisplayTheme} />
                 ) : (
                   <div
                     key={`climate-${temperature}-${humidity}`}
@@ -1034,6 +1425,7 @@ export default function App() {
                       min={temperatureMinMax.min}
                       max={temperatureMinMax.max}
                       darkMode={darkMode}
+                      theme={activeDisplayTheme}
                     />
                     <ClimateMetric
                       label="Luftfuktighet"
@@ -1043,6 +1435,7 @@ export default function App() {
                       min={humidityMinMax.min}
                       max={humidityMinMax.max}
                       darkMode={darkMode}
+                      theme={activeDisplayTheme}
                     />
                   </div>
                 )}
@@ -1054,29 +1447,143 @@ export default function App() {
                     darkMode ? "md:border-white/10 md:bg-white/[0.045]" : "md:border-white/25 md:bg-white/25"
                   }`}
                 >
-                  <DeviceStatusRow items={visibleStatusItems} darkMode={darkMode} desktopCardLayout />
+                  <DeviceStatusRow items={visibleStatusItems} darkMode={darkMode} theme={activeDisplayTheme} desktopCardLayout />
                 </div>
               )}
             </section>
 
+            {siteConfig.visibleStatuses.plantAnalysis && sortedPlantAnalysisItems.length > 0 && (
+              <section ref={plantSectionRef} className="space-y-4 px-4 pb-6 md:space-y-5 md:px-0 md:pb-0">
+                <div className="flex items-center gap-2 px-1">
+                  <button
+                    type="button"
+                    className={`grid min-h-9 min-w-9 place-items-center rounded-full transition-colors ${
+                      darkMode ? "text-white/45 hover:text-white/70" : "text-stone-500 hover:text-stone-700"
+                    }`}
+                    onClick={() => setPlantAnalysisExpanded((expanded) => !expanded)}
+                    aria-expanded={plantAnalysisExpanded}
+                    aria-controls="plant-analysis-panel"
+                    aria-label={plantAnalysisExpanded ? "Lukk analyse og tips" : "Åpne analyse og tips"}
+                  >
+                    <ChevronDownIcon className={`size-4 transition-transform duration-300 ${plantAnalysisExpanded ? "rotate-0" : "-rotate-90"}`} />
+                  </button>
+                  <OpenAiIcon className="size-5 shrink-0" style={{ color: activeModeTheme.symbolColor }} />
+                  <h2 className="flex items-baseline gap-2 text-lg leading-none md:text-xl" style={sectionHeaderTextStyle}>
+                    <span>Analyse og tips</span>
+                    {analysisDateLabel && <span style={{ fontWeight: 300 }}>{analysisDateLabel}</span>}
+                  </h2>
+                </div>
+                <div
+                  id="plant-analysis-panel"
+                  className={`grid overflow-hidden transition-[grid-template-rows,opacity] duration-300 ${
+                    plantAnalysisExpanded ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+                  }`}
+                >
+                  <div className="min-h-0 space-y-4 overflow-hidden md:space-y-5">
+                    <div className="px-1 text-sm font-medium leading-snug md:max-w-4xl md:text-base" style={{ color: plantTheme.ingressColor }}>
+                      <p>{plantAnalysisSummary}</p>
+                    </div>
+                    <div
+                      ref={plantScrollerRef}
+                      className="greenhouse-no-scrollbar greenhouse-horizontal-fade greenhouse-viewport-scroller -mb-4 cursor-grab overflow-x-auto px-4 pb-6 pt-3 active:cursor-grabbing md:-mx-8 md:mb-0 md:px-8 md:pb-3 md:pt-3 xl:-mx-10 xl:px-10"
+                      onPointerDown={handlePlantScrollerPointerDown}
+                      onPointerMove={handlePlantScrollerPointerMove}
+                      onPointerUp={finishPlantScrollerDrag}
+                      onPointerCancel={finishPlantScrollerDrag}
+                      onScroll={() => {
+                        if (selectedPlantIndex !== null) updatePlantCardAnchor(selectedPlantIndex);
+                      }}
+                    >
+                      <div className="flex w-max gap-3 pr-4 md:gap-2">
+                        {sortedPlantAnalysisItems.map((item, index) => {
+                          const isActive = selectedPlantIndex === index;
+                          const ringColor = getPlantPillBg(item.status);
+                          const libraryPlant = resolveLibraryEntryForItem(item);
+                          const displayName = libraryPlant?.name || item.name;
+                          const season = resolveSeasonEntryForItem(item);
+                          const seasonOver = isPlantSeasonOver(season);
+
+                          return (
+                            <button
+                              ref={(node) => {
+                                plantButtonRefs.current[index] = node;
+                              }}
+                              key={item.id}
+                              type="button"
+                              onClick={(event) => {
+                                if (suppressPlantClickRef.current) {
+                                  event.preventDefault();
+                                  return;
+                                }
+                                setSelectedPlantIndex((current) => {
+                                  if (current === index) return null;
+                                  window.requestAnimationFrame(() => updatePlantCardAnchor(index));
+                                  return index;
+                                });
+                              }}
+                              className={`group flex w-[96px] shrink-0 flex-col items-center justify-start gap-2 text-center md:w-[118px] ${seasonOver ? "opacity-70" : ""}`}
+                              aria-label={`Vis analyse for ${displayName}`}
+                              aria-current={isActive ? "true" : undefined}
+                            >
+                              <span
+                                className={`grid size-[92px] place-items-center rounded-full border-[3px] p-1 transition-all md:size-[106px] ${
+                                  isActive ? "scale-105" : "scale-100"
+                                }`}
+                                style={{
+                                  borderColor: ringColor,
+                                  backgroundColor: isActive ? "rgba(255,255,255,0.9)" : seasonOver ? "rgba(255,255,255,0.22)" : "transparent",
+                                  boxShadow: isActive ? `0 0 0 5px rgba(255,255,255,0.62), 0 10px 28px ${ringColor}55` : "none",
+                                }}
+                              >
+                                <span className="grid size-full overflow-hidden rounded-full bg-black/5">
+                                  {renderPlantImage(item, "h-full w-full", "text-[10px]")}
+                                </span>
+                              </span>
+                              <span className="line-clamp-2 min-h-8 text-[10px] font-semibold leading-tight md:text-[11px]" style={{ color: plantTheme.titleColor }}>
+                                {displayName}
+                              </span>
+                              {seasonOver && (
+                                <span className="rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.04em]" style={{ backgroundColor: plantTheme.watchTextColor, color: plantTheme.cardBg }}>
+                                  Sesong over
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    {activePlantItem && (
+                      renderPlantBottomSheet(activePlantItem, activeLibraryEntry, activeSeasonEntry)
+                    )}
+                  </div>
+                </div>
+              </section>
+            )}
+
             {/* Trend Charts */}
-            {!loading && (
+            {!loading && siteConfig.visibleStatuses.charts && (
               <section className="space-y-3 px-4 pb-6 md:space-y-4 md:px-0 md:pb-0">
               <div className="flex items-center justify-between gap-3 px-1">
-                <button
-                  type="button"
-                  className={`flex min-h-9 items-center gap-2 text-xs uppercase leading-none tracking-[0.04em] transition-colors md:pointer-events-none ${
-                    darkMode ? "text-white/45 hover:text-white/70" : "text-stone-500 hover:text-stone-700"
-                  }`}
-                  onClick={() => setChartsExpanded((expanded) => !expanded)}
-                  aria-expanded={chartsExpanded}
-                  aria-controls="chart-panel"
-                >
-                  <span>Grafer</span>
-                  <ChevronDownIcon
-                    className={`size-4 transition-transform duration-300 md:hidden ${chartsExpanded ? "rotate-180" : "rotate-0"}`}
-                  />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    className={`grid min-h-9 min-w-9 place-items-center rounded-full transition-colors ${
+                      darkMode ? "text-white/45 hover:text-white/70" : "text-stone-500 hover:text-stone-700"
+                    }`}
+                    onClick={() => setChartsExpanded((expanded) => !expanded)}
+                    aria-expanded={chartsExpanded}
+                    aria-controls="chart-panel"
+                    aria-label={chartsExpanded ? "Lukk grafer" : "Åpne grafer"}
+                  >
+                    <ChevronDownIcon className={`size-4 transition-transform duration-300 ${chartsExpanded ? "rotate-0" : "-rotate-90"}`} />
+                  </button>
+                  <h2
+                    className="text-lg leading-none md:text-xl"
+                    style={sectionHeaderTextStyle}
+                  >
+                    Grafer
+                  </h2>
+                </div>
                 <Select value={chartRange} onValueChange={(value) => setChartRange(value as ChartRange)}>
                   <SelectTrigger className={chartSelectTriggerClass} aria-label="Velg tidsrom for grafer">
                     <SelectValue />
@@ -1098,6 +1605,7 @@ export default function App() {
                     temperatureData={selectedTemperatureData}
                     humidityData={selectedHumidityData}
                     darkMode={darkMode}
+                    theme={activeDisplayTheme}
                     loading={historyLoading}
                     onClick={() => setChartsExpanded(true)}
                   />
@@ -1106,15 +1614,15 @@ export default function App() {
 
               <div
                 id="chart-panel"
-                className={`grid overflow-hidden transition-[grid-template-rows,opacity] duration-300 md:grid-rows-[1fr] md:opacity-100 ${
+                className={`grid overflow-hidden transition-[grid-template-rows,opacity] duration-300 ${
                   chartsExpanded ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
                 }`}
               >
                 <div className="min-h-0 overflow-hidden">
                   {historyLoading ? (
-                    <ChartSkeleton darkMode={darkMode} />
+                    <ChartSkeleton darkMode={darkMode} theme={activeDisplayTheme} />
                   ) : (
-                    <Suspense fallback={<ChartSkeleton darkMode={darkMode} />}>
+                    <Suspense fallback={<ChartSkeleton darkMode={darkMode} theme={activeDisplayTheme} />}>
                       <div className="space-y-3">
                         <Carousel
                           setApi={setChartCarouselApi}
@@ -1127,9 +1635,10 @@ export default function App() {
                               <TrendChart
                                 title={`Temperatur ${chartRangeLabel}`}
                                 data={selectedTemperatureData}
-                                color="#d28c31"
+                                color={chartLineColors.temperature}
                                 unit="°C"
                                 darkMode={darkMode}
+                                theme={activeDisplayTheme}
                                 xAxisInterval={chartXAxisInterval}
                                 thresholdLine={
                                   temperatureAlert
@@ -1146,9 +1655,10 @@ export default function App() {
                               <TrendChart
                                 title={`Luftfuktighet ${chartRangeLabel}`}
                                 data={selectedHumidityData}
-                                color={darkMode ? "#8fbc5f" : "#5d7342"}
+                                color={darkMode ? chartLineColors.humidityDark : chartLineColors.humidityLight}
                                 unit="%"
                                 darkMode={darkMode}
+                                theme={activeDisplayTheme}
                                 xAxisInterval={chartXAxisInterval}
                               />
                             </CarouselItem>
@@ -1197,7 +1707,7 @@ export default function App() {
             {/* Footer with Last Updated */}
             {lastUpdated && (
               <div className="mt-4 px-4 pb-6 md:mt-0 md:px-0 md:pb-0">
-                <p className={`text-center text-xs ${darkMode ? 'text-white/60' : 'text-gray-500'} md:text-right`}>
+                <p className="text-center text-xs md:text-right" style={{ color: darkMode ? activeDisplayTheme.dark.mutedColor : activeDisplayTheme.light.mutedColor }}>
                   Siste data fra drivhuset mottatt {lastUpdated.toLocaleDateString('nb-NO', {
                     day: '2-digit',
                     month: '2-digit',

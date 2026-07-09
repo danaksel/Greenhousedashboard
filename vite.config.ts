@@ -37,10 +37,16 @@ export default defineConfig({
         manualChunks(id) {
           if (!id.includes('node_modules')) return undefined
 
+          if (
+            id.includes('/node_modules/react/') ||
+            id.includes('/node_modules/react-dom/') ||
+            id.includes('/node_modules/scheduler/')
+          ) {
+            return 'react-vendor'
+          }
           if (id.includes('recharts')) return 'charts'
           if (id.includes('motion')) return 'motion'
           if (id.includes('suncalc')) return 'weather'
-          if (id.includes('@radix-ui')) return 'radix'
 
           return 'vendor'
         },

@@ -1,5 +1,7 @@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
 import { AlertCircleIcon, ArrowDownToLineIcon, ArrowUpToLineIcon, InfoIcon } from "./icons";
+import { getResolvedDisplayTheme, getTemperatureValueTheme } from "../../shared/display-theme";
+import type { DisplayThemeConfig } from "../utils/api";
 
 interface ClimateMetricProps {
   label: string;
@@ -9,6 +11,7 @@ interface ClimateMetricProps {
   max?: number;
   warningMessage?: string;
   darkMode?: boolean;
+  theme?: DisplayThemeConfig;
 }
 
 export function ClimateMetric({
@@ -19,38 +22,31 @@ export function ClimateMetric({
   max,
   warningMessage,
   darkMode = false,
+  theme,
 }: ClimateMetricProps) {
   const isTemperatureMetric = label === "Temperatur";
   const hasWarning = Boolean(warningMessage);
-  let normalValueColor = darkMode ? "#D3DECA" : "#4D5D3E";
-  let warningPulseColor = darkMode ? "#FFFFFF" : "#8D9D7E";
+  const resolvedTheme = getResolvedDisplayTheme(theme);
+  const modeTheme = darkMode ? resolvedTheme.dark : resolvedTheme.light;
+  let normalValueColor = modeTheme.defaultValueColor;
+  let warningPulseColor = modeTheme.warningPulseColor;
   let valueColor = hasWarning ? "greenhouse-warning-pulse" : "";
 
   if (isTemperatureMetric && value !== null) {
-    if (value < 12) {
-      normalValueColor = darkMode ? "#5190A1" : "#70ABB6";
-      warningPulseColor = darkMode ? "#8fd6e2" : "#9bc7cf";
-      valueColor = "greenhouse-warning-pulse";
-    } else if (value < 23) {
-      normalValueColor = darkMode ? "#D0DEC8" : "#495F3A";
-      valueColor = "";
-    } else if (value <= 28) {
-      normalValueColor = "#D28C31";
-      valueColor = "";
-    } else {
-      normalValueColor = "#C44747";
-      warningPulseColor = "#FF6363";
-      valueColor = "greenhouse-warning-pulse";
-    }
+    const valueTheme = getTemperatureValueTheme(value, darkMode, hasWarning, theme);
+    normalValueColor = valueTheme.color;
+    warningPulseColor = valueTheme.pulseColor || warningPulseColor;
+    valueColor = valueTheme.shouldPulse ? "greenhouse-warning-pulse" : "";
   }
 
-  const unitColor = darkMode ? "text-[#b3bea3]" : "text-stone-500";
-  const metaColor = darkMode ? "text-white/50" : "text-stone-500";
-  const labelColor = darkMode ? "text-white/45" : "text-stone-500";
+  const labelStyle: React.CSSProperties = { color: modeTheme.labelColor, opacity: modeTheme.labelOpacity };
+  const unitStyle: React.CSSProperties = { color: modeTheme.unitColor };
+  const metaStyle: React.CSSProperties = { color: modeTheme.mutedColor };
+  const symbolStyle: React.CSSProperties = { color: modeTheme.symbolColor };
 
   return (
     <div className="space-y-1.5 md:space-y-3">
-      <p className={`ml-[10px] text-[10px] uppercase tracking-[0.02em] leading-[1.15] ${labelColor}`}>
+      <p className="ml-[10px] text-[10px] uppercase tracking-[0.02em] leading-[1.15]" style={labelStyle}>
         {label}
       </p>
       {hasWarning ? (
@@ -72,7 +68,7 @@ export function ClimateMetric({
               >
                 {value !== null ? value.toFixed(1) : "--"}
               </span>
-              <span className={`pb-0.5 text-[30px] leading-none font-light md:text-[clamp(24px,3vw,34px)] ${unitColor}`}>
+              <span className="pb-0.5 text-[30px] leading-none font-light md:text-[clamp(24px,3vw,34px)]" style={unitStyle}>
                 {unit}
               </span>
             </button>
@@ -97,14 +93,14 @@ export function ClimateMetric({
           >
             {value !== null ? value.toFixed(1) : "--"}
           </span>
-          <span className={`pb-0.5 text-[30px] leading-none font-light md:text-[clamp(24px,3vw,34px)] ${unitColor}`}>
+          <span className="pb-0.5 text-[30px] leading-none font-light md:text-[clamp(24px,3vw,34px)]" style={unitStyle}>
             {unit}
           </span>
         </div>
       )}
 
       {min !== undefined && max !== undefined && (
-        <div className={`ml-[10px] flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] ${metaColor}`}>
+        <div className="ml-[10px] flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px]" style={metaStyle}>
           <span className="flex items-center gap-1.5">
             <ArrowDownToLineIcon className="h-3.5 w-3.5 shrink-0" />
             {min.toFixed(1)}
@@ -120,6 +116,7 @@ export function ClimateMetric({
             <DialogTrigger asChild>
               <button
                 className="flex items-center transition-opacity hover:opacity-75"
+                style={symbolStyle}
                 aria-label={`Forklaring for ${label.toLowerCase()}`}
               >
                 <InfoIcon className="h-4 w-4" />
