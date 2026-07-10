@@ -85,6 +85,7 @@ type HistoryPoint = { time: string; value: number | null; min?: number | null; m
 type MetricMinMax = { min: number | undefined; max: number | undefined };
 type MetricStats = { min: number | null; max: number | null };
 type ChartRange = "12h" | "24h";
+type MobileVisualViewport = { height: number; bottomInset: number };
 type TemperatureAlert = {
   tone: "hot" | "cold";
   color: string;
@@ -236,12 +237,16 @@ export default function App() {
   });
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [chartRange, setChartRange] = useState<ChartRange>("12h");
-  const [plantAnalysisExpanded, setPlantAnalysisExpanded] = useState(true);
+  const [plantAnalysisExpanded, setPlantAnalysisExpanded] = useState(false);
   const [chartsExpanded, setChartsExpanded] = useState(false);
   const [chartCarouselApi, setChartCarouselApi] = useState<CarouselApi>();
   const [activeChartSlide, setActiveChartSlide] = useState(0);
   const [selectedPlantIndex, setSelectedPlantIndex] = useState<number | null>(null);
   const [isDesktopViewport, setIsDesktopViewport] = useState(false);
+  const [mobileVisualViewport, setMobileVisualViewport] = useState<MobileVisualViewport>(() => ({
+    height: window.visualViewport?.height ?? window.innerHeight,
+    bottomInset: 0,
+  }));
   const plantSectionRef = useRef<HTMLElement | null>(null);
   const plantScrollerRef = useRef<HTMLDivElement | null>(null);
   const plantButtonRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -524,6 +529,41 @@ export default function App() {
     mediaQuery.addEventListener("change", updateViewport);
     return () => mediaQuery.removeEventListener("change", updateViewport);
   }, []);
+
+  useEffect(() => {
+    if (isDesktopViewport || selectedPlantIndex === null) return;
+
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+
+    let frame = 0;
+    const syncVisualViewport = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        const layoutHeight = document.documentElement.clientHeight;
+        const next = {
+          height: Math.round(viewport.height),
+          bottomInset: Math.max(0, Math.round(layoutHeight - viewport.height - viewport.offsetTop)),
+        };
+
+        setMobileVisualViewport((current) =>
+          current.height === next.height && current.bottomInset === next.bottomInset ? current : next,
+        );
+      });
+    };
+
+    syncVisualViewport();
+    viewport.addEventListener("resize", syncVisualViewport);
+    viewport.addEventListener("scroll", syncVisualViewport);
+    window.addEventListener("orientationchange", syncVisualViewport);
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      viewport.removeEventListener("resize", syncVisualViewport);
+      viewport.removeEventListener("scroll", syncVisualViewport);
+      window.removeEventListener("orientationchange", syncVisualViewport);
+    };
+  }, [isDesktopViewport, selectedPlantIndex]);
 
   useEffect(() => {
     const loadPlantAnalysis = () => {
@@ -874,11 +914,6 @@ export default function App() {
   const selectedHumidityData = chartRange === "12h" ? humidityData12h : humidityData24h;
   const chartRangeLabel = chartRange === "12h" ? "siste 12 timer" : "siste 24 timer";
   const chartXAxisInterval = chartRange === "12h" ? 0 : 2;
-  const analysisDate = plantAnalysis?.generatedAt ? new Date(plantAnalysis.generatedAt) : null;
-  const analysisDateLabel =
-    analysisDate && Number.isFinite(analysisDate.getTime())
-      ? analysisDate.toLocaleDateString("nb-NO", { day: "numeric", month: "long" })
-      : "";
   const chartSelectTriggerClass = darkMode
     ? "h-9 w-[132px] rounded-full border-white/10 bg-white/10 px-3 text-xs text-white shadow-none hover:bg-white/15 focus-visible:ring-white/20"
     : "h-9 w-[132px] rounded-full border-[#cbd3c2] bg-white/75 px-3 text-xs text-[#4d5d3e] shadow-sm hover:bg-white focus-visible:ring-[#8d9d7e]/30";
@@ -902,9 +937,12 @@ export default function App() {
   const activePlantAnalysisTheme = heroImageConfig?.plantAnalysisTheme ?? siteConfig.plantAnalysisTheme;
   const plantTheme = darkMode ? activePlantAnalysisTheme.dark : activePlantAnalysisTheme.light;
   const sectionHeaderTextStyle: CSSProperties = {
-    color: plantTheme.titleColor,
+    color: activeModeTheme.labelColor,
     fontFamily: "Inter, sans-serif",
     fontWeight: 500,
+    opacity: activeModeTheme.labelOpacity,
+    letterSpacing: "0.12em",
+    textTransform: "uppercase",
   };
   const activeSeason = siteConfig.plantSeasons[String(siteConfig.activePlantSeasonYear)] ?? [];
   const libraryById = new Map(siteConfig.plantLibrary.map((plant) => [plant.id, plant]));
@@ -1138,8 +1176,13 @@ export default function App() {
           <VaulDrawer.Portal>
             <VaulDrawer.Overlay className="fixed inset-0 z-40 bg-black/25 backdrop-blur-[1px]" />
             <VaulDrawer.Content
-              className="fixed inset-x-0 bottom-0 z-50 max-h-[88dvh] overflow-y-auto rounded-t-[28px] p-6 pb-[calc(72px+env(safe-area-inset-bottom))] pt-3 shadow-2xl outline-none"
-              style={{ backgroundColor: plantTheme.cardBg, color: plantTheme.ingressColor }}
+              className="fixed inset-x-0 z-50 overflow-y-auto overscroll-contain rounded-t-[28px] p-6 pb-[calc(72px+env(safe-area-inset-bottom))] pt-3 shadow-2xl outline-none"
+              style={{
+                backgroundColor: plantTheme.cardBg,
+                color: plantTheme.ingressColor,
+                bottom: `${mobileVisualViewport.bottomInset}px`,
+                maxHeight: `${Math.max(320, mobileVisualViewport.height - 12)}px`,
+              }}
             >
               <VaulDrawer.Title className="sr-only">{plantName}</VaulDrawer.Title>
               <VaulDrawer.Description className="sr-only">
@@ -1453,39 +1496,11 @@ export default function App() {
             </section>
 
             {siteConfig.visibleStatuses.plantAnalysis && sortedPlantAnalysisItems.length > 0 && (
-              <section ref={plantSectionRef} className="space-y-4 px-4 pb-6 md:space-y-5 md:px-0 md:pb-0">
-                <div className="flex items-center gap-2 px-1">
-                  <button
-                    type="button"
-                    className={`grid min-h-9 min-w-9 place-items-center rounded-full transition-colors ${
-                      darkMode ? "text-white/45 hover:text-white/70" : "text-stone-500 hover:text-stone-700"
-                    }`}
-                    onClick={() => setPlantAnalysisExpanded((expanded) => !expanded)}
-                    aria-expanded={plantAnalysisExpanded}
-                    aria-controls="plant-analysis-panel"
-                    aria-label={plantAnalysisExpanded ? "Lukk analyse og tips" : "Åpne analyse og tips"}
-                  >
-                    <ChevronDownIcon className={`size-4 transition-transform duration-300 ${plantAnalysisExpanded ? "rotate-0" : "-rotate-90"}`} />
-                  </button>
-                  <OpenAiIcon className="size-5 shrink-0" style={{ color: activeModeTheme.symbolColor }} />
-                  <h2 className="flex items-baseline gap-2 text-lg leading-none md:text-xl" style={sectionHeaderTextStyle}>
-                    <span>Analyse og tips</span>
-                    {analysisDateLabel && <span style={{ fontWeight: 300 }}>{analysisDateLabel}</span>}
-                  </h2>
-                </div>
+              <>
+              <section ref={plantSectionRef} className="-mt-[30px] px-4 pb-6 md:!mt-4 md:px-0 md:pb-0">
                 <div
-                  id="plant-analysis-panel"
-                  className={`grid overflow-hidden transition-[grid-template-rows,opacity] duration-300 ${
-                    plantAnalysisExpanded ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
-                  }`}
-                >
-                  <div className="min-h-0 space-y-4 overflow-hidden md:space-y-5">
-                    <div className="px-1 text-sm font-medium leading-snug md:max-w-4xl md:text-base" style={{ color: plantTheme.ingressColor }}>
-                      <p>{plantAnalysisSummary}</p>
-                    </div>
-                    <div
                       ref={plantScrollerRef}
-                      className="greenhouse-no-scrollbar greenhouse-horizontal-fade greenhouse-viewport-scroller -mb-4 cursor-grab overflow-x-auto px-4 pb-6 pt-3 active:cursor-grabbing md:-mx-8 md:mb-0 md:px-8 md:pb-3 md:pt-3 xl:-mx-10 xl:px-10"
+                      className="greenhouse-no-scrollbar greenhouse-horizontal-fade-desktop -mx-4 -mb-4 w-[calc(100%+2rem)] cursor-grab overflow-x-auto px-4 pb-6 pt-3 active:cursor-grabbing md:-mx-8 md:mb-0 md:w-[calc(100%+4rem)] md:px-8 md:pb-3 md:pt-3 xl:-mx-10 xl:w-[calc(100%+5rem)] xl:px-10"
                       onPointerDown={handlePlantScrollerPointerDown}
                       onPointerMove={handlePlantScrollerPointerMove}
                       onPointerUp={finishPlantScrollerDrag}
@@ -1493,7 +1508,7 @@ export default function App() {
                       onScroll={() => {
                         if (selectedPlantIndex !== null) updatePlantCardAnchor(selectedPlantIndex);
                       }}
-                    >
+                >
                       <div className="flex w-max gap-3 pr-4 md:gap-2">
                         {sortedPlantAnalysisItems.map((item, index) => {
                           const isActive = selectedPlantIndex === index;
@@ -1551,13 +1566,42 @@ export default function App() {
                           );
                         })}
                       </div>
+                </div>
+                {activePlantItem && (
+                  renderPlantBottomSheet(activePlantItem, activeLibraryEntry, activeSeasonEntry)
+                )}
+              </section>
+
+              <section className="space-y-2 px-4 pb-6 md:px-0 md:pb-0">
+                <div className="flex items-center gap-2 px-1">
+                  <button
+                    type="button"
+                    className={`grid min-h-9 min-w-9 place-items-center rounded-full transition-colors ${
+                      darkMode ? "text-white/45 hover:text-white/70" : "text-stone-500 hover:text-stone-700"
+                    }`}
+                    onClick={() => setPlantAnalysisExpanded((expanded) => !expanded)}
+                    aria-expanded={plantAnalysisExpanded}
+                    aria-controls="plant-analysis-panel"
+                    aria-label={plantAnalysisExpanded ? "Lukk vurdering" : "Åpne vurdering"}
+                  >
+                    <ChevronDownIcon className={`size-4 transition-transform duration-300 ${plantAnalysisExpanded ? "rotate-0" : "-rotate-90"}`} />
+                  </button>
+                  <h2 className="text-xs leading-none" style={sectionHeaderTextStyle}>Vurdering</h2>
+                </div>
+                <div
+                  id="plant-analysis-panel"
+                  className={`grid overflow-hidden transition-[grid-template-rows,opacity] duration-300 ${
+                    plantAnalysisExpanded ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+                  }`}
+                >
+                  <div className="min-h-0 overflow-hidden">
+                    <div className="px-1 pt-3 text-sm font-medium leading-snug md:max-w-4xl md:text-base" style={{ color: plantTheme.ingressColor }}>
+                      <p>{plantAnalysisSummary}</p>
                     </div>
-                    {activePlantItem && (
-                      renderPlantBottomSheet(activePlantItem, activeLibraryEntry, activeSeasonEntry)
-                    )}
                   </div>
                 </div>
               </section>
+              </>
             )}
 
             {/* Trend Charts */}
@@ -1577,10 +1621,7 @@ export default function App() {
                   >
                     <ChevronDownIcon className={`size-4 transition-transform duration-300 ${chartsExpanded ? "rotate-0" : "-rotate-90"}`} />
                   </button>
-                  <h2
-                    className="text-lg leading-none md:text-xl"
-                    style={sectionHeaderTextStyle}
-                  >
+                  <h2 className="text-xs leading-none" style={sectionHeaderTextStyle}>
                     Grafer
                   </h2>
                 </div>
