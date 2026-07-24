@@ -15,6 +15,31 @@ export interface GreenhouseStats24h {
   humidity?: MetricStats;
 }
 
+export type DataHealthStatus = "ok" | "warning" | "critical";
+export type SensorHealthStatus = "fresh" | "stale" | "missing";
+
+export interface SensorDataHealth {
+  sensor: "temperature" | "humidity";
+  label: string;
+  status: SensorHealthStatus;
+  updatedAt: string | null;
+  ageMinutes: number | null;
+  staleForMinutes: number | null;
+}
+
+export interface DataHealth {
+  status: DataHealthStatus;
+  checkedAt: string;
+  staleAfterMinutes: number;
+  affectedSensors: Array<"temperature" | "humidity">;
+  lastClimateUpdateAt: string | null;
+  alertStartedAt: string | null;
+  sensors: {
+    temperature: SensorDataHealth;
+    humidity: SensorDataHealth;
+  };
+}
+
 export interface PlantConfig {
   id: string;
   name: string;
@@ -27,14 +52,53 @@ export interface PlantConfig {
 
 export type PlantType = "Blomst" | "Urte" | "Frukt" | "Grønnsak";
 export type PlantAcquisition = "seed" | "plant";
+export type PlantFinishReason = "season-over" | "moved-out";
 export type SeedLocation = "Innendørs" | "Utendørs" | "Drivhus";
+export type PlantGrowingLocation = "indoor" | "greenhouse" | "outdoor";
+export type PlantWaterNeed = "low" | "moderate" | "high";
+export type PlantSoilMoisture = "dry-between" | "evenly-moist" | "moist";
+export type PlantDevelopmentStage = "new" | "germinating" | "growing" | "budding" | "flowering" | "fruit-set" | "fruit-growing" | "ripening" | "harvest-ready" | "post-flowering";
+export interface PlantObservation { id: string; date: string; stage: PlantDevelopmentStage; note: string; growingLocation: PlantGrowingLocation | ""; growingMedium: string; }
 
 export interface PlantLibraryEntry {
   id: string;
   name: string;
   plantType: PlantType;
+  plantGroup: string;
   description: string;
+  imageBackgroundColor: string;
+  imagePromptDescription: string;
+  waterNeed?: PlantWaterNeed | "";
+  soilMoisture?: PlantSoilMoisture | "";
+  developmentTime?: string;
   image: string;
+  productName?: string;
+  manufacturer?: string;
+  articleNumber?: string;
+  sourceUrl?: string;
+  sourceProductId?: string;
+  sourceImageUrl?: string;
+  productData?: {
+    baseArticleNumber?: string;
+    ean?: string;
+    latinName?: string;
+    attributes?: Array<{ label: string; value: string }>;
+    cultivation?: Array<{ label: string; value: string }>;
+  };
+}
+
+export interface SupplierProduct {
+  manufacturer: string; sourceProductId: string; articleNumber: string; baseArticleNumber: string; ean: string;
+  productName: string; varietyName: string; description: string; latinName: string; productType: string;
+  plantType: PlantType; plantGroup: string; categoryPath: string[];
+  sourceUrl: string; sourceImageUrl: string;
+  attributes: Array<{ label: string; value: string }>;
+  cultivation: Array<{ label: string; value: string }>;
+}
+
+export interface SupplierCatalog {
+  manufacturer: string; updatedAt: string | null; sourceCount?: number; products: SupplierProduct[];
+  cursor?: number; done?: boolean; importedInBatch?: number;
 }
 
 export interface PlantSeasonEntry {
@@ -46,8 +110,15 @@ export interface PlantSeasonEntry {
   seedLocation: SeedLocation | "";
   greenhouseDate: string;
   purchaseSource: string;
+  finished: boolean;
+  finishReason: PlantFinishReason | "";
   harvestDate: string;
   plantingPlace: string;
+  growingLocation: PlantGrowingLocation | "";
+  developmentStage: PlantDevelopmentStage | "";
+  observedAt: string;
+  observation: string;
+  observations: PlantObservation[];
   active: boolean;
   note: string;
 }
@@ -71,38 +142,53 @@ export interface PlantAnalysisTheme {
 
 export interface PlantAnalysisItem {
   id: string;
+  assessedAt?: string;
   name: string;
   plantType?: string;
   plantingPlace?: string;
   libraryId?: string;
-  forecast?: string;
+  development?: { type: "ripening" | "flowering" | "harvest"; text: string };
   status: "trives" | "følg med" | "stress";
-  summary: string;
-  watch: string;
+  assessment: string;
+  watering: string;
+  /** Legacy fields from analyses generated before schema v2. */
+  summary?: string;
+  watch?: string;
   detail?: string;
+  forecast?: string;
 }
 
 export interface PlantAnalysisResponse {
   generatedAt: string;
   month: string;
   season: string;
-  contextSummary: string;
   usage?: {
     inputTokens?: number;
     outputTokens?: number;
     totalTokens?: number;
   };
+  refresh?: {
+    reason: "initial" | "model" | "climate" | "plant-data" | "unchanged";
+    detail?: string;
+    analyzedPlants: number;
+    reusedPlants: number;
+  };
+  model?: string;
   items: PlantAnalysisItem[];
 }
+export interface PlantAnalysisRun { id: string; at: string; trigger: string; model: string; reason: string; detail: string; analyzedPlants: number; reusedPlants: number; inputTokens: number; outputTokens: number; totalTokens: number; estimatedCostUsd: number | null; estimatedCostNok: number | null; nokRate: number | null; }
 
 export interface LatestData {
-  temperature: number;
-  humidity: number;
-  updatedAt: string;
-  temperatureUpdatedAt: string;
-  humidityUpdatedAt: string;
+  temperature: number | null;
+  humidity: number | null;
+  updatedAt: string | null;
+  temperatureUpdatedAt: string | null;
+  humidityUpdatedAt: string | null;
+  dataHealth: DataHealth;
   rainToday?: number;
   rainTodayUpdatedAt?: string;
+  rainHour?: number;
+  rainHourUpdatedAt?: string;
   door?: "open" | "closed";
   doorUpdatedAt?: string;
   window?: number;
@@ -176,14 +262,21 @@ export interface SiteConfig {
     door: boolean;
     fan: boolean;
     window: boolean;
+    plantLibrary: boolean;
     plantAnalysis: boolean;
     charts: boolean;
   };
   plants: PlantConfig[];
   activePlantSeasonYear: number;
+  plantDisplaySort: "manual" | "name-asc" | "name-desc" | "type" | "status";
   plantLibrary: PlantLibraryEntry[];
   plantSeasons: Record<string, PlantSeasonEntry[]>;
   plantAnalysisNotes: string;
+  plantImagePrompt: string;
+  plantAnalysisModel: string;
+  plantAnalysisSchedule: { enabled: boolean; time: string };
+  frontPageSectionOrder: Array<"climate" | "plants" | "charts">;
+  frontPageSectionDefaults: { analysisExpanded: boolean; chartsExpanded: boolean };
   plantAnalysisTheme: PlantAnalysisTheme;
   headerImages: Record<HeaderImageSlot, HeaderImageConfig>;
   branding: {
@@ -264,23 +357,54 @@ const defaultPlantAnalysisTheme: PlantAnalysisTheme = {
 };
 
 export const plantTypeOptions: PlantType[] = ["Blomst", "Urte", "Frukt", "Grønnsak"];
+export const plantGroupOptionsByType: Record<PlantType, string[]> = {
+  Frukt: ["Tomat", "Agurk", "Aubergine", "Drue", "Kiwibær", "Fersken", "Chili", "Paprika", "Melon", "Squash", "Jordbær", "Bær", "Sitrus", "Fiken", "Pasjonsfrukt", "Physalis", "Annet"],
+  Grønnsak: ["Rotgrønnsak", "Bladgrønnsak", "Kål", "Løk", "Belgvekst", "Potet", "Mais", "Stengelgrønnsak", "Asparges", "Fennikel", "Annet"],
+  Blomst: ["Staude", "Sommerblomst", "Løk/knoll", "Klatreplante", "Snittblomst", "Pollinatorplante", "Potteplante", "Annet"],
+  Urte: ["Basilikum", "Persille", "Koriander", "Dill", "Mynte", "Timian", "Oregano/merian", "Rosmarin", "Salvie", "Gressløk", "Estragon", "Sitronmelisse", "Annet"],
+};
 export const acquisitionOptions: Array<{ value: PlantAcquisition; label: string }> = [
   { value: "seed", label: "Sådd fra frø" },
   { value: "plant", label: "Anskaffet som plante" },
 ];
 export const seedLocationOptions: SeedLocation[] = ["Innendørs", "Utendørs", "Drivhus"];
+export const plantGrowingLocationOptions: Array<{ value: PlantGrowingLocation; label: string }> = [
+  { value: "indoor", label: "Innendørs" }, { value: "greenhouse", label: "Drivhus" }, { value: "outdoor", label: "Utendørs" },
+];
+export const getPlantGrowingLocationLabel = (value: PlantGrowingLocation | "") => plantGrowingLocationOptions.find((option) => option.value === value)?.label || "Ikke angitt";
+export const plantWaterNeedOptions: Array<{ value: PlantWaterNeed; label: string }> = [
+  { value: "low", label: "Lavt" }, { value: "moderate", label: "Moderat" }, { value: "high", label: "Høyt" },
+];
+export const plantSoilMoistureOptions: Array<{ value: PlantSoilMoisture; label: string }> = [
+  { value: "dry-between", label: "Tørke lett mellom vanning" },
+  { value: "evenly-moist", label: "Jevnt fuktig" },
+  { value: "moist", label: "Fuktig" },
+];
+const stageLabels: Record<PlantDevelopmentStage, string> = {
+  new: "Nyplantet", germinating: "Spirer", growing: "I vekst", budding: "Har knopper", flowering: "Blomstrer",
+  "fruit-set": "Har satt frukt", "fruit-growing": "Frukten vokser", ripening: "Begynner å modne",
+  "harvest-ready": "Høsteklar", "post-flowering": "Avblomstret",
+};
+const stagesByType: Record<PlantType, PlantDevelopmentStage[]> = {
+  Frukt: ["new", "germinating", "growing", "flowering", "fruit-set", "fruit-growing", "ripening", "harvest-ready"],
+  Grønnsak: ["new", "germinating", "growing", "budding", "flowering", "fruit-set", "fruit-growing", "ripening", "harvest-ready"],
+  Urte: ["new", "germinating", "growing", "harvest-ready", "flowering"],
+  Blomst: ["new", "germinating", "growing", "budding", "flowering", "post-flowering"],
+};
+export const getPlantDevelopmentStageOptions = (type: PlantType) => stagesByType[type].map((value) => ({ value, label: stageLabels[value] }));
+export const getPlantDevelopmentStageLabel = (stage: PlantDevelopmentStage) => stageLabels[stage];
 
 const defaultPlantLibrary: PlantLibraryEntry[] = [
-  { id: "san-marazano-tomater", name: "San Marazano tomater", plantType: "Grønnsak", description: "", image: "" },
-  { id: "cherrytomater", name: "Cherrytomater", plantType: "Grønnsak", description: "", image: "" },
-  { id: "agurk", name: "Agurk", plantType: "Grønnsak", description: "", image: "" },
-  { id: "druer", name: "Druer", plantType: "Frukt", description: "", image: "" },
-  { id: "basilikum", name: "Basilikum", plantType: "Urte", description: "Basilikum er en varmekjær urt som dyrkes for sine aromatiske blader.", image: "" },
-  { id: "kryptimian", name: "Kryptimian", plantType: "Urte", description: "", image: "" },
-  { id: "kiwibaer", name: "Kiwibær", plantType: "Frukt", description: "", image: "" },
-  { id: "hvit-fersken", name: "Hvit fersken", plantType: "Frukt", description: "", image: "" },
-  { id: "carolina-reaper", name: "Carolina Reaper", plantType: "Grønnsak", description: "", image: "" },
-  { id: "gul-habanero", name: "Gul Habanero", plantType: "Grønnsak", description: "", image: "" },
+  { id: "san-marazano-tomater", name: "San Marazano tomater", plantType: "Frukt", plantGroup: "Tomat", description: "", image: "" },
+  { id: "cherrytomater", name: "Cherrytomater", plantType: "Frukt", plantGroup: "Tomat", description: "", image: "" },
+  { id: "agurk", name: "Agurk", plantType: "Frukt", plantGroup: "Agurk", description: "", image: "" },
+  { id: "druer", name: "Druer", plantType: "Frukt", plantGroup: "Drue", description: "", image: "" },
+  { id: "basilikum", name: "Basilikum", plantType: "Urte", plantGroup: "", description: "Basilikum er en varmekjær urt som dyrkes for sine aromatiske blader.", image: "" },
+  { id: "kryptimian", name: "Kryptimian", plantType: "Urte", plantGroup: "", description: "", image: "" },
+  { id: "kiwibaer", name: "Kiwibær", plantType: "Frukt", plantGroup: "Kiwibær", description: "", image: "" },
+  { id: "hvit-fersken", name: "Hvit fersken", plantType: "Frukt", plantGroup: "Fersken", description: "", image: "" },
+  { id: "carolina-reaper", name: "Carolina Reaper", plantType: "Frukt", plantGroup: "Chili", description: "", image: "" },
+  { id: "gul-habanero", name: "Gul Habanero", plantType: "Frukt", plantGroup: "Chili", description: "", image: "" },
 ];
 
 const defaultPlantSeasons: Record<string, PlantSeasonEntry[]> = {
@@ -293,8 +417,15 @@ const defaultPlantSeasons: Record<string, PlantSeasonEntry[]> = {
     seedLocation: "",
     greenhouseDate: "",
     purchaseSource: "",
+    finished: false,
+    finishReason: "",
     harvestDate: "",
     plantingPlace: "",
+    growingLocation: "",
+    developmentStage: "",
+    observedAt: "",
+    observation: "",
+    observations: [],
     active: true,
     note: "",
   })),
@@ -302,11 +433,12 @@ const defaultPlantSeasons: Record<string, PlantSeasonEntry[]> = {
 
 export const defaultSiteConfig: SiteConfig = {
   showHeroImage: true,
-  visibleStatuses: {
-    door: true,
-    fan: true,
-    window: true,
-    plantAnalysis: true,
+    visibleStatuses: {
+      door: true,
+      fan: true,
+      window: true,
+      plantLibrary: true,
+      plantAnalysis: true,
     charts: true,
   },
   plants: [
@@ -322,9 +454,37 @@ export const defaultSiteConfig: SiteConfig = {
     { id: "gul-habanero", name: "Gul Habanero", plantType: "Chili", plantingPlace: "", active: true, note: "", image: "" },
   ],
   activePlantSeasonYear: 2026,
+  plantDisplaySort: "manual",
   plantLibrary: defaultPlantLibrary,
   plantSeasons: defaultPlantSeasons,
   plantAnalysisNotes: "",
+  plantImagePrompt: `Create an ultra-realistic commercial product photograph of a single {{plantenavn}} suspended in mid-air.
+
+Product-specific visual description: {{plantebeskrivelse}}
+
+The {{plantenavn}} has dramatically exploded open into several large pieces while remaining visually recognizable. Fresh juice, water droplets, pulp, leaves, petals, herbs, or natural fragments appropriate to the product burst outward in a dynamic high-speed splash. The explosion should feel powerful and frozen in time, like it was captured with a professional ultra high-speed camera.
+
+Requirements:
+- Hyper realistic photography
+- Premium advertising style
+- The {{plantenavn}} must remain the clear focal point
+- Natural colors and textures faithful to this specific product
+- Dramatic liquid or natural-fragment splash matching the product
+- Tiny suspended droplets and fragments everywhere
+- Sharp details with no motion blur
+- Floating in mid-air
+- Center composition
+- A bold, solid {{bakgrunnsfarge}} studio background. Use exactly this background color while preserving strong visual contrast between subject and background.
+- Soft studio lighting with subtle rim lighting
+- High contrast
+- No text, labels, packaging, or extra objects
+- Clean minimal composition
+- Premium food and botanical photography aesthetic
+- 8K quality`,
+  plantAnalysisModel: "gpt-5.4-mini",
+  plantAnalysisSchedule: { enabled: true, time: "06:00" },
+  frontPageSectionOrder: ["climate", "plants", "charts"],
+  frontPageSectionDefaults: { analysisExpanded: false, chartsExpanded: false },
   plantAnalysisTheme: defaultPlantAnalysisTheme,
   headerImages: {
     coldNight: {
@@ -429,6 +589,12 @@ export const defaultSiteConfig: SiteConfig = {
   },
 };
 
+function normalizeSectionOrder(value: unknown): SiteConfig["frontPageSectionOrder"] {
+  const allowed: SiteConfig["frontPageSectionOrder"] = ["climate", "plants", "charts"];
+  const input = Array.isArray(value) ? value.filter((item): item is SiteConfig["frontPageSectionOrder"][number] => allowed.includes(item as SiteConfig["frontPageSectionOrder"][number])) : [];
+  return [...new Set([...input, ...allowed])] as SiteConfig["frontPageSectionOrder"];
+}
+
 function normalizeSiteConfig(data: Partial<SiteConfig> | null | undefined): SiteConfig {
   const visibleStatuses = data?.visibleStatuses ?? {};
   const plants = Array.isArray(data?.plants) ? data.plants : defaultSiteConfig.plants;
@@ -456,6 +622,22 @@ function normalizeSiteConfig(data: Partial<SiteConfig> | null | undefined): Site
     ? branding.description.trim()
     : defaultSiteConfig.branding.description;
 
+  const normalizedHeaderImages = {
+    coldNight: normalizeHeaderImageConfig(headerImages.coldNight, defaultSiteConfig.headerImages.coldNight, legacyDisplayThemeConfig, plantAnalysisTheme),
+    night: normalizeHeaderImageConfig(headerImages.night, defaultSiteConfig.headerImages.night, legacyDisplayThemeConfig, plantAnalysisTheme),
+    cold: normalizeHeaderImageConfig(headerImages.cold, defaultSiteConfig.headerImages.cold, legacyDisplayThemeConfig, plantAnalysisTheme),
+    rain: normalizeHeaderImageConfig(headerImages.rain, defaultSiteConfig.headerImages.rain, legacyDisplayThemeConfig, plantAnalysisTheme),
+    normal: normalizeHeaderImageConfig(headerImages.normal, defaultSiteConfig.headerImages.normal, legacyDisplayThemeConfig, plantAnalysisTheme),
+    warm: normalizeHeaderImageConfig(headerImages.warm, defaultSiteConfig.headerImages.warm, legacyDisplayThemeConfig, plantAnalysisTheme),
+    hot: normalizeHeaderImageConfig(headerImages.hot, defaultSiteConfig.headerImages.hot, legacyDisplayThemeConfig, plantAnalysisTheme),
+  };
+  const baseDisplayTheme = normalizedHeaderImages.normal.displayTheme;
+  const basePlantAnalysisTheme = normalizedHeaderImages.normal.plantAnalysisTheme;
+  for (const slot of Object.keys(normalizedHeaderImages) as HeaderImageSlot[]) {
+    normalizedHeaderImages[slot].displayTheme = baseDisplayTheme;
+    normalizedHeaderImages[slot].plantAnalysisTheme = basePlantAnalysisTheme;
+  }
+
   return {
     showHeroImage:
       typeof data?.showHeroImage === "boolean" ? data.showHeroImage : defaultSiteConfig.showHeroImage,
@@ -463,24 +645,23 @@ function normalizeSiteConfig(data: Partial<SiteConfig> | null | undefined): Site
       door: typeof visibleStatuses.door === "boolean" ? visibleStatuses.door : defaultSiteConfig.visibleStatuses.door,
       fan: typeof visibleStatuses.fan === "boolean" ? visibleStatuses.fan : defaultSiteConfig.visibleStatuses.fan,
       window: typeof visibleStatuses.window === "boolean" ? visibleStatuses.window : defaultSiteConfig.visibleStatuses.window,
+      plantLibrary: typeof visibleStatuses.plantLibrary === "boolean" ? visibleStatuses.plantLibrary : defaultSiteConfig.visibleStatuses.plantLibrary,
       plantAnalysis: typeof visibleStatuses.plantAnalysis === "boolean" ? visibleStatuses.plantAnalysis : defaultSiteConfig.visibleStatuses.plantAnalysis,
       charts: typeof visibleStatuses.charts === "boolean" ? visibleStatuses.charts : defaultSiteConfig.visibleStatuses.charts,
     },
     plants: activeSeasonPlants.length ? activeSeasonPlants : normalizePlants(plants),
     activePlantSeasonYear,
+    plantDisplaySort: ["manual", "name-asc", "name-desc", "type", "status"].includes(String(data?.plantDisplaySort)) ? data!.plantDisplaySort! : "manual",
     plantLibrary,
     plantSeasons,
     plantAnalysisNotes: typeof data?.plantAnalysisNotes === "string" ? data.plantAnalysisNotes.slice(0, 1200) : defaultSiteConfig.plantAnalysisNotes,
-    plantAnalysisTheme: normalizePlantAnalysisTheme(plantAnalysisTheme),
-    headerImages: {
-      coldNight: normalizeHeaderImageConfig(headerImages.coldNight, defaultSiteConfig.headerImages.coldNight, legacyDisplayThemeConfig, plantAnalysisTheme),
-      night: normalizeHeaderImageConfig(headerImages.night, defaultSiteConfig.headerImages.night, legacyDisplayThemeConfig, plantAnalysisTheme),
-      cold: normalizeHeaderImageConfig(headerImages.cold, defaultSiteConfig.headerImages.cold, legacyDisplayThemeConfig, plantAnalysisTheme),
-      rain: normalizeHeaderImageConfig(headerImages.rain, defaultSiteConfig.headerImages.rain, legacyDisplayThemeConfig, plantAnalysisTheme),
-      normal: normalizeHeaderImageConfig(headerImages.normal, defaultSiteConfig.headerImages.normal, legacyDisplayThemeConfig, plantAnalysisTheme),
-      warm: normalizeHeaderImageConfig(headerImages.warm, defaultSiteConfig.headerImages.warm, legacyDisplayThemeConfig, plantAnalysisTheme),
-      hot: normalizeHeaderImageConfig(headerImages.hot, defaultSiteConfig.headerImages.hot, legacyDisplayThemeConfig, plantAnalysisTheme),
-    },
+    plantImagePrompt: typeof data?.plantImagePrompt === "string" && !data.plantImagePrompt.startsWith("Produktbilde av en gruppe med {{plantenavn}}") ? data.plantImagePrompt.slice(0, 2400) : defaultSiteConfig.plantImagePrompt,
+    plantAnalysisModel: typeof data?.plantAnalysisModel === "string" ? data.plantAnalysisModel : "gpt-5.4-mini",
+    plantAnalysisSchedule: { enabled: data?.plantAnalysisSchedule?.enabled !== false, time: /^([01]\d|2[0-3]):(00|15|30|45)$/.test(data?.plantAnalysisSchedule?.time || "") ? data!.plantAnalysisSchedule!.time : "06:00" },
+    frontPageSectionOrder: normalizeSectionOrder(data?.frontPageSectionOrder),
+    frontPageSectionDefaults: { analysisExpanded: data?.frontPageSectionDefaults?.analysisExpanded === true, chartsExpanded: data?.frontPageSectionDefaults?.chartsExpanded === true },
+    plantAnalysisTheme: basePlantAnalysisTheme,
+    headerImages: normalizedHeaderImages,
     branding: {
       siteName,
       shortName,
@@ -545,17 +726,61 @@ function normalizePlantLibrary(library: unknown, legacyPlants: unknown): PlantLi
       let id = typeof item.id === "string" && item.id.trim() ? item.id.trim() : fallbackId;
       if (seen.has(id)) id = `${id}-${index + 1}`;
       seen.add(id);
+      const plantType = normalizePlantType(item.plantType);
       return {
         id,
         name: name.slice(0, 80),
-        plantType: normalizePlantType(item.plantType),
+        plantType,
+        plantGroup: normalizePlantGroup(item.plantGroup, plantType, name),
         description: typeof item.description === "string" ? item.description.slice(0, 500) : "",
+        imageBackgroundColor: /^#[0-9a-f]{6}$/i.test(String(item.imageBackgroundColor || "")) ? String(item.imageBackgroundColor).toLowerCase() : "#c88f44",
+        imagePromptDescription: typeof item.imagePromptDescription === "string" ? item.imagePromptDescription.slice(0, 600) : "",
+        waterNeed: ["low", "moderate", "high"].includes(String(item.waterNeed)) ? item.waterNeed as PlantWaterNeed : "",
+        soilMoisture: ["dry-between", "evenly-moist", "moist"].includes(String(item.soilMoisture)) ? item.soilMoisture as PlantSoilMoisture : "",
+        developmentTime: typeof item.developmentTime === "string" ? item.developmentTime.slice(0, 120) : "",
         image: typeof item.image === "string" ? item.image : "",
+        productName: typeof item.productName === "string" ? item.productName : "",
+        manufacturer: typeof item.manufacturer === "string" ? item.manufacturer : "",
+        articleNumber: typeof item.articleNumber === "string" ? item.articleNumber : "",
+        sourceUrl: typeof item.sourceUrl === "string" ? item.sourceUrl : "",
+        sourceProductId: typeof item.sourceProductId === "string" ? item.sourceProductId : "",
+        sourceImageUrl: typeof item.sourceImageUrl === "string" ? item.sourceImageUrl : "",
+        productData: item.productData,
       };
     })
     .filter((plant): plant is PlantLibraryEntry => Boolean(plant));
 
   return normalized.length ? normalized : defaultPlantLibrary;
+}
+
+function normalizePlantGroup(value: unknown, plantType: PlantType, name: string) {
+  const raw = typeof value === "string" ? value.trim() : "";
+  if (plantGroupOptionsByType[plantType].includes(raw)) return raw;
+  const normalizedName = name.toLocaleLowerCase("nb-NO");
+  if (plantType === "Frukt") {
+    if (normalizedName.includes("tomat") || normalizedName.includes("marmande") || normalizedName.includes("marzano")) return "Tomat";
+    if (normalizedName.includes("agurk")) return "Agurk";
+    if (normalizedName.includes("drue")) return "Drue";
+    if (normalizedName.includes("kiwi")) return "Kiwibær";
+    if (normalizedName.includes("fersken") || normalizedName.includes("peach")) return "Fersken";
+    if (normalizedName.includes("reaper") || normalizedName.includes("habanero") || normalizedName.includes("chili")) return "Chili";
+  }
+  if (plantType === "Urte") {
+    if (normalizedName.includes("basilikum")) return "Basilikum";
+    if (normalizedName.includes("persille")) return "Persille";
+    if (normalizedName.includes("koriander")) return "Koriander";
+    if (normalizedName.includes("dill")) return "Dill";
+    if (normalizedName.includes("mynte")) return "Mynte";
+    if (normalizedName.includes("timian")) return "Timian";
+    if (normalizedName.includes("oregano") || normalizedName.includes("merian")) return "Oregano/merian";
+    if (normalizedName.includes("rosmarin")) return "Rosmarin";
+    if (normalizedName.includes("salvie")) return "Salvie";
+    if (normalizedName.includes("gressløk")) return "Gressløk";
+    if (normalizedName.includes("estragon")) return "Estragon";
+    if (normalizedName.includes("sitronmelisse")) return "Sitronmelisse";
+  }
+  if (plantType === "Blomst" && (normalizedName.includes("solhatt") || normalizedName.includes("brudeslør"))) return "Staude";
+  return "";
 }
 
 function normalizePlantSeasons(
@@ -584,8 +809,15 @@ function normalizePlantSeasons(
       seedLocation: "",
       greenhouseDate: "",
       purchaseSource: "",
+      finished: false,
+      finishReason: "",
       harvestDate: "",
       plantingPlace: plant.plantingPlace,
+      growingLocation: plant.greenhouseDate ? "greenhouse" : plant.seedLocation === "Innendørs" ? "indoor" : plant.seedLocation === "Utendørs" ? "outdoor" : plant.seedLocation === "Drivhus" ? "greenhouse" : "",
+      developmentStage: "",
+      observedAt: "",
+      observation: "",
+      observations: [],
       active: plant.active,
       note: plant.note,
     }));
@@ -603,6 +835,24 @@ function normalizePlantSeasonEntry(entry: unknown, library: PlantLibraryEntry[],
   const fallbackLibraryId = library[index]?.id || library[0]?.id || "";
   const libraryId = typeof item.libraryId === "string" && item.libraryId.trim() ? item.libraryId.trim() : (typeof item.id === "string" ? item.id : fallbackLibraryId);
   if (!libraryId) return null;
+  const harvestDate = normalizeDateString(item.harvestDate);
+  const finished = typeof item.finished === "boolean" ? item.finished : Boolean(harvestDate);
+  const inferredLocation: PlantGrowingLocation | "" = item.greenhouseDate ? "greenhouse" : item.seedLocation === "Innendørs" ? "indoor" : item.seedLocation === "Utendørs" ? "outdoor" : item.seedLocation === "Drivhus" ? "greenhouse" : "";
+  const rawObservations = Array.isArray(item.observations) ? item.observations : [];
+  const observations = rawObservations.map((value, observationIndex) => {
+    const row = value && typeof value === "object" ? value as Partial<PlantObservation> : {};
+    const stage = Object.keys(stageLabels).includes(String(row.stage)) ? row.stage as PlantDevelopmentStage : null;
+    const date = normalizeDateString(row.date);
+    if (!stage || !date) return null;
+    const growingLocation = ["indoor", "greenhouse", "outdoor"].includes(String(row.growingLocation)) ? row.growingLocation as PlantGrowingLocation : inferredLocation;
+    return { id: typeof row.id === "string" && row.id ? row.id.slice(0, 100) : `${libraryId}-${date}-${observationIndex}`, date, stage, note: typeof row.note === "string" ? row.note.slice(0, 120) : "", growingLocation, growingMedium: typeof row.growingMedium === "string" && row.growingMedium ? row.growingMedium.slice(0, 120) : (typeof item.plantingPlace === "string" ? item.plantingPlace.slice(0, 120) : "") };
+  }).filter((row): row is PlantObservation => Boolean(row));
+  if (observations.length === 0 && item.developmentStage && item.observedAt) {
+    const legacyLocation = item.greenhouseDate ? "greenhouse" : item.seedLocation === "Innendørs" ? "indoor" : item.seedLocation === "Utendørs" ? "outdoor" : item.seedLocation === "Drivhus" ? "greenhouse" : "";
+    observations.push({ id: `${libraryId}-${item.observedAt}-legacy`, date: normalizeDateString(item.observedAt), stage: item.developmentStage, note: typeof item.observation === "string" ? item.observation.slice(0, 120) : "", growingLocation: legacyLocation, growingMedium: typeof item.plantingPlace === "string" ? item.plantingPlace.slice(0, 120) : "" });
+  }
+  observations.sort((a, b) => a.date.localeCompare(b.date));
+  const latestObservation = observations.at(-1);
   return {
     id: typeof item.id === "string" && item.id.trim() ? item.id.trim() : `${libraryId}-${year}-${index}`,
     year,
@@ -612,8 +862,15 @@ function normalizePlantSeasonEntry(entry: unknown, library: PlantLibraryEntry[],
     seedLocation: seedLocationOptions.includes(item.seedLocation as SeedLocation) ? item.seedLocation as SeedLocation : "",
     greenhouseDate: normalizeDateString(item.greenhouseDate),
     purchaseSource: typeof item.purchaseSource === "string" ? item.purchaseSource.slice(0, 160) : "",
-    harvestDate: normalizeDateString(item.harvestDate),
+    finished,
+    finishReason: finished && item.finishReason === "moved-out" ? "moved-out" : finished ? "season-over" : "",
+    harvestDate,
     plantingPlace: typeof item.plantingPlace === "string" ? item.plantingPlace.slice(0, 120) : "",
+    growingLocation: ["indoor", "greenhouse", "outdoor"].includes(String(item.growingLocation)) ? item.growingLocation as PlantGrowingLocation : (item.greenhouseDate ? "greenhouse" : item.seedLocation === "Innendørs" ? "indoor" : item.seedLocation === "Utendørs" ? "outdoor" : item.seedLocation === "Drivhus" ? "greenhouse" : ""),
+    developmentStage: latestObservation?.stage || (Object.keys(stageLabels).includes(String(item.developmentStage)) ? item.developmentStage as PlantDevelopmentStage : ""),
+    observedAt: latestObservation?.date || normalizeDateString(item.observedAt),
+    observation: latestObservation?.note || (typeof item.observation === "string" ? item.observation.slice(0, 120) : ""),
+    observations,
     active: typeof item.active === "boolean" ? item.active : true,
     note: typeof item.note === "string" ? item.note.slice(0, 360) : "",
   };
@@ -790,7 +1047,8 @@ export async function fetchLatestGreenhouseData(): Promise<LatestData> {
   });
 
   if (!res.ok) {
-    throw new Error(`API error: ${res.status}`);
+    const errorBody = await res.json().catch(() => ({}));
+    throw new Error(errorBody.details || errorBody.error || `API error: ${res.status}`);
   }
 
   const json = await res.json();
@@ -802,8 +1060,11 @@ export async function fetchLatestGreenhouseData(): Promise<LatestData> {
     updatedAt: data.updatedAt,
     temperatureUpdatedAt: data.temperatureUpdatedAt,
     humidityUpdatedAt: data.humidityUpdatedAt,
+    dataHealth: data.dataHealth,
     rainToday: data.rainToday,
     rainTodayUpdatedAt: data.rainTodayUpdatedAt,
+    rainHour: data.rainHour,
+    rainHourUpdatedAt: data.rainHourUpdatedAt,
     door: data.door,
     doorUpdatedAt: data.doorUpdatedAt,
     window: data.window,
@@ -859,11 +1120,42 @@ export async function saveAdminSiteConfig(config: SiteConfig): Promise<SiteConfi
   });
 
   if (!res.ok) {
-    throw new Error(`API error: ${res.status}`);
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.details || body.error || `API error: ${res.status}`);
   }
 
   const json = await res.json();
   return normalizeSiteConfig(json.data);
+}
+
+export async function fetchNelsonGardenCatalog(): Promise<SupplierCatalog> {
+  const res = await fetch(greenhouseApiUrl("/admin/api/product-catalog/nelson-garden"), { cache: "no-store" });
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  return (await res.json()).data;
+}
+
+export async function importNelsonGardenCatalogBatch(cursor: number): Promise<SupplierCatalog> {
+  const res = await fetch(greenhouseApiUrl("/admin/api/product-catalog/nelson-garden/import"), {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cursor }),
+  });
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  return (await res.json()).data;
+}
+
+export async function addNelsonGardenProduct(articleNumber: string): Promise<PlantLibraryEntry> {
+  const res = await fetch(greenhouseApiUrl("/admin/api/product-catalog/nelson-garden/add"), {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ articleNumber }),
+  });
+  if (!res.ok) { const body = await res.json().catch(() => ({})); throw new Error(body.details || body.error || `API error: ${res.status}`); }
+  return (await res.json()).data;
+}
+
+export async function classifyNelsonGardenCatalogBatch(cursor: number): Promise<{ cursor: number; done: boolean; total: number; classified: number }> {
+  const res = await fetch(greenhouseApiUrl("/admin/api/product-catalog/nelson-garden/classify"), {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cursor }),
+  });
+  if (!res.ok) { const body = await res.json().catch(() => ({})); throw new Error(body.details || body.error || `API error: ${res.status}`); }
+  return (await res.json()).data;
 }
 
 export async function fetchAdminImages(): Promise<AdminImage[]> {
@@ -878,6 +1170,17 @@ export async function fetchAdminImages(): Promise<AdminImage[]> {
 
   const json = await res.json();
   return Array.isArray(json.data) ? json.data : [];
+}
+
+export async function generatePlantImages(plantId: string): Promise<{ images: AdminImage[]; prompt: string; model: string }> {
+  const res = await fetch(greenhouseApiUrl("/admin/api/plant-images/generate"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ plantId }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.details || body.error || `API error: ${res.status}`);
+  return body.data;
 }
 
 export async function uploadAdminImage(file: File, slot: HeaderImageSlot, format: HeaderImageFormat): Promise<AdminImage> {
@@ -1084,6 +1387,16 @@ export async function generatePlantAnalysis(): Promise<PlantAnalysisResponse> {
   }
 
   return json.data;
+}
+export async function fetchPlantAnalysisHistory(): Promise<PlantAnalysisRun[]> {
+  const res = await fetch(greenhouseApiUrl("/admin/api/plant-analysis/history"), { cache: "no-store" });
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  return (await res.json()).data || [];
+}
+export async function fetchOpenAiModels(): Promise<string[]> {
+  const res = await fetch(greenhouseApiUrl("/admin/api/openai-models"), { cache: "no-store" });
+  if (!res.ok) return ["gpt-5.4-mini", "gpt-5-mini"];
+  return (await res.json()).data || [];
 }
 
 // Map Yr symbol codes to Norwegian descriptions

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import SunCalc from "suncalc";
+import { Activity, BarChart3, Clock3, Database, Droplets, Eye, GripVertical, ImageIcon, Leaf, Settings2, Thermometer } from "lucide-react";
 import {
   defaultSiteConfig,
   acquisitionOptions,
@@ -8,10 +9,22 @@ import {
   fetchAdminSiteConfig,
   fetchLatestGreenhouseData,
   fetchStoredPlantAnalysis,
+  fetchPlantAnalysisHistory,
+  fetchOpenAiModels,
+  fetchNelsonGardenCatalog,
+  importNelsonGardenCatalogBatch,
+  addNelsonGardenProduct,
+  classifyNelsonGardenCatalogBatch,
   fetchWeatherData,
   generatePlantAnalysis,
+  generatePlantImages,
+  getPlantDevelopmentStageLabel,
+  getPlantDevelopmentStageOptions,
+  getPlantGrowingLocationLabel,
   logoFontOptions,
   plantTypeOptions,
+  plantGroupOptionsByType,
+  plantGrowingLocationOptions,
   renameAdminImage,
   resolveGreenhouseAssetUrl,
   saveAdminSiteConfig,
@@ -30,10 +43,13 @@ import {
   type LatestData,
   type PlantAnalysisThemeMode,
   type PlantAnalysisResponse,
+  type PlantAnalysisRun,
   type PlantConfig,
   type PlantLibraryEntry,
+  type PlantDevelopmentStage,
   type PlantSeasonEntry,
   type SiteConfig,
+  type SupplierCatalog,
   type WeatherData,
 } from "./utils/api";
 import { thresholds } from "../config/thresholds";
@@ -56,9 +72,15 @@ const statusLabels: Array<{ key: keyof SiteConfig["visibleStatuses"]; label: str
   { key: "door", label: "Dør" },
   { key: "fan", label: "Vifte" },
   { key: "window", label: "Vindu" },
-  { key: "plantAnalysis", label: "Planteanalyse" },
-  { key: "charts", label: "Grafer" },
+  { key: "plantLibrary", label: "Plantebibliotek" },
+  { key: "plantAnalysis", label: "Analyse" },
+  { key: "charts", label: "Statistikk" },
 ];
+const frontPageSectionMeta = {
+  climate: { label: "Klima og driftsstatus", description: "Temperatur, luftfuktighet, dør, vindu og vifte." },
+  plants: { label: "Plantebibliotek", description: "Kortrekken med planter i aktiv sesong." },
+  charts: { label: "Statistikk", description: "Historiske temperatur- og fuktdata." },
+} as const;
 
 type DisplayThemeField = { key: keyof DisplayThemeModeConfig; label: string; description: string; type?: "opacity" | "optionalColor" };
 
@@ -135,14 +157,21 @@ const plantThemeFields: PlantThemeField[] = [
 
 type AdminSection = "logo" | "visibility" | "plants" | "data" | "metadata" | "header";
 
-const adminSections: Array<{ key: AdminSection; label: string }> = [
-  { key: "visibility", label: "Visning" },
-  { key: "plants", label: "Planter" },
-  { key: "header", label: "Modus og skjerm" },
-  { key: "logo", label: "Logo" },
-  { key: "data", label: "Data" },
-  { key: "metadata", label: "Metadata" },
+const adminSectionGroups = [
+  { label: "Drift", sections: [
+    { key: "visibility" as const, label: "Oversikt", icon: Eye },
+    { key: "plants" as const, label: "Dyrking", icon: Leaf },
+  ] },
+  { label: "Utseende", sections: [
+    { key: "header" as const, label: "Moduser og media", icon: ImageIcon },
+    { key: "logo" as const, label: "Profilering", icon: Settings2 },
+  ] },
+  { label: "System", sections: [
+    { key: "data" as const, label: "Datakilder", icon: Database },
+    { key: "metadata" as const, label: "Metadata", icon: BarChart3 },
+  ] },
 ];
+const adminSections = adminSectionGroups.flatMap((group) => group.sections);
 
 type HomeyIngestDoc = {
   name: string;
@@ -177,6 +206,14 @@ const homeyIngestDocs: HomeyIngestDoc[] = [
     value: "Tall i mm",
     example: '{ "sensor": "rain_today", "value": 0.8 }',
     note: "Vises i værwidgeten som akkumulert nedbør.",
+  },
+  {
+    name: "Nedbør siste time",
+    sensor: "rain_hour",
+    aliases: "–",
+    value: "Tall i mm/t",
+    example: '{ "sensor": "rain_hour", "value": 0.4 }',
+    note: "Vises i værwidgeten som nedbør siste time.",
   },
   {
     name: "Dør",
@@ -557,10 +594,30 @@ export function AdminPage() {
   const [weatherFetchedAt, setWeatherFetchedAt] = useState<Date | null>(null);
   const [plantAnalysis, setPlantAnalysis] = useState<PlantAnalysisResponse | null>(null);
   const [plantAnalysisLoading, setPlantAnalysisLoading] = useState(false);
+  const [generatingPlantImageId, setGeneratingPlantImageId] = useState<string | null>(null);
+  const [generatedPlantImages, setGeneratedPlantImages] = useState<Record<string, AdminImage[]>>({});
+  const [plantAnalysisHistory, setPlantAnalysisHistory] = useState<PlantAnalysisRun[]>([]);
+  const [openAiModels, setOpenAiModels] = useState<string[]>(["gpt-5.4-mini", "gpt-5-mini"]);
   const [activeSection, setActiveSection] = useState<AdminSection>("visibility");
   const [newPlantName, setNewPlantName] = useState("");
   const [newPlantType, setNewPlantType] = useState<PlantLibraryEntry["plantType"]>("Grønnsak");
+  const [newPlantGroup, setNewPlantGroup] = useState("");
   const [selectedLibraryPlantId, setSelectedLibraryPlantId] = useState("");
+  const [plantWorkspace, setPlantWorkspace] = useState<"season" | "library" | "analysis">("season");
+  const [selectedSeasonPlantId, setSelectedSeasonPlantId] = useState("");
+  const [editingLibraryPlantId, setEditingLibraryPlantId] = useState("");
+  const [plantSearch, setPlantSearch] = useState("");
+  const [supplierCatalog, setSupplierCatalog] = useState<SupplierCatalog | null>(null);
+  const [supplierSearch, setSupplierSearch] = useState("");
+  const [supplierImporting, setSupplierImporting] = useState(false);
+  const [supplierAdding, setSupplierAdding] = useState<string | null>(null);
+  const [supplierClassifying, setSupplierClassifying] = useState(false);
+  const [supplierClassifyProgress, setSupplierClassifyProgress] = useState(0);
+  const [seasonSort, setSeasonSort] = useState<"manual" | "name-asc" | "name-desc" | "type" | "status">("manual");
+  const [draggedSeasonPlantId, setDraggedSeasonPlantId] = useState("");
+  const [newObservationStage, setNewObservationStage] = useState<PlantDevelopmentStage | "">("");
+  const [newObservationDate, setNewObservationDate] = useState(() => new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Oslo" }));
+  const [newObservationNote, setNewObservationNote] = useState("");
   const [selectedHeaderSlot, setSelectedHeaderSlot] = useState<HeaderImageSlot>("normal");
   const [selectedHeaderAssetKind, setSelectedHeaderAssetKind] = useState<HeaderAssetKind>("desktop");
   const [editingImageKey, setEditingImageKey] = useState<string | null>(null);
@@ -579,6 +636,8 @@ export function AdminPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const headerLibraryRef = useRef<HTMLElement | null>(null);
+  const seasonDetailRef = useRef<HTMLElement | null>(null);
+  const libraryDetailRef = useRef<HTMLElement | null>(null);
   const displayPreviewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const displayImageCacheRef = useRef(new Map<string, HTMLImageElement>());
   const displayPreviewImageRef = useRef<HTMLImageElement | null>(null);
@@ -611,7 +670,7 @@ export function AdminPage() {
     setLoading(true);
 
     try {
-      const [siteConfig, r2Images, latestData, weatherResult, storedPlantAnalysis] = await Promise.all([
+      const [siteConfig, r2Images, latestData, weatherResult, storedPlantAnalysis, analysisHistory, models] = await Promise.all([
         fetchAdminSiteConfig(),
         fetchAdminImages(),
         fetchLatestGreenhouseData().catch(() => null),
@@ -619,6 +678,8 @@ export function AdminPage() {
           .then((data) => ({ data, fetchedAt: new Date() }))
           .catch(() => null),
         fetchStoredPlantAnalysis().catch(() => null),
+        fetchPlantAnalysisHistory().catch(() => []),
+        fetchOpenAiModels().catch(() => ["gpt-5.4-mini", "gpt-5-mini"]),
       ]);
 
       setConfig(siteConfig);
@@ -628,6 +689,8 @@ export function AdminPage() {
       setWeatherData(weatherResult?.data ?? null);
       setWeatherFetchedAt(weatherResult?.fetchedAt ?? null);
       setPlantAnalysis(storedPlantAnalysis);
+      setPlantAnalysisHistory(analysisHistory);
+      setOpenAiModels(models);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Kunne ikke laste admin-data");
     } finally {
@@ -638,6 +701,22 @@ export function AdminPage() {
   useEffect(() => {
     void loadAdminData();
   }, []);
+
+  useEffect(() => {
+    setSelectedSeasonPlantId("");
+    setEditingLibraryPlantId("");
+    window.scrollTo({ top: 0 });
+  }, [activeSection]);
+
+  useEffect(() => {
+    setNewObservationStage("");
+    setNewObservationNote("");
+    setNewObservationDate(new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Oslo" }));
+  }, [selectedSeasonPlantId]);
+
+  useEffect(() => {
+    setSeasonSort(config.plantDisplaySort);
+  }, [config.plantDisplaySort]);
 
   useEffect(() => {
     setDisplayLocalSource(null);
@@ -745,6 +824,92 @@ export function AdminPage() {
   const availableLibraryPlants = config.plantLibrary.filter(
     (plant) => !activeSeasonPlants.some((season) => season.libraryId === plant.id)
   );
+  const selectedSeasonPlant = activeSeasonPlants.find((plant) => plant.id === selectedSeasonPlantId) ?? activeSeasonPlants[0] ?? null;
+  const selectedSeasonLibraryPlant = selectedSeasonPlant ? plantLibraryById.get(selectedSeasonPlant.libraryId) ?? null : null;
+  const analysisBySeasonId = new Map((plantAnalysis?.items || []).map((item) => [item.id, item]));
+  const analysisByLibraryId = new Map((plantAnalysis?.items || []).map((item) => [item.libraryId || item.id, item]));
+  const getSeasonAnalysis = (plant: PlantSeasonEntry) => analysisBySeasonId.get(plant.id) || analysisByLibraryId.get(plant.libraryId);
+  const selectedSeasonAnalysis = selectedSeasonPlant ? getSeasonAnalysis(selectedSeasonPlant) : null;
+  const selectedPlantTimeline = selectedSeasonPlant ? [
+    ...(selectedSeasonPlant.acquisition === "seed" && selectedSeasonPlant.seedDate ? [{ id: "system-seed", date: selectedSeasonPlant.seedDate, title: "Sådd", detail: selectedSeasonPlant.seedLocation || "Såsted ikke angitt", kind: "system" as const }] : []),
+    ...(selectedSeasonPlant.greenhouseDate ? [{ id: "system-greenhouse", date: selectedSeasonPlant.greenhouseDate, title: "Flyttet til drivhus", detail: selectedSeasonPlant.plantingPlace || "", kind: "system" as const }] : []),
+    ...(selectedSeasonPlant.observations || []).map((entry) => ({ id: entry.id, date: entry.date, title: getPlantDevelopmentStageLabel(entry.stage), detail: [getPlantGrowingLocationLabel(entry.growingLocation), entry.growingMedium, entry.note].filter(Boolean).join(" · "), kind: "observation" as const })),
+    ...(selectedSeasonPlant.finished && selectedSeasonPlant.harvestDate ? [{ id: "system-finished", date: selectedSeasonPlant.harvestDate, title: selectedSeasonPlant.finishReason === "moved-out" ? "Ferdig" : "Høstet", detail: selectedSeasonPlant.finishReason === "moved-out" ? "Planten er flyttet ut av drivhuset" : "Planten er høstet", kind: "finished" as const }] : []),
+  ].sort((a, b) => b.date.localeCompare(a.date)) : [];
+  const displayedSeasonPlants = [...activeSeasonPlants].sort((a, b) => {
+    if (seasonSort === "manual") return 0;
+    const plantA = plantLibraryById.get(a.libraryId);
+    const plantB = plantLibraryById.get(b.libraryId);
+    const nameA = plantA?.name || "";
+    const nameB = plantB?.name || "";
+    if (seasonSort === "name-desc") return nameB.localeCompare(nameA, "nb-NO");
+    if (seasonSort === "type") return (plantA?.plantType || "").localeCompare(plantB?.plantType || "", "nb-NO") || nameA.localeCompare(nameB, "nb-NO");
+    if (seasonSort === "status") {
+      const ranks = { stress: 0, "følg med": 1, trives: 2 } as const;
+      const statusA = getSeasonAnalysis(a)?.status || "følg med";
+      const statusB = getSeasonAnalysis(b)?.status || "følg med";
+      return Number(b.active) - Number(a.active) || (ranks[statusA] ?? 1) - (ranks[statusB] ?? 1) || nameA.localeCompare(nameB, "nb-NO");
+    }
+    return nameA.localeCompare(nameB, "nb-NO");
+  });
+  const normalizedPlantSearch = plantSearch.trim().toLocaleLowerCase("nb-NO");
+  const filteredLibraryPlants = config.plantLibrary.filter((plant) =>
+    !normalizedPlantSearch || `${plant.name} ${plant.plantType} ${plant.plantGroup} ${plant.description}`.toLocaleLowerCase("nb-NO").includes(normalizedPlantSearch)
+  );
+  const editingLibraryPlant = config.plantLibrary.find((plant) => plant.id === editingLibraryPlantId) ?? filteredLibraryPlants[0] ?? null;
+  const overviewMetrics = [
+    { label: "Temperatur", value: latest?.temperature == null ? "–" : `${latest.temperature.toFixed(1)}°C`, detail: "I drivhuset", icon: Thermometer },
+    { label: "Luftfuktighet", value: latest?.humidity == null ? "–" : `${latest.humidity.toFixed(0)}%`, detail: "I drivhuset", icon: Droplets },
+    { label: "Aktive planter", value: String(activeSeasonPlants.filter((plant) => plant.active).length), detail: `Sesong ${config.activePlantSeasonYear}`, icon: Leaf },
+    { label: "Plantebibliotek", value: String(config.plantLibrary.length), detail: "Permanente planter", icon: Database },
+    { label: "Aktiv modus", value: config.headerImages[activeSlot].label, detail: config.headerImages[activeSlot].description, icon: Activity },
+    { label: "Siste data", value: latest?.updatedAt ? new Date(latest.updatedAt).toLocaleTimeString("nb-NO", { hour: "2-digit", minute: "2-digit" }) : "–", detail: latest?.updatedAt ? new Date(latest.updatedAt).toLocaleDateString("nb-NO", { day: "numeric", month: "short" }) : "Ingen sensordata", icon: Clock3 },
+  ];
+  const selectSeasonPlant = (id: string) => {
+    setSelectedSeasonPlantId(id);
+    if (window.innerWidth < 1280) window.requestAnimationFrame(() => seasonDetailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  };
+  const selectLibraryPlant = (id: string) => {
+    setEditingLibraryPlantId(id);
+    if (window.innerWidth < 1280) window.requestAnimationFrame(() => libraryDetailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  };
+  const persistConfig = async (nextConfig: SiteConfig, successMessage = "Lagret") => {
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const saved = await saveAdminSiteConfig(nextConfig);
+      setConfig(saved);
+      setSavedConfigSnapshot(JSON.stringify(saved));
+      setMessage(successMessage);
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Kunne ikke lagre");
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+  const addObservation = async () => {
+    if (saving || !selectedSeasonPlant || !newObservationStage || !newObservationDate) return;
+    const observation = { id: `${selectedSeasonPlant.id}-${Date.now().toString(36)}`, date: newObservationDate, stage: newObservationStage, note: newObservationNote.trim(), growingLocation: selectedSeasonPlant.growingLocation, growingMedium: selectedSeasonPlant.plantingPlace };
+    const observations = [...(selectedSeasonPlant.observations || []), observation].sort((a, b) => a.date.localeCompare(b.date));
+    const latestObservation = observations.at(-1)!;
+    const yearKey = String(config.activePlantSeasonYear);
+    const nextConfig = { ...config, plantSeasons: { ...config.plantSeasons, [yearKey]: (config.plantSeasons[yearKey] || []).map((plant) => plant.id === selectedSeasonPlant.id ? { ...plant, observations, developmentStage: latestObservation.stage, observedAt: latestObservation.date, observation: latestObservation.note } : plant) } };
+    const saved = await persistConfig(nextConfig, "Observasjonen er lagt til og lagret.");
+    if (saved) {
+      setNewObservationStage("");
+      setNewObservationNote("");
+      setNewObservationDate(new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Oslo" }));
+    }
+  };
+  const removeObservation = (observationId: string) => {
+    if (!selectedSeasonPlant) return;
+    const observations = (selectedSeasonPlant.observations || []).filter((item) => item.id !== observationId);
+    const latestObservation = [...observations].sort((a, b) => a.date.localeCompare(b.date)).at(-1);
+    updatePlant(selectedSeasonPlant.id, { observations, developmentStage: latestObservation?.stage || "", observedAt: latestObservation?.date || "", observation: latestObservation?.note || "" });
+  };
 
   const updatePlantLibrary = (updater: (plants: PlantLibraryEntry[]) => PlantLibraryEntry[]) => {
     updateConfig((current) => ({
@@ -793,7 +958,7 @@ export function AdminPage() {
       const yearKey = String(current.activePlantSeasonYear);
       return {
         ...current,
-        plantLibrary: [...current.plantLibrary, { id, name, plantType: newPlantType, description: "", image: "" }],
+        plantLibrary: [...current.plantLibrary, { id, name, plantType: newPlantType, plantGroup: newPlantGroup, description: "", image: "" }],
         plantSeasons: {
           ...current.plantSeasons,
           [yearKey]: [
@@ -807,8 +972,15 @@ export function AdminPage() {
               seedLocation: "",
               greenhouseDate: "",
               purchaseSource: "",
+              finished: false,
+              finishReason: "",
               harvestDate: "",
               plantingPlace: "",
+              growingLocation: "",
+              developmentStage: "",
+              observedAt: "",
+              observation: "",
+              observations: [],
               active: true,
               note: "",
             },
@@ -818,11 +990,80 @@ export function AdminPage() {
     });
     setNewPlantName("");
     setNewPlantType("Grønnsak");
+    setNewPlantGroup("");
     setMessage(`${name} er lagt til. Husk å lagre.`);
   };
 
-  const addPlantFromLibrary = () => {
-    const libraryId = selectedLibraryPlantId;
+  const addLibraryPlant = () => {
+    const name = newPlantName.trim();
+    if (!name) return;
+    const idBase = name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "plante";
+    const id = `${idBase}-${Date.now().toString(36)}`;
+    updatePlantLibrary((plants) => [...plants, { id, name, plantType: newPlantType, plantGroup: newPlantGroup, description: "", image: "" }]);
+    setEditingLibraryPlantId(id);
+    setNewPlantName("");
+    setNewPlantGroup("");
+    setMessage(`${name} er opprettet i plantebiblioteket. Husk å lagre.`);
+  };
+
+  const loadSupplierCatalog = async () => {
+    try {
+      setError(null);
+      setSupplierCatalog(await fetchNelsonGardenCatalog());
+    } catch (catalogError) {
+      setError(catalogError instanceof Error ? catalogError.message : "Kunne ikke hente produktkatalogen.");
+    }
+  };
+
+  const importSupplierCatalog = async () => {
+    setSupplierImporting(true);
+    setError(null);
+    try {
+      let cursor = 0;
+      let catalog: SupplierCatalog;
+      do {
+        catalog = await importNelsonGardenCatalogBatch(cursor);
+        setSupplierCatalog(catalog);
+        cursor = catalog.cursor || 0;
+      } while (!catalog.done);
+      setMessage(`Nelson Garden-katalogen er oppdatert med ${catalog.products.length} frøprodukter.`);
+    } catch (catalogError) {
+      setError(catalogError instanceof Error ? catalogError.message : "Importen stoppet.");
+    } finally {
+      setSupplierImporting(false);
+    }
+  };
+
+  const addSupplierProductToLibrary = async (articleNumber: string) => {
+    setSupplierAdding(articleNumber);
+    setError(null);
+    try {
+      const entry = await addNelsonGardenProduct(articleNumber);
+      updatePlantLibrary((plants) => plants.some((plant) => plant.id === entry.id)
+        ? plants.map((plant) => plant.id === entry.id ? { ...plant, ...entry } : plant)
+        : [...plants, entry]);
+      setEditingLibraryPlantId(entry.id);
+      setMessage(`${entry.name} er lagt til i plantebiblioteket. Husk å lagre.`);
+    } catch (catalogError) {
+      setError(catalogError instanceof Error ? catalogError.message : "Kunne ikke legge produktet til.");
+    } finally {
+      setSupplierAdding(null);
+    }
+  };
+
+  const classifySupplierCatalog = async () => {
+    setSupplierClassifying(true); setSupplierClassifyProgress(0); setError(null);
+    try {
+      let cursor = 0; let result;
+      do { result = await classifyNelsonGardenCatalogBatch(cursor); cursor = result.cursor; setSupplierClassifyProgress(cursor); } while (!result.done);
+      await loadSupplierCatalog();
+      setMessage(`${result.total} Nelson Garden-produkter er klassifisert mot eksisterende plantetyper og plantegrupper.`);
+    } catch (classificationError) {
+      setError(classificationError instanceof Error ? classificationError.message : "Klassifiseringen stoppet.");
+    } finally { setSupplierClassifying(false); }
+  };
+
+  const addPlantFromLibraryById = (libraryId: string) => {
     const plant = config.plantLibrary.find((item) => item.id === libraryId);
     if (!plant) return;
     updateActiveSeasonPlants((plants) => [
@@ -836,8 +1077,15 @@ export function AdminPage() {
         seedLocation: "",
         greenhouseDate: "",
         purchaseSource: "",
+        finished: false,
+        finishReason: "",
         harvestDate: "",
         plantingPlace: "",
+        growingLocation: "",
+        developmentStage: "",
+        observedAt: "",
+        observation: "",
+        observations: [],
         active: true,
         note: "",
       },
@@ -846,12 +1094,27 @@ export function AdminPage() {
     setMessage(`${plant.name} er lagt til i ${config.activePlantSeasonYear}. Husk å lagre.`);
   };
 
+  const addPlantFromLibrary = () => addPlantFromLibraryById(selectedLibraryPlantId);
+
   const updatePlant = (id: string, updates: Partial<PlantSeasonEntry>) => {
     updateActiveSeasonPlants((plants) => plants.map((plant) => plant.id === id ? { ...plant, ...updates } : plant));
   };
 
   const updateLibraryPlant = (id: string, updates: Partial<PlantLibraryEntry>) => {
     updatePlantLibrary((plants) => plants.map((plant) => plant.id === id ? { ...plant, ...updates } : plant));
+  };
+
+  const deleteLibraryPlant = (plant: PlantLibraryEntry) => {
+    const seasonCount = Object.values(config.plantSeasons).reduce((total, season) => total + season.filter((entry) => entry.libraryId === plant.id).length, 0);
+    const consequence = seasonCount ? ` Planten fjernes også fra ${seasonCount} sesongoppføring${seasonCount === 1 ? "" : "er"}.` : "";
+    if (!window.confirm(`Slette ${plant.name} fra plantebiblioteket?${consequence}`)) return;
+    updateConfig((current) => ({
+      ...current,
+      plantLibrary: current.plantLibrary.filter((entry) => entry.id !== plant.id),
+      plantSeasons: Object.fromEntries(Object.entries(current.plantSeasons).map(([year, season]) => [year, season.filter((entry) => entry.libraryId !== plant.id)])),
+    }));
+    setEditingLibraryPlantId("");
+    setMessage(`${plant.name} er fjernet fra biblioteket. Husk å lagre.`);
   };
 
   const movePlant = (fromIndex: number, toIndex: number) => {
@@ -864,6 +1127,27 @@ export function AdminPage() {
       const [moved] = next.splice(fromIndex, 1);
       next.splice(toIndex, 0, moved);
       return next;
+    });
+  };
+  const movePlantById = (sourceId: string, targetId: string) => {
+    if (!sourceId || sourceId === targetId) return;
+    updateActiveSeasonPlants((plants) => {
+      const fromIndex = plants.findIndex((plant) => plant.id === sourceId);
+      const toIndex = plants.findIndex((plant) => plant.id === targetId);
+      if (fromIndex < 0 || toIndex < 0) return plants;
+      const next = [...plants];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return next;
+    });
+  };
+  const moveFrontPageSection = (index: number, direction: -1 | 1) => {
+    updateConfig((current) => {
+      const next = [...current.frontPageSectionOrder];
+      const target = index + direction;
+      if (target < 0 || target >= next.length) return current;
+      [next[index], next[target]] = [next[target], next[index]];
+      return { ...current, frontPageSectionOrder: next };
     });
   };
 
@@ -881,19 +1165,19 @@ export function AdminPage() {
   ) => {
     updateConfig((current) => ({
       ...current,
-      headerImages: {
-        ...current.headerImages,
-        [selectedHeaderSlot]: {
-          ...current.headerImages[selectedHeaderSlot],
+      headerImages: Object.fromEntries(imageSlots.map((slot) => [
+        slot,
+        {
+          ...current.headerImages[slot],
           plantAnalysisTheme: {
-            ...current.headerImages[selectedHeaderSlot].plantAnalysisTheme,
+            ...current.headerImages.normal.plantAnalysisTheme,
             [mode]: {
-              ...current.headerImages[selectedHeaderSlot].plantAnalysisTheme[mode],
+              ...current.headerImages.normal.plantAnalysisTheme[mode],
               [key]: value,
             },
           },
         },
-      },
+      ])) as SiteConfig["headerImages"],
     }));
   };
 
@@ -921,6 +1205,22 @@ export function AdminPage() {
     }
   };
 
+  const handleGeneratePlantImages = async (plant: PlantLibraryEntry) => {
+    setGeneratingPlantImageId(plant.id);
+    setError(null);
+    setMessage(null);
+    try {
+      const result = await generatePlantImages(plant.id);
+      setImages((current) => [...result.images, ...current.filter((item) => !result.images.some((generated) => generated.key === item.key))]);
+      setGeneratedPlantImages((current) => ({ ...current, [plant.id]: result.images }));
+      setMessage(`To forslag for ${plant.name} er generert og lagret i plantens R2-bibliotek.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Kunne ikke generere plantebilder");
+    } finally {
+      setGeneratingPlantImageId(null);
+    }
+  };
+
   const handleGeneratePlantAnalysis = async () => {
     setPlantAnalysisLoading(true);
     setError(null);
@@ -929,6 +1229,7 @@ export function AdminPage() {
     try {
       const analysis = await generatePlantAnalysis();
       setPlantAnalysis(analysis);
+      setPlantAnalysisHistory(await fetchPlantAnalysisHistory().catch(() => plantAnalysisHistory));
       setMessage("Ny planteanalyse er generert og lagret.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Kunne ikke generere planteanalyse");
@@ -982,42 +1283,84 @@ export function AdminPage() {
   };
 
   const setDisplayThemeValue = (
-    slot: HeaderImageSlot,
+    _slot: HeaderImageSlot,
     mode: keyof DisplayThemeConfig,
     key: keyof DisplayThemeModeConfig,
     value: string | number
   ) => {
     updateConfig((current) => ({
       ...current,
-      headerImages: {
-        ...current.headerImages,
-        [slot]: {
+      headerImages: Object.fromEntries(imageSlots.map((slot) => [
+        slot,
+        {
           ...current.headerImages[slot],
           displayTheme: {
-            ...current.headerImages[slot].displayTheme,
+            ...current.headerImages.normal.displayTheme,
             [mode]: {
-              ...current.headerImages[slot].displayTheme[mode],
+              ...current.headerImages.normal.displayTheme[mode],
               [key]: value,
             },
           },
         },
-      },
+      ])) as SiteConfig["headerImages"],
     }));
   };
 
-  const resetDisplayThemeForSlot = (slot: HeaderImageSlot) => {
+  const resetDisplayThemeForSlot = (_slot: HeaderImageSlot) => {
     updateConfig((current) => ({
       ...current,
-      headerImages: {
-        ...current.headerImages,
-        [slot]: {
+      headerImages: Object.fromEntries(imageSlots.map((slot) => [
+        slot,
+        {
           ...current.headerImages[slot],
-          displayTheme: defaultSiteConfig.headerImages[slot].displayTheme,
-          plantAnalysisTheme: defaultSiteConfig.headerImages[slot].plantAnalysisTheme,
+          displayTheme: defaultSiteConfig.headerImages.normal.displayTheme,
+          plantAnalysisTheme: defaultSiteConfig.headerImages.normal.plantAnalysisTheme,
         },
-      },
+      ])) as SiteConfig["headerImages"],
     }));
-    setMessage(`${config.headerImages[slot].label} er tilbakestilt til standardfarger. Husk å lagre.`);
+    setMessage("Standardtemaet er tilbakestilt. Husk å lagre.");
+  };
+
+  const setSemanticThemeValue = (
+    mode: keyof DisplayThemeConfig,
+    role: "primary" | "secondary" | "surface" | "border" | "normal" | "cold" | "warning" | "critical" | "positive",
+    value: string
+  ) => {
+    const displayKeys: Partial<Record<typeof role, Array<keyof DisplayThemeModeConfig>>> = {
+      primary: ["labelColor", "logoColor"],
+      secondary: ["unitColor", "mutedColor", "symbolColor"],
+      surface: ["graphPanelBg"],
+      border: ["graphPanelBorder"],
+      normal: ["defaultValueColor", "normalTemperatureColor", "temperatureValueColor"],
+      cold: ["coldTemperatureColor", "coldPulseColor", "coldTickerColor"],
+      warning: ["warmTemperatureColor", "warningPulseColor"],
+      critical: ["hotTemperatureColor", "hotPulseColor", "hotTickerColor"],
+    };
+    const plantKeys: Partial<Record<typeof role, Array<keyof PlantAnalysisThemeMode>>> = {
+      primary: ["titleColor", "ingressColor"],
+      secondary: ["watchTextColor"],
+      surface: ["cardBg"],
+      border: ["cardBorder"],
+      warning: ["watchPillBg"],
+      critical: ["stressPillBg"],
+      positive: ["thrivingPillBg"],
+    };
+
+    updateConfig((current) => {
+      const displayMode = { ...current.headerImages.normal.displayTheme[mode] };
+      const plantMode = { ...current.headerImages.normal.plantAnalysisTheme[mode] };
+      for (const key of displayKeys[role] || []) (displayMode[key] as string | number) = value;
+      for (const key of plantKeys[role] || []) plantMode[key] = value;
+
+      return {
+        ...current,
+        headerImages: Object.fromEntries(imageSlots.map((slot) => [slot, {
+          ...current.headerImages[slot],
+          displayTheme: { ...current.headerImages.normal.displayTheme, [mode]: displayMode },
+          plantAnalysisTheme: { ...current.headerImages.normal.plantAnalysisTheme, [mode]: plantMode },
+        }])) as SiteConfig["headerImages"],
+      };
+    });
   };
 
   const setDisplayConfig = (slot: HeaderImageSlot, updates: Partial<DisplayImageConfig>) => {
@@ -1130,20 +1473,7 @@ export function AdminPage() {
   };
 
   const handleSave = async () => {
-    setSaving(true);
-    setError(null);
-    setMessage(null);
-
-    try {
-      const saved = await saveAdminSiteConfig(config);
-      setConfig(saved);
-      setSavedConfigSnapshot(JSON.stringify(saved));
-      setMessage("Lagret");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Kunne ikke lagre");
-    } finally {
-      setSaving(false);
-    }
+    await persistConfig(config);
   };
 
   const handleSlotImageUpload = async (
@@ -1462,6 +1792,21 @@ export function AdminPage() {
   const plantImageAssets = images.filter((image) => image.assetType === "plant-image");
   const getPlantImageAssets = (plant: PlantLibraryEntry) =>
     plantImageAssets.filter((image) => image.slot === plant.id || image.url === plant.image);
+  const imageBackgroundPalette = useMemo(() => {
+    const display = config.headerImages.normal.displayTheme.dark;
+    const plants = config.headerImages.normal.plantAnalysisTheme.dark;
+    return [
+      { label: "Primær tekst", color: display.labelColor },
+      { label: "Sekundær tekst", color: display.mutedColor },
+      { label: "Flater og kort", color: display.graphPanelBg },
+      { label: "Kantlinjer", color: display.graphPanelBorder },
+      { label: "Normalverdi", color: display.normalTemperatureColor },
+      { label: "Kald", color: display.coldTemperatureColor },
+      { label: "Varm / følg med", color: display.warmTemperatureColor },
+      { label: "Svært varm / stress", color: display.hotTemperatureColor },
+      { label: "Trives", color: plants.thrivingPillBg },
+    ];
+  }, [config.headerImages.normal.displayTheme.dark, config.headerImages.normal.plantAnalysisTheme.dark]);
   const dataRows = [
     {
       name: "Temperatur inne",
@@ -1480,6 +1825,12 @@ export function AdminPage() {
       source: "Homey -> Worker KV",
       value: formatNumberValue(latest?.rainToday, "mm"),
       updatedAt: formatAdminTimestamp(latest?.rainTodayUpdatedAt),
+    },
+    {
+      name: "Nedbør siste time",
+      source: "Homey -> Worker KV",
+      value: formatNumberValue(latest?.rainHour, "mm/t"),
+      updatedAt: formatAdminTimestamp(latest?.rainHourUpdatedAt),
     },
     {
       name: "Dør",
@@ -1568,7 +1919,110 @@ export function AdminPage() {
 
   const renderDisplayThemeControls = () => {
     const slot = selectedHeaderSlot;
-    const slotTheme = selectedHeaderConfig.displayTheme;
+    const slotTheme = config.headerImages.normal.displayTheme;
+    if (slot !== "normal") {
+      return (
+        <div className="mb-4 rounded-lg border border-[#d8ded1] bg-white/70 p-5">
+          <h3 className="font-semibold text-[#2d3a21]">Bruker standardtemaet fra Normalt</h3>
+          <p className="mt-1 text-sm text-stone-600">
+            Light- og dark-fargene er felles for alle moduser. Velg Normalt for å redigere designet.
+            Denne modusen beholder fortsatt eget bilde, skjermutsnitt og darkmode-bakgrunn.
+          </p>
+          <button type="button" onClick={() => setSelectedHeaderSlot("normal")} className={`${adminSecondaryButtonClass} mt-4`}>
+            Gå til standardtema
+          </button>
+        </div>
+      );
+    }
+
+    const semanticFields: Array<{ role: Parameters<typeof setSemanticThemeValue>[1]; label: string; description: string }> = [
+      { role: "primary", label: "Primær tekst", description: "Overskrifter, logo og plantetitler." },
+      { role: "secondary", label: "Sekundær tekst", description: "Enheter, symboler og hjelpetekst." },
+      { role: "surface", label: "Flater og kort", description: "Grafer og plantekort." },
+      { role: "border", label: "Kantlinjer", description: "Kort, grafer og paneler." },
+      { role: "normal", label: "Normalverdi", description: "Standard tall og normal temperatur." },
+      { role: "cold", label: "Kald", description: "Kald temperatur, puls og ticker." },
+      { role: "warning", label: "Varm / følg med", description: "Varm temperatur og advarsel." },
+      { role: "critical", label: "Svært varm / stress", description: "Kritisk temperatur og stress." },
+      { role: "positive", label: "Trives", description: "Positiv status i planteanalysen." },
+    ];
+    const semanticValue = (mode: keyof DisplayThemeConfig, role: Parameters<typeof setSemanticThemeValue>[1]) => {
+      const display = slotTheme[mode];
+      const plant = selectedHeaderConfig.plantAnalysisTheme[mode];
+      if (role === "primary") return display.labelColor;
+      if (role === "secondary") return display.mutedColor;
+      if (role === "surface") return display.graphPanelBg;
+      if (role === "border") return display.graphPanelBorder;
+      if (role === "normal") return display.normalTemperatureColor;
+      if (role === "cold") return display.coldTemperatureColor;
+      if (role === "warning") return display.warmTemperatureColor;
+      if (role === "critical") return display.hotTemperatureColor;
+      return plant.thrivingPillBg;
+    };
+    const renderSemanticPalette = (mode: keyof DisplayThemeConfig) => (
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {semanticFields.map((field) => {
+          const value = semanticValue(mode, field.role);
+          return (
+            <label key={`${mode}-${field.role}`} className="rounded-lg border border-[#e1e6dc] bg-[#f7f8f5] p-3">
+              <span className="block text-sm font-semibold text-[#2d3a21]">{field.label}</span>
+              <span className="block text-xs text-stone-500">{field.description}</span>
+              <div className="mt-3 flex items-center gap-2">
+                <input type="color" value={value} onChange={(event) => setSemanticThemeValue(mode, field.role, event.target.value)} className="h-9 w-12 cursor-pointer rounded border border-[#cbd3c2] bg-white p-1" aria-label={field.label} />
+                <input type="text" value={value} onChange={(event) => setSemanticThemeValue(mode, field.role, event.target.value)} className="min-w-0 flex-1 rounded-md border border-[#cbd3c2] bg-white px-2 py-2 text-xs" pattern="#[0-9a-fA-F]{6}" />
+              </div>
+            </label>
+          );
+        })}
+      </div>
+    );
+    const renderThemePreview = (mode: keyof DisplayThemeConfig) => {
+      const theme = slotTheme[mode];
+      const plants = selectedHeaderConfig.plantAnalysisTheme[mode];
+      const pageBg = mode === "dark" ? selectedHeaderConfig.darkModeColor : "#e8ede3";
+      return (
+        <aside className="overflow-hidden rounded-2xl border border-[#cbd3c2] shadow-sm" style={{ backgroundColor: pageBg }}>
+          <div className="flex items-center justify-between border-b px-4 py-3" style={{ borderColor: theme.graphPanelBorder }}>
+            <span className="font-serif text-lg" style={{ color: theme.logoColor }}>Kristins drivhus</span>
+            <span className="text-xs" style={{ color: theme.mutedColor }}>Live preview</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2 p-3">
+            {[
+              { label: "Temperatur", value: "21.4", unit: "°C", color: theme.normalTemperatureColor },
+              { label: "Luftfuktighet", value: "58", unit: "%", color: theme.defaultValueColor },
+            ].map((metric) => (
+              <div key={metric.label} className="rounded-xl border p-3" style={{ backgroundColor: theme.graphPanelBg, borderColor: theme.graphPanelBorder }}>
+                <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: theme.labelColor, opacity: theme.labelOpacity }}>{metric.label}</p>
+                <p className="mt-1 text-2xl font-light" style={{ color: metric.color }}>{metric.value}<span className="ml-1 text-sm" style={{ color: theme.unitColor }}>{metric.unit}</span></p>
+                <p className="mt-1 text-[10px]" style={{ color: theme.mutedColor }}>Min 17.8 · Maks 24.2</p>
+              </div>
+            ))}
+            <div className="col-span-2 rounded-xl border p-3" style={{ backgroundColor: theme.graphPanelBg, borderColor: theme.graphPanelBorder }}>
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold" style={{ color: theme.labelColor, opacity: theme.labelOpacity }}>Status og utvikling</p>
+                <span className="text-[10px]" style={{ color: theme.mutedColor }}>Siste 24 timer</span>
+              </div>
+              <div className="mt-3 flex h-12 items-end gap-1" aria-hidden="true">
+                {[35, 48, 42, 62, 55, 76, 68, 86, 72, 92].map((height, index) => (
+                  <span key={index} className="flex-1 rounded-t-sm" style={{ height: `${height}%`, backgroundColor: index > 7 ? theme.warmTemperatureColor : theme.symbolColor, opacity: 0.85 }} />
+                ))}
+              </div>
+              <div className="mt-3 flex gap-3 text-[10px]" style={{ color: theme.mutedColor }}>
+                <span>● Dør lukket</span><span>● Vifte av</span><span>● Vindu 20%</span>
+              </div>
+            </div>
+            <article className="col-span-2 rounded-xl border p-3" style={{ backgroundColor: plants.cardBg, borderColor: plants.cardBorder }}>
+              <div className="flex items-center justify-between gap-2">
+                <h4 className="font-semibold" style={{ color: plants.titleColor }}>Cherrytomater</h4>
+                <span className="rounded-full px-2 py-1 text-[9px] font-semibold uppercase" style={{ backgroundColor: plants.watchPillBg, color: plants.pillTextColor }}>Følg med</span>
+              </div>
+              <p className="mt-2 text-xs" style={{ color: plants.ingressColor }}>Planten trives, men trenger jevn vanning i varme perioder.</p>
+              <p className="mt-1 text-[10px]" style={{ color: plants.watchTextColor }}>Kontroller jorden senere i dag.</p>
+            </article>
+          </div>
+        </aside>
+      );
+    };
     const renderPlantThemeField = (mode: keyof SiteConfig["plantAnalysisTheme"], field: PlantThemeField) => {
       const value = selectedHeaderConfig.plantAnalysisTheme[mode][field.key];
       return (
@@ -1713,9 +2167,9 @@ export function AdminPage() {
       <div className="mb-4 rounded-lg border border-[#d8ded1] bg-white/60 p-3">
         <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
           <div>
-          <h3 className="font-semibold">Farger for {selectedHeaderConfig.label.toLowerCase()}</h3>
+          <h3 className="font-semibold">Standardtema for alle moduser</h3>
           <p className="text-sm text-stone-600">
-            Hver state har egne farger. Dark mode sendes også til ESP32-skjermen.
+            Normalt definerer light- og dark-paletten som brukes av alle temperatur- og værmoduser.
           </p>
           </div>
           <button
@@ -1732,24 +2186,42 @@ export function AdminPage() {
             <TabsTrigger value="light" className="data-[state=active]:bg-[#5d7342] data-[state=active]:text-white">Light mode web</TabsTrigger>
           </TabsList>
           <TabsContent value="dark">
-            {renderMode("dark", "Dark mode + skjerm", "Disse verdiene sendes til rund skjerm via display-config.")}
-            <div className="mt-4 rounded-lg border border-[#d8ded1] bg-white/75 p-3">
-              <h4 className="font-semibold text-[#2d3a21]">Planteanalyse dark mode</h4>
-              <div className="mt-3 grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
-                <div className="grid gap-2 sm:grid-cols-2">{plantThemeFields.map((field) => renderPlantThemeField("dark", field))}</div>
-                {renderPlantThemePreview("dark")}
-              </div>
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_390px]">
+              {renderSemanticPalette("dark")}
+              {renderThemePreview("dark")}
             </div>
+            <details className="mt-4 rounded-lg border border-[#d8ded1] bg-white/75 p-3">
+              <summary className="cursor-pointer font-semibold text-[#2d3a21]">Avanserte dark-innstillinger</summary>
+              <div className="mt-4">
+                {renderMode("dark", "Detaljstyring for dark mode + skjerm", "Brukes også av den runde skjermen.")}
+                <div className="mt-4 rounded-lg border border-[#d8ded1] p-3">
+                  <h4 className="font-semibold text-[#2d3a21]">Planteanalyse</h4>
+                  <div className="mt-3 grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
+                    <div className="grid gap-2 sm:grid-cols-2">{plantThemeFields.map((field) => renderPlantThemeField("dark", field))}</div>
+                    {renderPlantThemePreview("dark")}
+                  </div>
+                </div>
+              </div>
+            </details>
           </TabsContent>
           <TabsContent value="light">
-            {renderMode("light", "Light mode web", "Brukes bare når web kjører i lys modus.")}
-            <div className="mt-4 rounded-lg border border-[#d8ded1] bg-white/75 p-3">
-              <h4 className="font-semibold text-[#2d3a21]">Planteanalyse light mode</h4>
-              <div className="mt-3 grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
-                <div className="grid gap-2 sm:grid-cols-2">{plantThemeFields.map((field) => renderPlantThemeField("light", field))}</div>
-                {renderPlantThemePreview("light")}
-              </div>
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_390px]">
+              {renderSemanticPalette("light")}
+              {renderThemePreview("light")}
             </div>
+            <details className="mt-4 rounded-lg border border-[#d8ded1] bg-white/75 p-3">
+              <summary className="cursor-pointer font-semibold text-[#2d3a21]">Avanserte light-innstillinger</summary>
+              <div className="mt-4">
+                {renderMode("light", "Detaljstyring for light mode", "Brukes av web i lys modus.")}
+                <div className="mt-4 rounded-lg border border-[#d8ded1] p-3">
+                  <h4 className="font-semibold text-[#2d3a21]">Planteanalyse</h4>
+                  <div className="mt-3 grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
+                    <div className="grid gap-2 sm:grid-cols-2">{plantThemeFields.map((field) => renderPlantThemeField("light", field))}</div>
+                    {renderPlantThemePreview("light")}
+                  </div>
+                </div>
+              </div>
+            </details>
           </TabsContent>
         </Tabs>
       </div>
@@ -2203,21 +2675,37 @@ export function AdminPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#e8ede3] text-[#2d3a21]">
-      <header className="sticky top-0 z-30 bg-[#5d7342] px-5 py-4 text-white shadow-lg shadow-black/10">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
-          <div>
-            <h1 className="text-xl font-medium">Admin</h1>
-            <p className="text-sm text-white/70">Kristins drivhus</p>
+    <div className="min-h-screen bg-[#f3f5f3] text-[#252c27]">
+      <header className="sticky top-0 z-30 border-b border-black/15 bg-[#222824] px-4 py-2.5 text-white shadow-sm">
+        <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="grid h-8 w-8 place-items-center rounded-md bg-[#5d7342]">
+              {config.branding.logo.url ? (
+                <span
+                  className="block h-5 w-5 bg-white"
+                  style={{
+                    WebkitMask: `url("${resolveGreenhouseAssetUrl(config.branding.logo.url)}") center / contain no-repeat`,
+                    mask: `url("${resolveGreenhouseAssetUrl(config.branding.logo.url)}") center / contain no-repeat`,
+                  }}
+                  aria-hidden="true"
+                />
+              ) : (
+                <Leaf className="h-4 w-4" />
+              )}
+            </div>
+            <div>
+              <h1 className="text-sm font-semibold leading-tight">Kristins drivhus</h1>
+              <p className="text-xs text-white/55">Administrasjon</p>
+            </div>
           </div>
           <button
             type="button"
             onClick={handleSave}
             disabled={saving || loading || !hasUnsavedChanges}
-            className={`inline-flex min-w-[11rem] justify-center overflow-hidden rounded-full px-5 py-2 text-sm font-semibold shadow-sm transition-colors disabled:cursor-not-allowed ${
+            className={`inline-flex min-w-[9rem] justify-center overflow-hidden rounded-md px-4 py-2 text-sm font-semibold shadow-sm transition-colors disabled:cursor-not-allowed ${
               hasUnsavedChanges
-                ? "bg-red-600 text-white hover:bg-red-700 disabled:opacity-60"
-                : "bg-white/55 text-white/75 disabled:opacity-100"
+                ? "bg-[#759354] text-white hover:bg-[#668247] disabled:opacity-60"
+                : "bg-white/10 text-white/55 disabled:opacity-100"
             }`}
           >
             {saving ? "Lagrer" : hasUnsavedChanges ? "Lagre endringer" : "Lagret"}
@@ -2225,44 +2713,60 @@ export function AdminPage() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl space-y-6 px-5 py-6">
+      <main className="mx-auto max-w-[1600px] space-y-4 px-3 py-4 sm:px-4 lg:px-6">
         {(message || error) && (
-          <div className={`rounded-lg px-4 py-3 text-sm ${error ? "bg-red-100 text-red-800" : "bg-white text-[#4d5d3e]"}`}>
+          <div className={`rounded-md border px-4 py-3 text-sm ${error ? "border-red-200 bg-red-50 text-red-800" : "border-[#d9ddda] bg-white text-[#4d5d3e]"}`}>
             {error || message}
           </div>
         )}
 
-        <section className="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
-          <aside className="lg:sticky lg:top-28 lg:self-start">
-            <nav className="rounded-lg border border-[#d8ded1] bg-white/70 p-2 shadow-sm">
-              {adminSections.map((section) => {
-                const active = activeSection === section.key;
-
-                return (
-                  <button
-                    key={section.key}
-                    type="button"
-                    onClick={() => setActiveSection(section.key)}
-                    className={`flex w-full items-center justify-between rounded-md px-3 py-2.5 text-left text-sm font-semibold transition ${
-                      active
-                        ? "bg-[#5d7342] text-white"
-                        : "text-[#2d3a21] hover:bg-[#f7f8f5]"
-                    }`}
-                    aria-current={active ? "page" : undefined}
-                  >
-                    {section.label}
-                    {active && <span className="h-2 w-2 rounded-full bg-white" />}
-                  </button>
-                );
-              })}
+        <section className="grid gap-4 sm:grid-cols-[196px_minmax(0,1fr)] lg:grid-cols-[220px_minmax(0,1fr)]">
+          <aside className="sm:sticky sm:top-[68px] sm:h-[calc(100vh-84px)] sm:self-start">
+            <label className="relative block sm:hidden">
+              <span className="sr-only">Velg adminområde</span>
+              <select value={activeSection} onChange={(event) => setActiveSection(event.target.value as AdminSection)} className="h-11 w-full appearance-none rounded-md border border-[#cfd5d1] bg-white px-4 pr-10 text-sm font-semibold text-[#354039] shadow-sm">
+                {adminSectionGroups.map((group) => (
+                  <optgroup key={group.label} label={group.label}>
+                    {group.sections.map((section) => <option key={section.key} value={section.key}>{section.label}</option>)}
+                  </optgroup>
+                ))}
+              </select>
+              <span className="pointer-events-none absolute inset-y-0 right-4 grid place-items-center text-[#647068]">⌄</span>
+            </label>
+            <nav className="hidden sm:block">
+              {adminSectionGroups.map((group) => (
+                <div key={group.label} className="contents sm:mb-5 sm:block">
+                  <p className="mb-1 hidden px-2 text-[10px] font-semibold uppercase tracking-[0.09em] text-[#89918c] sm:block">{group.label}</p>
+                  {group.sections.map((section) => {
+                    const active = activeSection === section.key;
+                    const Icon = section.icon;
+                    return <button key={section.key} type="button" onClick={() => setActiveSection(section.key)} className={`flex shrink-0 items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm font-medium transition sm:mb-0.5 sm:w-full ${active ? "bg-[#dde5d7] text-[#354329]" : "text-[#5f6862] hover:bg-white hover:text-[#29312c]"}`} aria-current={active ? "page" : undefined}><Icon className="h-4 w-4 shrink-0" /><span>{section.label}</span></button>;
+                  })}
+                </div>
+              ))}
             </nav>
           </aside>
 
-          <div className="space-y-6">
+          <div className="min-w-0 space-y-4">
             {activeSection === "visibility" && (
               <>
-                <section className="rounded-lg border border-[#d8ded1] bg-white/70 p-5 shadow-sm">
-                  <h2 className="mb-4 text-base font-semibold">Visning</h2>
+                <section className="border-b border-[#d9ddda] pb-5">
+                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#748078]">Drift</p>
+                  <div className="mt-1 flex flex-wrap items-end justify-between gap-3">
+                    <div><h2 className="text-2xl font-semibold tracking-tight text-[#202622]">Oversikt</h2><p className="mt-1 text-sm text-[#68716b]">Kjernedata og styring av innholdet på forsiden.</p></div>
+                    <div className="flex items-center gap-3"><p className="text-xs text-[#78817b]">{plantAnalysis ? `Analyse oppdatert ${new Date(plantAnalysis.generatedAt).toLocaleString("nb-NO", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}` : "Ingen lagret analyse"}</p><button type="button" onClick={() => void handleGeneratePlantAnalysis()} disabled={plantAnalysisLoading || hasUnsavedChanges} title={hasUnsavedChanges ? "Lagre endringene før analysen kjøres" : "Kjør analyse"} className="rounded-md bg-[#5d7342] px-3 py-2 text-sm font-semibold text-white disabled:opacity-45">{plantAnalysisLoading ? "Analyserer …" : "Kjør analyse"}</button></div>
+                  </div>
+                </section>
+
+                <section className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-[#d9ddda] bg-[#d9ddda] shadow-sm xl:grid-cols-3">
+                  {overviewMetrics.map((metric) => {
+                    const Icon = metric.icon;
+                    return <article key={metric.label} className="flex min-w-0 items-center gap-3 bg-white px-4 py-4"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-[#edf1ea] text-[#60734e]"><Icon className="h-4 w-4" /></span><span className="min-w-0"><span className="block text-[11px] font-semibold uppercase tracking-[0.06em] text-[#7b847e]">{metric.label}</span><span className="block truncate text-xl font-semibold tracking-tight text-[#29312c]">{metric.value}</span><span className="block truncate text-xs text-[#818983]">{metric.detail}</span></span></article>;
+                  })}
+                </section>
+
+                <section className="rounded-md border border-[#d9ddda] bg-white p-5 shadow-sm">
+                  <div className="mb-4"><h2 className="text-base font-semibold">Innhold på forsiden</h2><p className="mt-1 text-sm text-[#747d77]">Velg hvilke moduler som skal være tilgjengelige for besøkende.</p></div>
                   <label className="flex items-center justify-between gap-4 py-2 text-sm">
                     <span>Headerbilde</span>
                     <input
@@ -2274,38 +2778,9 @@ export function AdminPage() {
                       className="h-5 w-5 accent-[#5d7342]"
                     />
                   </label>
-                  <div className="mt-4 border-t border-[#d8ded1] pt-4">
-                    <p className="mb-2 text-xs uppercase tracking-[0.04em] text-stone-500">Statuser</p>
-                    {statusLabels.map((status) => (
-                      <label key={status.key} className="flex items-center justify-between gap-4 py-2 text-sm">
-                        <span>{status.label}</span>
-                        <input
-                          type="checkbox"
-                          checked={config.visibleStatuses[status.key]}
-                          onChange={(event) =>
-                            updateConfig((current) => ({
-                              ...current,
-                              visibleStatuses: {
-                                ...current.visibleStatuses,
-                                [status.key]: event.target.checked,
-                              },
-                            }))
-                          }
-                          className="h-5 w-5 accent-[#5d7342]"
-                        />
-                      </label>
-                    ))}
-                  </div>
+                  <div className="mt-4 border-t border-[#e1e4e2] pt-4"><p className="mb-3 text-xs font-semibold uppercase tracking-[0.06em] text-[#7b847e]">Seksjoner og rekkefølge</p><div className="grid gap-2">{config.frontPageSectionOrder.map((section, index) => { const meta = frontPageSectionMeta[section]; const visible = section === "climate" ? config.visibleStatuses.door || config.visibleStatuses.fan || config.visibleStatuses.window : section === "plants" ? config.visibleStatuses.plantLibrary : section === "analysis" ? config.visibleStatuses.plantAnalysis : config.visibleStatuses.charts; return <article key={section} className="grid gap-3 rounded-md border border-[#d9ddda] bg-[#fafbfa] p-3 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-center"><div className="flex overflow-hidden rounded-md border border-[#d6dbd7] bg-white"><button type="button" onClick={() => moveFrontPageSection(index, -1)} disabled={index === 0} className="px-2 py-1.5 disabled:opacity-25">↑</button><button type="button" onClick={() => moveFrontPageSection(index, 1)} disabled={index === config.frontPageSectionOrder.length - 1} className="border-l border-[#d6dbd7] px-2 py-1.5 disabled:opacity-25">↓</button></div><div className="min-w-0"><p className="text-sm font-semibold">{meta.label}</p><p className="text-xs text-[#78817b]">{meta.description}</p>{section === "climate" && <div className="mt-2 flex flex-wrap gap-3 text-xs">{(["door", "window", "fan"] as const).map((key) => <label key={key} className="flex items-center gap-1.5"><input type="checkbox" checked={config.visibleStatuses[key]} onChange={(event) => updateConfig((current) => ({ ...current, visibleStatuses: { ...current.visibleStatuses, [key]: event.target.checked } }))} className="accent-[#5d7342]" />{key === "door" ? "Dør" : key === "window" ? "Vindu" : "Vifte"}</label>)}</div>}{section === "analysis" && <label className="mt-2 flex items-center gap-2 text-xs"><input type="checkbox" checked={config.frontPageSectionDefaults.analysisExpanded} onChange={(event) => updateConfig((current) => ({ ...current, frontPageSectionDefaults: { ...current.frontPageSectionDefaults, analysisExpanded: event.target.checked } }))} className="accent-[#5d7342]" />Åpen ved lasting</label>}{section === "charts" && <label className="mt-2 flex items-center gap-2 text-xs"><input type="checkbox" checked={config.frontPageSectionDefaults.chartsExpanded} onChange={(event) => updateConfig((current) => ({ ...current, frontPageSectionDefaults: { ...current.frontPageSectionDefaults, chartsExpanded: event.target.checked } }))} className="accent-[#5d7342]" />Åpen ved lasting</label>}</div>{section !== "climate" && <label className="flex items-center gap-2 text-xs font-medium"><input type="checkbox" checked={visible} onChange={(event) => { const key = section === "plants" ? "plantLibrary" : section === "analysis" ? "plantAnalysis" : "charts"; updateConfig((current) => ({ ...current, visibleStatuses: { ...current.visibleStatuses, [key]: event.target.checked } })); }} className="h-5 w-5 accent-[#5d7342]" />Vis</label>}</article>; })}</div></div>
                 </section>
 
-                <section className="rounded-lg border border-[#d8ded1] bg-white/70 p-5 shadow-sm">
-                  <h2 className="mb-2 text-base font-semibold">Aktivt nå</h2>
-                  <p className="text-sm text-stone-600">
-                    {latest?.temperature == null
-                      ? "Ingen temperaturdata. Normalbildet brukes."
-                      : `${latest.temperature.toFixed(1)}°C bruker ${config.headerImages[activeSlot].label.toLowerCase()}.`}
-                  </p>
-                </section>
               </>
             )}
 
@@ -2731,6 +3206,174 @@ export function AdminPage() {
             )}
 
             {activeSection === "plants" && (
+              <section className="min-w-0">
+                <div className="mb-5 flex flex-wrap items-start justify-between gap-4 border-b border-[#d9ddda] pb-5">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#748078]">Dyrking</p>
+                    <h2 className="mt-1 text-2xl font-semibold tracking-tight text-[#202622]">Planter og sesonger</h2>
+                    <p className="mt-1 max-w-2xl text-sm text-[#68716b]">Administrer årets planter, permanent bibliotekdata og analysegrunnlag.</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="flex items-center gap-2 text-sm font-medium text-[#4d5650]">
+                      Sesong
+                      <select value={config.activePlantSeasonYear} onChange={(event) => setActivePlantYear(Number(event.target.value))} className="h-9 rounded-md border border-[#cfd5d1] bg-white px-3 text-sm shadow-sm">
+                        {Array.from(new Set([...Object.keys(config.plantSeasons).map(Number), config.activePlantSeasonYear])).sort((a, b) => b - a).map((year) => <option key={year} value={year}>{year}</option>)}
+                      </select>
+                    </label>
+                    <button type="button" onClick={() => setActivePlantYear(config.activePlantSeasonYear + 1)} className="h-9 rounded-md border border-[#cfd5d1] bg-white px-3 text-sm font-medium text-[#39443d] shadow-sm hover:bg-[#f7f8f7]">Opprett {config.activePlantSeasonYear + 1}</button>
+                  </div>
+                </div>
+
+                <div className="mb-5 flex max-w-full gap-1 overflow-x-auto border-b border-[#d9ddda]">
+                  {([
+                    ["season", `Aktiv sesong (${activeSeasonPlants.length})`],
+                    ["library", `Plantebibliotek (${config.plantLibrary.length})`],
+                    ["analysis", "Analyse"],
+                  ] as const).map(([key, label]) => (
+                    <button key={key} type="button" onClick={() => setPlantWorkspace(key)} className={`border-b-2 px-4 py-3 text-sm font-semibold transition ${plantWorkspace === key ? "border-[#5d7342] text-[#344326]" : "border-transparent text-[#707a73] hover:text-[#344326]"}`}>{label}</button>
+                  ))}
+                </div>
+
+                {plantWorkspace === "season" && (
+                  <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_410px]">
+                    <div className="min-w-0 overflow-hidden rounded-md border border-[#d9ddda] bg-white shadow-sm">
+                      <div className="flex flex-wrap items-end justify-between gap-3 border-b border-[#e1e4e2] bg-[#fafbfa] p-3">
+                        <label className="min-w-56 flex-1 text-xs font-semibold uppercase tracking-[0.05em] text-[#69736c]">
+                          Legg til fra bibliotek
+                          <div className="mt-1 flex gap-2">
+                            <select value={selectedLibraryPlantId} onChange={(event) => setSelectedLibraryPlantId(event.target.value)} className="h-9 min-w-0 flex-1 rounded-md border border-[#cfd5d1] bg-white px-3 text-sm font-normal normal-case tracking-normal">
+                              <option value="">Velg plante</option>
+                              {availableLibraryPlants.map((plant) => <option key={plant.id} value={plant.id}>{plant.name}</option>)}
+                            </select>
+                            <button type="button" onClick={addPlantFromLibrary} disabled={!selectedLibraryPlantId} className="h-9 rounded-md bg-[#5d7342] px-4 text-sm font-semibold text-white disabled:opacity-40">Legg til</button>
+                          </div>
+                        </label>
+                        <div className="flex items-center gap-2"><label className="text-xs font-semibold uppercase tracking-[0.05em] text-[#69736c]">Visning på forsiden<select value={seasonSort} onChange={(event) => { const value = event.target.value as typeof seasonSort; setSeasonSort(value); updateConfig((current) => ({ ...current, plantDisplaySort: value })); }} className="ml-2 h-9 rounded-md border border-[#cfd5d1] bg-white px-3 text-sm font-normal normal-case tracking-normal"><option value="manual">Manuell rekkefølge</option><option value="name-asc">Navn A–Å</option><option value="name-desc">Navn Å–A</option><option value="type">Plantetype</option><option value="status">Status</option></select></label><button type="button" onClick={() => setPlantWorkspace("library")} className="h-9 rounded-md border border-[#cfd5d1] bg-white px-3 text-sm font-medium text-[#465149]">Ny plante</button></div>
+                      </div>
+                      {seasonSort !== "manual" && <p className="border-b border-[#e1e4e2] bg-[#f7f8f7] px-4 py-2 text-xs text-[#69736c]">Denne sorteringen brukes også på plantekortene på forsiden. Velg «Manuell rekkefølge» for å dra kortene i ønsket orden.</p>}
+                      <div className="hidden grid-cols-[28px_minmax(180px,1.4fr)_100px_110px_minmax(120px,1fr)] gap-3 border-b border-[#e1e4e2] bg-[#f5f6f5] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-[#78817b] md:grid">
+                        <span /><span>Plante</span><span>Type</span><span>Status</span><span>Vekstmedium</span>
+                      </div>
+                      <div className="divide-y divide-[#e6e8e7]">
+                        {displayedSeasonPlants.map((seasonPlant, index) => {
+                          const plant = plantLibraryById.get(seasonPlant.libraryId);
+                          if (!plant) return null;
+                          const selected = selectedSeasonPlant?.id === seasonPlant.id;
+                          return (
+                            <div key={seasonPlant.id} draggable={seasonSort === "manual"} onDragStart={(event) => { setDraggedSeasonPlantId(seasonPlant.id); event.dataTransfer.effectAllowed = "move"; }} onDragOver={(event) => { if (seasonSort === "manual") { event.preventDefault(); event.dataTransfer.dropEffect = "move"; } }} onDrop={(event) => { event.preventDefault(); movePlantById(draggedSeasonPlantId, seasonPlant.id); setDraggedSeasonPlantId(""); }} onDragEnd={() => setDraggedSeasonPlantId("")} className={`grid cursor-pointer gap-2 px-4 py-3 transition md:grid-cols-[28px_minmax(180px,1.4fr)_100px_110px_minmax(120px,1fr)] md:items-center md:gap-3 ${selected ? "bg-[#eef2ea]" : "hover:bg-[#f8f9f8]"} ${draggedSeasonPlantId === seasonPlant.id ? "opacity-45" : ""}`} onClick={() => selectSeasonPlant(seasonPlant.id)}>
+                              <span className={`hidden md:grid ${seasonSort === "manual" ? "cursor-grab text-[#879189] active:cursor-grabbing" : "text-[#c8ceca]"}`} title={seasonSort === "manual" ? "Dra for å endre rekkefølge" : "Velg manuell rekkefølge for å dra"}><GripVertical className="h-4 w-4" /></span>
+                              <div className="flex min-w-0 items-center gap-3">
+                                <div className="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-md bg-[#edf0ed]">
+                                  {plant.image ? <img src={resolveGreenhouseAssetUrl(plant.image)} alt="" className="h-full w-full object-cover" /> : <Leaf className="h-4 w-4 text-[#82907f]" />}
+                                </div>
+                                <div className="min-w-0"><p className="truncate text-sm font-semibold text-[#29312c]">{plant.name}</p><p className="truncate text-xs text-[#7a837d] md:hidden">{plant.plantType} · {seasonPlant.plantingPlace || "Ingen plassering"}</p></div>
+                              </div>
+                              <span className="hidden text-sm text-[#59635c] md:block">{plant.plantType}</span>
+                              <span className={`hidden w-fit rounded-full px-2 py-1 text-[11px] font-semibold md:inline-flex ${!seasonPlant.active ? "bg-stone-100 text-stone-500" : seasonPlant.finished ? "bg-stone-200 text-stone-700" : getSeasonAnalysis(seasonPlant)?.status === "stress" ? "bg-red-50 text-red-700" : getSeasonAnalysis(seasonPlant)?.status === "trives" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>{!seasonPlant.active ? "Inaktiv" : seasonPlant.finished ? (seasonPlant.finishReason === "moved-out" ? "Ferdig" : "Høstet") : getSeasonAnalysis(seasonPlant)?.status === "trives" ? "Trives" : getSeasonAnalysis(seasonPlant)?.status === "stress" ? "Stress" : getSeasonAnalysis(seasonPlant) ? "Følg med" : "Ikke analysert"}</span>
+                              <span className="hidden truncate text-sm text-[#59635c] md:block">{seasonPlant.plantingPlace || "–"}</span>
+                              {seasonSort === "manual" && <div className="ml-auto flex overflow-hidden rounded-md border border-[#d6dbd7] bg-white md:hidden" onClick={(event) => event.stopPropagation()}><button type="button" aria-label={`Flytt ${plant.name} opp`} onClick={() => movePlant(index, index - 1)} disabled={index === 0} className="px-2.5 py-1.5 text-xs text-[#536359] disabled:opacity-25">↑</button><button type="button" aria-label={`Flytt ${plant.name} ned`} onClick={() => movePlant(index, index + 1)} disabled={index === activeSeasonPlants.length - 1} className="border-l border-[#d6dbd7] px-2.5 py-1.5 text-xs text-[#536359] disabled:opacity-25">↓</button></div>}
+                            </div>
+                          );
+                        })}
+                        {activeSeasonPlants.length === 0 && <div className="px-4 py-12 text-center text-sm text-[#78817b]">Ingen planter i denne sesongen.</div>}
+                      </div>
+                    </div>
+
+                    <aside ref={seasonDetailRef} className={`${selectedSeasonPlantId ? "fixed inset-0 z-50 block w-screen max-w-[100vw] overflow-x-hidden overflow-y-auto sm:static sm:order-first sm:z-auto sm:w-auto sm:max-w-none sm:overflow-visible xl:order-none" : "hidden sm:order-last sm:block xl:order-none"} min-w-0 scroll-mt-20 rounded-none border border-[#d9ddda] bg-white shadow-sm sm:h-fit sm:rounded-md xl:sticky xl:top-24`}>
+                      {selectedSeasonPlant && selectedSeasonLibraryPlant ? (
+                        <>
+                          <div className="flex items-center justify-between gap-3 border-b border-[#e1e4e2] px-4 py-3">
+                            <button type="button" onClick={() => setSelectedSeasonPlantId("")} className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-[#d6dbd7] text-lg text-[#536159] sm:hidden" aria-label="Lukk plantedetaljer">←</button>
+                            <div className="min-w-0 flex-1"><p className="text-xs font-semibold uppercase tracking-[0.06em] text-[#7a837d]">Sesongdetaljer</p><h3 className="truncate text-lg font-semibold text-[#273029]">{selectedSeasonLibraryPlant.name}</h3></div>
+                            <label className="flex shrink-0 items-center gap-2 text-sm font-medium"><input type="checkbox" checked={selectedSeasonPlant.active} onChange={(event) => updatePlant(selectedSeasonPlant.id, { active: event.target.checked })} className="accent-[#5d7342]" /> Aktiv</label>
+                          </div>
+                          {selectedSeasonAnalysis && <section className="mx-4 mt-4 min-w-0 rounded-md border border-[#d9ddda] bg-[#f7f8f5] p-4"><div className="flex flex-wrap items-center justify-between gap-2"><span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase ${selectedSeasonAnalysis.status === "trives" ? "bg-emerald-100 text-emerald-800" : selectedSeasonAnalysis.status === "stress" ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-800"}`}>{selectedSeasonAnalysis.status === "trives" ? "Planten trives" : selectedSeasonAnalysis.status}</span><time className="text-xs text-[#78817b]">{new Date(selectedSeasonAnalysis.assessedAt || plantAnalysis!.generatedAt).toLocaleString("nb-NO", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</time></div><p className="mt-3 text-sm leading-relaxed text-[#39443d]">{selectedSeasonAnalysis.assessment || selectedSeasonAnalysis.summary}</p><div className="mt-3 grid gap-2 text-sm text-[#59635c]"><p><span className="font-semibold">Vanning:</span> {selectedSeasonAnalysis.watering || selectedSeasonAnalysis.watch}</p>{(selectedSeasonAnalysis.development?.text || selectedSeasonAnalysis.forecast) && <p><span className="font-semibold">{selectedSeasonAnalysis.development?.type === "flowering" ? "Blomstring" : selectedSeasonAnalysis.development?.type === "harvest" ? "Høsting" : "Modning"}:</span> {selectedSeasonAnalysis.development?.text || selectedSeasonAnalysis.forecast}</p>}</div></section>}
+                          <div className="grid min-w-0 gap-4 p-4 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2 [&_input]:min-w-0 [&_input]:max-w-full [&_label]:min-w-0 [&_select]:min-w-0 [&_select]:max-w-full [&_textarea]:min-w-0 [&_textarea]:max-w-full">
+                            <label className="text-sm"><span className="mb-1 block font-medium">Anskaffelse</span><select value={selectedSeasonPlant.acquisition} onChange={(event) => updatePlant(selectedSeasonPlant.id, { acquisition: event.target.value as PlantSeasonEntry["acquisition"] })} className="h-9 w-full rounded-md border border-[#cfd5d1] bg-white px-3">{acquisitionOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+                            {selectedSeasonPlant.acquisition === "seed" && <><label className="text-sm"><span className="mb-1 block font-medium">Sådato</span><input type="date" value={selectedSeasonPlant.seedDate} onChange={(event) => updatePlant(selectedSeasonPlant.id, { seedDate: event.target.value })} className="h-9 w-full rounded-md border border-[#cfd5d1] px-3" /></label><label className="text-sm"><span className="mb-1 block font-medium">Såsted</span><select value={selectedSeasonPlant.seedLocation} onChange={(event) => updatePlant(selectedSeasonPlant.id, { seedLocation: event.target.value as PlantSeasonEntry["seedLocation"] })} className="h-9 w-full rounded-md border border-[#cfd5d1] bg-white px-3"><option value="">Ikke angitt</option>{seedLocationOptions.map((location) => <option key={location} value={location}>{location}</option>)}</select></label></>}
+                            <label className="text-sm"><span className="mb-1 block font-medium">Dyrkested nå</span><select value={selectedSeasonPlant.growingLocation} onChange={(event) => { const growingLocation = event.target.value as PlantSeasonEntry["growingLocation"]; updatePlant(selectedSeasonPlant.id, { growingLocation, greenhouseDate: growingLocation === "greenhouse" && !selectedSeasonPlant.greenhouseDate ? new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Oslo" }) : selectedSeasonPlant.greenhouseDate }); }} className="h-9 w-full rounded-md border border-[#cfd5d1] bg-white px-3"><option value="">Ikke angitt</option>{plantGrowingLocationOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+                            {selectedSeasonPlant.growingLocation === "greenhouse" && <label className="text-sm"><span className="mb-1 block font-medium">Flyttet til drivhus</span><input type="date" value={selectedSeasonPlant.greenhouseDate} onChange={(event) => updatePlant(selectedSeasonPlant.id, { greenhouseDate: event.target.value })} className="h-9 w-full rounded-md border border-[#cfd5d1] px-3" /></label>}
+                            <label className="flex min-h-9 items-center gap-2 text-sm font-medium"><input type="checkbox" checked={selectedSeasonPlant.finished} onChange={(event) => updatePlant(selectedSeasonPlant.id, { finished: event.target.checked, finishReason: event.target.checked ? (selectedSeasonPlant.finishReason || "season-over") : "", harvestDate: event.target.checked ? (selectedSeasonPlant.harvestDate || new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Oslo" })) : "" })} className="h-4 w-4 accent-[#5d7342]" /> Avsluttet</label>
+                            {selectedSeasonPlant.finished && <><label className="text-sm"><span className="mb-1 block font-medium">Årsak til avslutning</span><select value={selectedSeasonPlant.finishReason || "season-over"} onChange={(event) => updatePlant(selectedSeasonPlant.id, { finishReason: event.target.value as PlantSeasonEntry["finishReason"] })} className="h-9 w-full rounded-md border border-[#cfd5d1] bg-white px-3"><option value="season-over">Høstet</option><option value="moved-out">Ferdig</option></select></label><label className="text-sm"><span className="mb-1 block font-medium">Dato avsluttet <span className="font-normal text-[#7a837d]">(valgfritt)</span></span><input type="date" value={selectedSeasonPlant.harvestDate} onChange={(event) => updatePlant(selectedSeasonPlant.id, { harvestDate: event.target.value })} className="h-9 w-full rounded-md border border-[#cfd5d1] px-3" /></label></>}
+                            <label className="text-sm"><span className="mb-1 block font-medium">Kjøpt hos</span><input type="text" value={selectedSeasonPlant.purchaseSource} onChange={(event) => updatePlant(selectedSeasonPlant.id, { purchaseSource: event.target.value })} className="h-9 w-full rounded-md border border-[#cfd5d1] px-3" /></label>
+                            <label className="text-sm"><span className="mb-1 block font-medium">Vekstmedium</span><input type="text" value={selectedSeasonPlant.plantingPlace} onChange={(event) => updatePlant(selectedSeasonPlant.id, { plantingPlace: event.target.value })} placeholder="F.eks. 80 l potte, plantekasse eller jordbed" className="h-9 w-full rounded-md border border-[#cfd5d1] px-3" /></label>
+                            <fieldset className="grid gap-3 rounded-md border border-[#d9ddda] bg-[#f7f8f7] p-3 sm:col-span-2 xl:col-span-1 2xl:col-span-2"><legend className="px-1 text-sm font-semibold">Ny observasjon</legend><div className="grid gap-3 sm:grid-cols-2"><label className="text-sm"><span className="mb-1 block font-medium">Utviklingsstadium</span><select value={newObservationStage} onChange={(event) => setNewObservationStage(event.target.value as PlantDevelopmentStage | "")} className="h-9 w-full rounded-md border border-[#cfd5d1] bg-white px-3"><option value="">Velg stadium</option>{getPlantDevelopmentStageOptions(selectedSeasonLibraryPlant.plantType).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label><label className="text-sm"><span className="mb-1 block font-medium">Dato</span><input type="date" value={newObservationDate} onChange={(event) => setNewObservationDate(event.target.value)} className="h-9 w-full rounded-md border border-[#cfd5d1] bg-white px-3" /></label></div><label className="text-sm"><span className="mb-1 block font-medium">Kort notat <span className="font-normal text-[#7a837d]">(valgfritt)</span></span><input value={newObservationNote} onChange={(event) => setNewObservationNote(event.target.value)} maxLength={120} placeholder="F.eks. mange grønne tomater, største ca. 5 cm" className="h-9 w-full rounded-md border border-[#cfd5d1] bg-white px-3" /></label><button type="button" onClick={addObservation} disabled={!newObservationStage || !newObservationDate} className="justify-self-start rounded-md bg-[#5d7342] px-4 py-2 text-sm font-semibold text-white disabled:opacity-45">Legg til i loggen</button></fieldset>
+                            {selectedPlantTimeline.length > 0 && <section className="sm:col-span-2 xl:col-span-1 2xl:col-span-2"><h4 className="text-sm font-semibold">Tidslinje</h4><ol className="mt-3 border-l-2 border-[#cfd8c8] pl-4">{selectedPlantTimeline.map((entry) => <li key={entry.id} className="relative pb-4 last:pb-0"><span className={`absolute -left-[21px] top-1.5 h-2.5 w-2.5 rounded-full ring-4 ring-white ${entry.kind === "observation" ? "bg-[#5d7342]" : entry.kind === "finished" ? "bg-[#59635c]" : "bg-[#aab3ac]"}`} /><div className="flex items-start justify-between gap-3"><div><p className="text-sm font-semibold text-[#303a32]">{entry.title}</p><time className="text-xs text-[#78817b]">{new Date(`${entry.date}T12:00:00`).toLocaleDateString("nb-NO", { day: "numeric", month: "long", year: "numeric" })}</time>{entry.detail && <p className="mt-1 text-sm text-[#59635c]">{entry.detail}</p>}</div>{entry.kind === "observation" && <button type="button" onClick={() => removeObservation(entry.id)} className="text-xs font-medium text-red-700">Slett</button>}</div></li>)}</ol><p className="mt-3 text-xs text-[#78817b]">Grå hendelser oppdateres fra sesongdataene. Grønne punkter er egne observasjoner.</p></section>}
+                            <label className="text-sm sm:col-span-2 xl:col-span-1 2xl:col-span-2"><span className="mb-1 block font-medium">Notat til analysen</span><textarea value={selectedSeasonPlant.note} onChange={(event) => updatePlant(selectedSeasonPlant.id, { note: event.target.value })} rows={4} className="w-full resize-y rounded-md border border-[#cfd5d1] px-3 py-2" /></label>
+                          </div>
+                          <div className="flex justify-end border-t border-[#e1e4e2] px-4 py-3"><button type="button" onClick={() => removePlant(selectedSeasonPlant.id)} className="text-sm font-semibold text-red-700 hover:text-red-800">Fjern fra sesongen</button></div>
+                        </>
+                      ) : <div className="p-8 text-center text-sm text-[#78817b]">Velg en plante for å redigere sesongdata.</div>}
+                    </aside>
+                  </div>
+                )}
+
+                {plantWorkspace === "library" && (
+                  <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_410px]">
+                    <section className="rounded-md border border-[#d9ddda] bg-white p-4 shadow-sm xl:col-span-2">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div><p className="text-xs font-semibold uppercase tracking-[0.06em] text-[#748078]">Produktkatalog</p><h3 className="mt-1 font-semibold text-[#29312c]">Nelson Garden</h3><p className="mt-1 text-sm text-[#68716b]">Importer frøprodukter og kopier hovedbildet til egen R2 når produktet legges til.</p></div>
+                        <div className="flex flex-wrap gap-2"><button type="button" onClick={() => void loadSupplierCatalog()} className="rounded-md border border-[#cfd5d1] px-3 py-2 text-sm font-semibold">Åpne katalog</button><button type="button" onClick={() => void importSupplierCatalog()} disabled={supplierImporting || supplierClassifying} className="rounded-md bg-[#5d7342] px-3 py-2 text-sm font-semibold text-white disabled:opacity-45">{supplierImporting ? `Importerer… ${supplierCatalog?.products.length || 0}` : "Oppdater katalog"}</button><button type="button" onClick={() => void classifySupplierCatalog()} disabled={supplierClassifying || supplierImporting || !supplierCatalog?.products.length} className="rounded-md border border-[#5d7342] px-3 py-2 text-sm font-semibold text-[#40552c] disabled:opacity-45">{supplierClassifying ? `Klassifiserer… ${supplierClassifyProgress}/${supplierCatalog?.products.length || 0}` : "Klassifiser katalog"}</button></div>
+                      </div>
+                      {supplierCatalog && <div className="mt-4"><input type="search" value={supplierSearch} onChange={(event) => setSupplierSearch(event.target.value)} placeholder={`Søk blant ${supplierCatalog.products.length} produkter`} className="h-9 w-full rounded-md border border-[#cfd5d1] px-3 text-sm" /><div className="mt-3 grid max-h-[520px] gap-3 overflow-y-auto sm:grid-cols-2 xl:grid-cols-3">{supplierCatalog.products.filter((product) => `${product.productName} ${product.varietyName} ${product.articleNumber}`.toLowerCase().includes(supplierSearch.trim().toLowerCase())).slice(0, 150).map((product) => { const existingPlant = config.plantLibrary.find((plant) => plant.id === `nelson-garden-${product.articleNumber}` || (plant.manufacturer === "Nelson Garden" && plant.articleNumber === product.articleNumber)); const hasImage = Boolean(existingPlant?.image); return <article key={product.articleNumber} className="flex gap-3 rounded-md border border-[#e1e4e2] p-3">{product.sourceImageUrl ? <img src={product.sourceImageUrl} alt="" className="h-20 w-16 shrink-0 rounded object-cover" /> : <div className="h-20 w-16 shrink-0 rounded bg-[#edf0ed]" />}<div className="min-w-0 flex-1"><p className="truncate text-xs text-[#78817b]">{product.productName} · {product.articleNumber}</p><h4 className="line-clamp-2 text-sm font-semibold">{product.varietyName}</h4><button type="button" disabled={hasImage || supplierAdding === product.articleNumber} onClick={() => void addSupplierProductToLibrary(product.articleNumber)} className="mt-2 inline-flex min-w-[5.75rem] items-center justify-center whitespace-nowrap rounded-md bg-[#5d7342] px-2.5 py-1.5 text-xs font-semibold text-white disabled:bg-[#aab3ac]">{supplierAdding === product.articleNumber ? "Legger til…" : hasImage ? "Lagt til" : existingPlant ? "Hent bilde" : "Legg til"}</button></div></article>; })}</div></div>}
+                    </section>
+                    <div className="overflow-hidden rounded-md border border-[#d9ddda] bg-white shadow-sm">
+                      <div className="grid gap-2 border-b border-[#e1e4e2] bg-[#fafbfa] p-3 md:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_130px_140px_auto]">
+                        <input type="search" value={plantSearch} onChange={(event) => setPlantSearch(event.target.value)} placeholder="Søk i plantebiblioteket" className="h-9 rounded-md border border-[#cfd5d1] bg-white px-3 text-sm md:col-span-2 lg:col-span-4" />
+                        <input type="text" value={newPlantName} onChange={(event) => setNewPlantName(event.target.value)} placeholder="Ny plante" className="h-9 rounded-md border border-[#cfd5d1] bg-white px-3 text-sm" />
+                        <select value={newPlantType} onChange={(event) => { setNewPlantType(event.target.value as PlantLibraryEntry["plantType"]); setNewPlantGroup(""); }} className="h-9 rounded-md border border-[#cfd5d1] bg-white px-3 text-sm">{plantTypeOptions.map((type) => <option key={type} value={type}>{type}</option>)}</select>
+                        {plantGroupOptionsByType[newPlantType].length > 0 && <select value={newPlantGroup} onChange={(event) => setNewPlantGroup(event.target.value)} className="h-9 rounded-md border border-[#cfd5d1] bg-white px-3 text-sm"><option value="">Velg gruppe</option>{plantGroupOptionsByType[newPlantType].map((group) => <option key={group} value={group}>{group}</option>)}</select>}
+                        <button type="button" onClick={addLibraryPlant} disabled={!newPlantName.trim()} className="h-9 rounded-md bg-[#5d7342] px-4 text-sm font-semibold text-white disabled:opacity-40">Opprett</button>
+                      </div>
+                      <div className="divide-y divide-[#e6e8e7]">
+                        {filteredLibraryPlants.map((plant) => {
+                          const seasons = Object.values(config.plantSeasons).filter((entries) => entries.some((entry) => entry.libraryId === plant.id)).length;
+                          const selected = editingLibraryPlant?.id === plant.id;
+                          return <button key={plant.id} type="button" onClick={() => selectLibraryPlant(plant.id)} className={`grid w-full grid-cols-[44px_minmax(0,1fr)_90px] items-center gap-3 px-4 py-3 text-left transition sm:grid-cols-[44px_minmax(0,1fr)_120px_100px] ${selected ? "bg-[#eef2ea]" : "hover:bg-[#f8f9f8]"}`}>
+                            <span className="grid h-9 w-9 place-items-center overflow-hidden rounded-md bg-[#edf0ed]">{plant.image ? <img src={resolveGreenhouseAssetUrl(plant.image)} alt="" className="h-full w-full object-cover" /> : <Leaf className="h-4 w-4 text-[#82907f]" />}</span>
+                            <span className="min-w-0"><span className="block truncate text-sm font-semibold text-[#29312c]">{plant.name}</span><span className="block truncate text-xs text-[#7a837d]">{plant.description || "Ingen beskrivelse"}</span></span>
+                            <span className="text-sm text-[#626c65]">{[plant.plantType, plant.plantGroup].filter(Boolean).join(" · ")}</span>
+                            <span className="hidden text-right text-xs text-[#7a837d] sm:block">{seasons} sesong{seasons === 1 ? "" : "er"}</span>
+                          </button>;
+                        })}
+                      </div>
+                    </div>
+                    <aside ref={libraryDetailRef} className={`${editingLibraryPlantId ? "fixed inset-0 z-50 block overflow-y-auto sm:static sm:order-first sm:z-auto sm:overflow-visible xl:order-none" : "hidden sm:order-last sm:block xl:order-none"} scroll-mt-20 rounded-none border border-[#d9ddda] bg-white shadow-sm sm:h-fit sm:rounded-md xl:sticky xl:top-24`}>
+                      {editingLibraryPlant ? (
+                        <>
+                          <div className="flex items-center gap-3 border-b border-[#e1e4e2] px-4 py-3"><button type="button" onClick={() => setEditingLibraryPlantId("")} className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-[#d6dbd7] text-lg text-[#536159] sm:hidden" aria-label="Lukk bibliotekdetaljer">←</button><div className="min-w-0"><p className="text-xs font-semibold uppercase tracking-[0.06em] text-[#7a837d]">Bibliotekdata</p><h3 className="truncate text-lg font-semibold text-[#273029]">{editingLibraryPlant.name}</h3></div></div>
+                          <div className="grid gap-4 p-4">
+                            <div className="flex flex-wrap items-center gap-3"><div className="grid h-16 w-16 place-items-center overflow-hidden rounded-md bg-[#edf0ed]">{editingLibraryPlant.image ? <img src={resolveGreenhouseAssetUrl(editingLibraryPlant.image)} alt="" className="h-full w-full object-cover" /> : <Leaf className="h-5 w-5 text-[#82907f]" />}</div><label className="cursor-pointer rounded-md border border-[#cfd5d1] bg-white px-3 py-2 text-sm font-medium">Last opp bilde<input type="file" accept="image/jpeg,image/png" className="sr-only" onChange={(event) => { void handlePlantImageUpload(editingLibraryPlant, event.target.files?.[0]); event.target.value = ""; }} /></label><button type="button" disabled={generatingPlantImageId === editingLibraryPlant.id} onClick={() => void handleGeneratePlantImages(editingLibraryPlant)} className="rounded-md bg-[#5d7342] px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">{generatingPlantImageId === editingLibraryPlant.id ? "Genererer to bilder…" : "Generer med OpenAI"}</button></div>
+                            {generatedPlantImages[editingLibraryPlant.id]?.length ? <div><p className="mb-2 text-xs font-semibold uppercase tracking-[0.05em] text-[#737d76]">Velg ett av forslagene</p><div className="grid max-w-md grid-cols-2 gap-3">{generatedPlantImages[editingLibraryPlant.id].map((asset) => <button key={asset.key} type="button" onClick={() => { updateLibraryPlant(editingLibraryPlant.id, { image: asset.url }); setMessage(`Bildet er valgt for ${editingLibraryPlant.name}. Husk å lagre.`); }} className={`overflow-hidden rounded-md border-2 text-left ${editingLibraryPlant.image === asset.url ? "border-[#5d7342]" : "border-transparent"}`}><img src={resolveGreenhouseAssetUrl(asset.url)} alt={`Generert forslag for ${editingLibraryPlant.name}`} className="aspect-square w-full object-cover" /><span className="block px-2 py-1 text-xs font-medium">{editingLibraryPlant.image === asset.url ? "Valgt" : "Velg bilde"}</span></button>)}</div></div> : null}
+                            <details className="rounded-md border border-[#e1e4e2] bg-white" open={Boolean(getPlantImageAssets(editingLibraryPlant).length)}><summary className="cursor-pointer select-none px-3 py-2 text-sm font-semibold">Tidligere bilder ({getPlantImageAssets(editingLibraryPlant).length})</summary><div className="grid grid-cols-2 gap-3 border-t border-[#e1e4e2] p-3 sm:grid-cols-3 lg:grid-cols-4">{getPlantImageAssets(editingLibraryPlant).length ? getPlantImageAssets(editingLibraryPlant).map((asset) => <button key={asset.key} type="button" onClick={() => { updateLibraryPlant(editingLibraryPlant.id, { image: asset.url }); setMessage(`${asset.filename} er valgt for ${editingLibraryPlant.name}. Husk å lagre.`); }} className={`overflow-hidden rounded-md border-2 bg-white text-left ${editingLibraryPlant.image === asset.url ? "border-[#5d7342] ring-2 ring-[#5d7342]/20" : "border-[#d8ded1]"}`}><img src={resolveGreenhouseAssetUrl(asset.url)} alt={asset.filename} loading="lazy" className="aspect-square w-full object-cover" /><span className="block truncate px-2 py-1.5 text-xs font-medium">{editingLibraryPlant.image === asset.url ? "Valgt" : asset.filename}</span></button>) : <p className="col-span-full py-3 text-sm text-[#737d76]">Ingen tidligere bilder for denne planten.</p>}</div></details>
+                            <div className="grid gap-3 rounded-md border border-[#e1e4e2] bg-[#f8f9f8] p-3 sm:grid-cols-[220px_minmax(0,1fr)]"><fieldset className="text-sm"><legend className="mb-2 font-semibold">Bakgrunnsfarge</legend><div className="flex flex-wrap gap-2">{imageBackgroundPalette.map((option) => { const selected = editingLibraryPlant.imageBackgroundColor.toLowerCase() === option.color.toLowerCase(); return <button key={option.label} type="button" title={`${option.label} · ${option.color}`} aria-label={`${option.label}, ${option.color}`} aria-pressed={selected} onClick={() => updateLibraryPlant(editingLibraryPlant.id, { imageBackgroundColor: option.color })} className={`h-9 w-9 rounded-full border-2 shadow-sm transition ${selected ? "scale-110 border-[#29312c] ring-2 ring-[#29312c]/25 ring-offset-2" : "border-white hover:scale-105"}`} style={{ backgroundColor: option.color }} />; })}</div><span className="mt-3 block font-mono text-xs text-[#737d76]">{editingLibraryPlant.imageBackgroundColor}</span></fieldset><label className="text-sm"><span className="mb-1 block font-semibold">Beskrivelse til bildegenerering</span><textarea value={editingLibraryPlant.imagePromptDescription} onChange={(event) => updateLibraryPlant(editingLibraryPlant.id, { imagePromptDescription: event.target.value })} rows={4} maxLength={600} placeholder="Beskriv utseende, form, farger, blader, fruktkjøtt eller andre detaljer som må gjengis presist." className="w-full resize-y rounded-md border border-[#cfd5d1] bg-white px-3 py-2" /></label></div>
+                            <label className="block rounded-md border border-[#e1e4e2] bg-[#f8f9f8] p-3"><span className="text-sm font-semibold">Global OpenAI-prompt</span><span className="mt-1 block text-xs text-[#737d76]">Tilgjengelige variabler: <code>{"{{plantenavn}}"}</code>, <code>{"{{bakgrunnsfarge}}"}</code> og <code>{"{{plantebeskrivelse}}"}</code>. Endringen gjelder alle planter etter lagring.</span><textarea value={config.plantImagePrompt} onChange={(event) => updateConfig((current) => ({ ...current, plantImagePrompt: event.target.value }))} rows={12} maxLength={2400} className="mt-2 w-full resize-y rounded-md border border-[#cfd5d1] bg-white px-3 py-2 text-sm" /></label>
+                            <label className="text-sm"><span className="mb-1 block font-medium">Plantenavn</span><input type="text" value={editingLibraryPlant.name} onChange={(event) => updateLibraryPlant(editingLibraryPlant.id, { name: event.target.value })} className="h-9 w-full rounded-md border border-[#cfd5d1] px-3" /></label>
+                            <label className="text-sm"><span className="mb-1 block font-medium">Plantetype</span><select value={editingLibraryPlant.plantType} onChange={(event) => updateLibraryPlant(editingLibraryPlant.id, { plantType: event.target.value as PlantLibraryEntry["plantType"], plantGroup: "" })} className="h-9 w-full rounded-md border border-[#cfd5d1] bg-white px-3">{plantTypeOptions.map((type) => <option key={type} value={type}>{type}</option>)}</select></label>
+                            {plantGroupOptionsByType[editingLibraryPlant.plantType].length > 0 && <label className="text-sm"><span className="mb-1 block font-medium">Plantegruppe</span><select value={editingLibraryPlant.plantGroup} onChange={(event) => updateLibraryPlant(editingLibraryPlant.id, { plantGroup: event.target.value })} className="h-9 w-full rounded-md border border-[#cfd5d1] bg-white px-3"><option value="">Velg gruppe</option>{plantGroupOptionsByType[editingLibraryPlant.plantType].map((group) => <option key={group} value={group}>{group}</option>)}</select></label>}
+                            <label className="text-sm"><span className="mb-1 block font-medium">Generell beskrivelse</span><textarea value={editingLibraryPlant.description} onChange={(event) => updateLibraryPlant(editingLibraryPlant.id, { description: event.target.value })} rows={5} className="w-full resize-y rounded-md border border-[#cfd5d1] px-3 py-2" /></label>
+                            {!activeSeasonPlants.some((plant) => plant.libraryId === editingLibraryPlant.id) && <button type="button" onClick={() => addPlantFromLibraryById(editingLibraryPlant.id)} className="rounded-md bg-[#5d7342] px-4 py-2 text-sm font-semibold text-white">Legg til i {config.activePlantSeasonYear}</button>}
+                          </div>
+                          <div className="border-t border-[#e1e4e2] px-4 py-3"><button type="button" onClick={() => deleteLibraryPlant(editingLibraryPlant)} className="text-sm font-semibold text-red-700 hover:text-red-800">Slett fra bibliotek</button></div>
+                        </>
+                      ) : <div className="p-8 text-center text-sm text-[#78817b]">Ingen planter matcher søket.</div>}
+                    </aside>
+                  </div>
+                )}
+
+                {plantWorkspace === "analysis" && (
+                  <>
+                  <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+                    <div className="rounded-md border border-[#d9ddda] bg-white p-5 shadow-sm"><label className="block"><span className="text-sm font-semibold text-[#29312c]">Generelt om drivhuset og drift</span><span className="mt-1 block text-sm text-[#737d76]">Sendes til OpenAI sammen med sensorverdier, sesongdata og historikk.</span><textarea value={config.plantAnalysisNotes} onChange={(event) => updateConfig((current) => ({ ...current, plantAnalysisNotes: event.target.value }))} rows={8} className="mt-4 w-full resize-y rounded-md border border-[#cfd5d1] px-3 py-2 text-sm" /></label><label className="mt-4 block border-t border-[#e1e4e2] pt-4"><span className="text-sm font-semibold text-[#29312c]">OpenAI-modell</span><span className="mt-1 block text-xs text-[#737d76]">Listen kontrolleres mot modellene som er tilgjengelige på API-nøkkelen.</span><select value={config.plantAnalysisModel} onChange={(event) => updateConfig((current) => ({ ...current, plantAnalysisModel: event.target.value }))} className="mt-2 h-9 w-full rounded-md border border-[#cfd5d1] bg-white px-3 text-sm">{openAiModels.map((model) => <option key={model} value={model}>{model}</option>)}</select></label><div className="mt-4 border-t border-[#e1e4e2] pt-4"><label className="flex items-center justify-between gap-3 text-sm font-semibold"><span>Automatisk analyse</span><input type="checkbox" checked={config.plantAnalysisSchedule.enabled} onChange={(event) => updateConfig((current) => ({ ...current, plantAnalysisSchedule: { ...current.plantAnalysisSchedule, enabled: event.target.checked } }))} className="h-5 w-5 accent-[#5d7342]" /></label>{config.plantAnalysisSchedule.enabled && <label className="mt-3 block text-sm"><span className="mb-1 block font-medium">Tidspunkt hver dag</span><select value={config.plantAnalysisSchedule.time} onChange={(event) => updateConfig((current) => ({ ...current, plantAnalysisSchedule: { ...current.plantAnalysisSchedule, time: event.target.value } }))} className="h-9 w-full rounded-md border border-[#cfd5d1] bg-white px-3">{Array.from({ length: 96 }, (_, index) => { const hour = String(Math.floor(index / 4)).padStart(2, "0"); const minute = String((index % 4) * 15).padStart(2, "0"); const value = `${hour}:${minute}`; return <option key={value} value={value}>{value}</option>; })}</select><span className="mt-1 block text-xs text-[#78817b]">Oslo-tid. Kontrolleres hvert 15. minutt.</span></label>}</div></div>
+                    <aside className="h-fit rounded-md border border-[#d9ddda] bg-white p-5 shadow-sm"><p className="text-xs font-semibold uppercase tracking-[0.06em] text-[#7a837d]">Analysejobb</p><h3 className="mt-1 text-lg font-semibold">{activeSeasonPlants.filter((plant) => plant.active).length} aktive planter</h3><p className="mt-2 text-sm text-[#737d76]">{plantAnalysis ? `Sist kjørt ${new Date(plantAnalysis.generatedAt).toLocaleString("nb-NO")}.` : "Ingen lagret analyse."}</p>{plantAnalysis?.refresh && <><p className="mt-1 text-xs text-[#7a837d]">{plantAnalysis.refresh.analyzedPlants} analysert · {plantAnalysis.refresh.reusedPlants} gjenbrukt</p>{plantAnalysis.refresh.detail && <p className="mt-1 text-xs text-[#7a837d]">{plantAnalysis.refresh.detail}</p>}</>}{plantAnalysis?.model && <p className="mt-1 text-xs text-[#7a837d]">Modell: {plantAnalysis.model}</p>}{plantAnalysis?.usage?.totalTokens ? <p className="mt-1 text-xs text-[#7a837d]">{plantAnalysis.usage.totalTokens.toLocaleString("nb-NO")} tokens sist brukt</p> : null}<button type="button" onClick={() => void handleGeneratePlantAnalysis()} disabled={plantAnalysisLoading} className="mt-5 w-full rounded-md bg-[#5d7342] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{plantAnalysisLoading ? "Analyserer" : "Kjør ny analyse"}</button></aside>
+                  </div>
+                  <section className="mt-5 overflow-hidden rounded-md border border-[#d9ddda] bg-white shadow-sm"><div className="border-b border-[#e1e4e2] px-4 py-3"><h3 className="font-semibold">Kjøringslogg</h3><p className="text-xs text-[#737d76]">Kostnad er estimert fra tokenbruk og listepris. NOK bruker estimert kurs 10,50.</p></div><div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-[#f5f6f5] text-[11px] uppercase tracking-[0.05em] text-[#78817b]"><tr><th className="px-4 py-2">Tid</th><th className="px-4 py-2">Modell</th><th className="px-4 py-2">Resultat</th><th className="px-4 py-2">Tokens</th><th className="px-4 py-2">Estimert pris</th></tr></thead><tbody className="divide-y divide-[#e6e8e7]">{plantAnalysisHistory.length ? plantAnalysisHistory.map((run) => <tr key={run.id}><td className="px-4 py-3">{new Date(run.at).toLocaleString("nb-NO")}</td><td className="px-4 py-3 font-medium">{run.model}</td><td className="px-4 py-3"><span className="block">{run.analyzedPlants} analysert · {run.reusedPlants} gjenbrukt</span><span className="text-xs text-[#78817b]">{run.detail}</span></td><td className="px-4 py-3">{run.totalTokens.toLocaleString("nb-NO")}</td><td className="px-4 py-3">{run.estimatedCostNok == null ? "–" : `${run.estimatedCostNok.toLocaleString("nb-NO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kr`}<span className="block text-xs text-[#78817b]">{run.estimatedCostUsd == null ? "" : `$${run.estimatedCostUsd.toFixed(4)}`}</span></td></tr>) : <tr><td colSpan={5} className="px-4 py-6 text-center text-[#78817b]">Loggen fylles ved neste analysekjøring.</td></tr>}</tbody></table></div></section>
+                  </>
+                )}
+              </section>
+            )}
+
+            {false && activeSection === "plants" && (
               <section className="rounded-lg border border-[#d8ded1] bg-white/70 p-5 shadow-sm">
                 <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
                   <div>
@@ -2951,23 +3594,23 @@ export function AdminPage() {
 
             {activeSection === "header" && (
               <>
-                <section className="rounded-lg border border-[#d8ded1] bg-white/70 p-5 shadow-sm">
-                  <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+                <section className="min-w-0">
+                  <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-[#d9ddda] pb-5">
                     <div>
                       <h2 className="text-base font-semibold">Modus og skjerm</h2>
-                      <p className="text-sm text-stone-600">Velg temperaturmodus, styr bilder for web/skjerm og juster farger per modus.</p>
+                      <p className="text-sm text-stone-600">Styr bilder og skjerm per modus. Felles light/dark-design redigeres under Normalt.</p>
                     </div>
                     <button
                       type="button"
                       onClick={handleReloadAdminData}
-                      className="rounded-full border border-[#cbd3c2] bg-white px-4 py-2 text-sm font-semibold text-[#4d5d3e] transition hover:border-[#9daa8f] hover:bg-[#f7f8f5]"
+                      className="rounded-md border border-[#cbd3c2] bg-white px-4 py-2 text-sm font-semibold text-[#4d5d3e] transition hover:border-[#9daa8f] hover:bg-[#f7f8f5]"
                     >
                       Oppdater
                     </button>
                   </div>
 
                   <div className="grid gap-5">
-                    <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                    <div className="flex max-w-full gap-1 overflow-x-auto border-b border-[#d9ddda]">
                       {imageSlots.map((slot) => {
                         const slotConfig = config.headerImages[slot];
                         const isSelected = selectedHeaderSlot === slot;
@@ -2978,16 +3621,16 @@ export function AdminPage() {
                             key={slot}
                             type="button"
                             onClick={() => setSelectedHeaderSlot(slot)}
-                            className={`rounded-lg border p-3 text-left transition ${
+                            className={`min-w-32 shrink-0 border-b-2 px-3 py-3 text-left transition ${
                               isSelected
-                                ? "border-[#5d7342] bg-white shadow-sm"
-                                : "border-[#d8ded1] bg-[#f7f8f5] hover:border-[#9daa8f] hover:bg-white"
+                                ? "border-[#5d7342] text-[#344326]"
+                                : "border-transparent text-[#68716b] hover:text-[#344326]"
                             }`}
                           >
                             <div className="flex items-start justify-between gap-2">
                               <div>
                                 <h3 className="font-semibold">{slotConfig.label}</h3>
-                                <p className="text-sm text-stone-500">{slotConfig.description}</p>
+                                <p className="whitespace-nowrap text-xs text-stone-500">{slotConfig.description}</p>
                               </div>
                               {isActive && <span className={adminTagClass}>Aktiv nå</span>}
                             </div>
@@ -3100,6 +3743,12 @@ export function AdminPage() {
           </div>
         </section>
       </main>
+      {hasUnsavedChanges && (
+        <div className="fixed inset-x-3 bottom-3 z-[80] flex items-center justify-between gap-3 rounded-lg border border-[#76905f] bg-[#263029] px-4 py-3 text-white shadow-2xl sm:inset-x-auto sm:bottom-5 sm:right-5 sm:min-w-[310px]">
+          <div><p className="text-sm font-semibold">Ulagrede endringer</p><p className="text-xs text-white/65">Husk å lagre før du går videre.</p></div>
+          <button type="button" onClick={() => void handleSave()} disabled={saving} className="shrink-0 rounded-md bg-[#759354] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">{saving ? "Lagrer …" : "Lagre"}</button>
+        </div>
+      )}
     </div>
   );
 }

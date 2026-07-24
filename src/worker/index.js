@@ -1,11 +1,17 @@
 import SunCalc from "suncalc";
 import { getDefaultDisplayThemeForSlot, getDisplaySlotTheme } from "../shared/display-theme.js";
+import { buildDataHealth } from "./data-health.js";
 
 export default {
   async scheduled(controller, env, ctx) {
-    ctx.waitUntil(refreshWeatherCache(env));
-    ctx.waitUntil(refreshStats24hCache(env));
-    ctx.waitUntil(refreshDailyPlantAnalysisIfDue(env));
+    ctx.waitUntil(monitorDataHealth(env));
+
+    const scheduledAt = new Date(controller?.scheduledTime || Date.now());
+    if (scheduledAt.getUTCMinutes() % 15 === 0) {
+      ctx.waitUntil(refreshWeatherCache(env));
+      ctx.waitUntil(refreshStats24hCache(env));
+      ctx.waitUntil(refreshDailyPlantAnalysisIfDue(env));
+    }
   },
 
   async fetch(request, env, ctx) {
@@ -35,7 +41,14 @@ export default {
 
       if (url.pathname === "/api/latest" && request.method === "GET") {
         const latest = await getLatest(env);
-        return jsonResponse({ ok: true, data: latest }, 200, corsHeaders);
+        return jsonResponse({ ok: true, data: { ...latest, dataHealth: buildDataHealth(latest) } }, 200, corsHeaders);
+      }
+
+      if (url.pathname === "/api/data-health" && request.method === "GET") {
+        const latest = await getLatest(env);
+        const health = buildDataHealth(latest);
+        const monitor = await env.GREENHOUSE_DATA.get(DATA_HEALTH_STATE_KEY, "json");
+        return jsonResponse({ ok: true, data: { ...health, monitor } }, 200, corsHeaders);
       }
 
       if (url.pathname === "/api/weather" && request.method === "GET") {
@@ -59,6 +72,19 @@ export default {
 
       if (url.pathname === "/admin/api/plant-analysis" && request.method === "POST") {
         return await handlePlantAnalysis(env, corsHeaders);
+      }
+      if (url.pathname === "/admin/api/plant-analysis/history" && request.method === "GET") {
+        return jsonResponse({ ok: true, data: (await env.GREENHOUSE_DATA.get(PLANT_ANALYSIS_HISTORY_KEY, "json")) || [] }, 200, corsHeaders);
+      }
+      if (url.pathname === "/admin/api/openai-models" && request.method === "GET") {
+        const allowed = ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5-mini"];
+        const response = await fetch("https://api.openai.com/v1/models", { headers: { "Authorization": `Bearer ${env.OPENAI_API_KEY}` } });
+        const result = await response.json().catch(() => ({}));
+        const available = new Set((result.data || []).map((model) => model.id));
+        return jsonResponse({ ok: true, data: allowed.filter((id) => available.has(id)) }, 200, corsHeaders);
+      }
+      if (url.pathname === "/admin/api/plant-images/generate" && request.method === "POST") {
+        return await handleGeneratePlantImages(request, env, corsHeaders);
       }
 
       if (url.pathname === "/api/site-config" && request.method === "GET") {
@@ -101,6 +127,22 @@ export default {
         return await handleSaveSiteConfig(request, env, corsHeaders);
       }
 
+      if (url.pathname === "/admin/api/product-catalog/nelson-garden" && request.method === "GET") {
+        return await handleGetNelsonGardenCatalog(env, corsHeaders);
+      }
+
+      if (url.pathname === "/admin/api/product-catalog/nelson-garden/import" && request.method === "POST") {
+        return await handleImportNelsonGardenCatalog(request, env, corsHeaders);
+      }
+
+      if (url.pathname === "/admin/api/product-catalog/nelson-garden/add" && request.method === "POST") {
+        return await handleAddNelsonGardenProduct(request, env, corsHeaders);
+      }
+
+      if (url.pathname === "/admin/api/product-catalog/nelson-garden/classify" && request.method === "POST") {
+        return await handleClassifyNelsonGardenCatalog(request, env, corsHeaders);
+      }
+
       if (url.pathname === "/admin/api/images" && request.method === "GET") {
         const images = await listAdminImages(env);
         return jsonResponse({ ok: true, data: images }, 200, corsHeaders);
@@ -141,6 +183,7 @@ export default {
 
       return jsonResponse({ ok: false, error: "Not found" }, 404, corsHeaders);
     } catch (error) {
+      console.error("Worker request failed", request.method, url.pathname, error?.stack || error?.message || error);
       return jsonResponse(
         {
           ok: false,
@@ -158,14 +201,40 @@ const WEATHER_CACHE_KEY = "latest:weather";
 const WEATHER_CACHE_MAX_AGE_MS = 15 * 60 * 1000;
 const STATS_24H_CACHE_KEY = "stats:24h";
 const STATS_24H_CACHE_MAX_AGE_MS = 15 * 60 * 1000;
+const DATA_HEALTH_STATE_KEY = "monitor:data-health";
 const PLANT_ANALYSIS_KEY = "plant-analysis:latest";
+const PLANT_ANALYSIS_HISTORY_KEY = "plant-analysis:history";
+const PLANT_ANALYSIS_PROMPT_VERSION = 5;
+const PLANT_ANALYSIS_CLIMATE_COOLDOWN_MS = 12 * 60 * 60 * 1000;
 const PLANT_ANALYSIS_DAILY_KEY = "plant-analysis:last-daily-date";
-const PLANT_ANALYSIS_DAILY_HOUR_OSLO = 6;
 const WEATHER_LATITUDE = 59.87;
 const WEATHER_LONGITUDE = 10.67;
 const GREENHOUSE_LATITUDE = 59.8667;
 const GREENHOUSE_LONGITUDE = 10.7167;
 const COLD_TEMPERATURE_THRESHOLD = 12;
+const DEFAULT_PLANT_IMAGE_PROMPT = `Create an ultra-realistic commercial product photograph of a single {{plantenavn}} suspended in mid-air.
+
+Product-specific visual description: {{plantebeskrivelse}}
+
+The {{plantenavn}} has dramatically exploded open into several large pieces while remaining visually recognizable. Fresh juice, water droplets, pulp, leaves, petals, herbs, or natural fragments appropriate to the product burst outward in a dynamic high-speed splash. The explosion should feel powerful and frozen in time, like it was captured with a professional ultra high-speed camera.
+
+Requirements:
+- Hyper realistic photography
+- Premium advertising style
+- The {{plantenavn}} must remain the clear focal point
+- Natural colors and textures faithful to this specific product
+- Dramatic liquid or natural-fragment splash matching the product
+- Tiny suspended droplets and fragments everywhere
+- Sharp details with no motion blur
+- Floating in mid-air
+- Center composition
+- A bold, solid {{bakgrunnsfarge}} studio background. Use exactly this background color while preserving strong visual contrast between subject and background.
+- Soft studio lighting with subtle rim lighting
+- High contrast
+- No text, labels, packaging, or extra objects
+- Clean minimal composition
+- Premium food and botanical photography aesthetic
+- 8K quality`;
 
 const DEFAULT_PLANT_ANALYSIS_THEME = {
   light: {
@@ -195,16 +264,16 @@ const DEFAULT_PLANT_ANALYSIS_THEME = {
 const PLANT_TYPE_OPTIONS = ["Blomst", "Urte", "Frukt", "Grønnsak"];
 const SEED_LOCATION_OPTIONS = ["Innendørs", "Utendørs", "Drivhus"];
 const DEFAULT_PLANT_LIBRARY = [
-  { id: "san-marazano-tomater", name: "San Marazano tomater", plantType: "Grønnsak", description: "", image: "" },
-  { id: "cherrytomater", name: "Cherrytomater", plantType: "Grønnsak", description: "", image: "" },
-  { id: "agurk", name: "Agurk", plantType: "Grønnsak", description: "", image: "" },
+  { id: "san-marazano-tomater", name: "San Marazano tomater", plantType: "Frukt", plantGroup: "Tomat", description: "", image: "" },
+  { id: "cherrytomater", name: "Cherrytomater", plantType: "Frukt", plantGroup: "Tomat", description: "", image: "" },
+  { id: "agurk", name: "Agurk", plantType: "Frukt", plantGroup: "Agurk", description: "", image: "" },
   { id: "druer", name: "Druer", plantType: "Frukt", description: "", image: "" },
   { id: "basilikum", name: "Basilikum", plantType: "Urte", description: "Basilikum er en varmekjær urt som dyrkes for sine aromatiske blader.", image: "" },
   { id: "kryptimian", name: "Kryptimian", plantType: "Urte", description: "", image: "" },
   { id: "kiwibaer", name: "Kiwibær", plantType: "Frukt", description: "", image: "" },
   { id: "hvit-fersken", name: "Hvit fersken", plantType: "Frukt", description: "", image: "" },
-  { id: "carolina-reaper", name: "Carolina Reaper", plantType: "Grønnsak", description: "", image: "" },
-  { id: "gul-habanero", name: "Gul Habanero", plantType: "Grønnsak", description: "", image: "" },
+  { id: "carolina-reaper", name: "Carolina Reaper", plantType: "Frukt", plantGroup: "Chili", description: "", image: "" },
+  { id: "gul-habanero", name: "Gul Habanero", plantType: "Frukt", plantGroup: "Chili", description: "", image: "" },
 ];
 const DEFAULT_PLANT_SEASONS = {
   "2026": DEFAULT_PLANT_LIBRARY.map((plant) => ({
@@ -216,6 +285,8 @@ const DEFAULT_PLANT_SEASONS = {
     seedLocation: "",
     greenhouseDate: "",
     purchaseSource: "",
+    finished: false,
+    finishReason: "",
     harvestDate: "",
     plantingPlace: "",
     active: true,
@@ -229,6 +300,7 @@ const DEFAULT_SITE_CONFIG = {
     door: true,
     fan: true,
     window: true,
+    plantLibrary: true,
     plantAnalysis: true,
     charts: true,
   },
@@ -245,9 +317,15 @@ const DEFAULT_SITE_CONFIG = {
     { id: "gul-habanero", name: "Gul Habanero", plantType: "Chili", plantingPlace: "", active: true, note: "", image: "" },
   ],
   activePlantSeasonYear: 2026,
+  plantDisplaySort: "manual",
   plantLibrary: DEFAULT_PLANT_LIBRARY,
   plantSeasons: DEFAULT_PLANT_SEASONS,
   plantAnalysisNotes: "",
+  plantImagePrompt: DEFAULT_PLANT_IMAGE_PROMPT,
+  plantAnalysisModel: "gpt-5.4-mini",
+  plantAnalysisSchedule: { enabled: true, time: "06:00" },
+  frontPageSectionOrder: ["climate", "plants", "charts"],
+  frontPageSectionDefaults: { analysisExpanded: false, chartsExpanded: false },
   plantAnalysisTheme: DEFAULT_PLANT_ANALYSIS_THEME,
   headerImages: {
     coldNight: {
@@ -425,15 +503,15 @@ async function handleAssetRequest(request, env) {
     return response;
   }
 
+  const headers = new Headers(response.headers);
+  headers.set("Cache-Control", "no-cache, no-store, must-revalidate");
+
   const preloadLink = await getHeroVideoPreloadLink(env).catch((error) => {
     console.error("Failed to build hero preload link", error);
     return "";
   });
 
-  if (!preloadLink) return response;
-
-  const headers = new Headers(response.headers);
-  headers.append("Link", preloadLink);
+  if (preloadLink) headers.append("Link", preloadLink);
 
   return new Response(response.body, {
     status: response.status,
@@ -489,8 +567,25 @@ function isRainWeatherSymbol(symbolCode) {
   return symbol.includes("rain") || symbol.includes("thunder");
 }
 
-const SITE_CONFIG_KEY = "admin/site-config.json";
+// Keep the old object as a read-only migration source. New writes are split so
+// changing a small setting does not require rewriting the complete config.
+const LEGACY_SITE_CONFIG_KEY = "admin/site-config.json";
+const SITE_CONFIG_SCHEMA_VERSION = 1;
+const SITE_CONFIG_MANIFEST_KEY = "admin/config/manifest.json";
+const SITE_CONFIG_PART_NAMES = {
+  site: "site-config",
+  images: "images",
+  display: "display-config",
+  theme: "theme-config",
+  plants: "plants",
+  plantLibrary: "plant-library",
+  analysis: "analysis-settings",
+};
 const ADMIN_IMAGE_PREFIX = "admin/images/";
+const NELSON_GARDEN_CATALOG_KEY = "admin/product-catalogs/nelson-garden.json";
+const NELSON_GARDEN_PRODUCTS_SITEMAP = "https://www.nelsongarden.no/sitemaps/products.xml";
+const NELSON_GARDEN_IMPORT_BATCH_SIZE = 20;
+const NELSON_GARDEN_CLASSIFY_BATCH_SIZE = 30;
 const DISPLAY_LOG_KEY = "display:log";
 const DISPLAY_LOG_PREFIX = "display:log:";
 const DISPLAY_LOG_MAX_ENTRIES = 200;
@@ -512,8 +607,15 @@ async function getSiteConfig(env) {
 
 async function getStoredSiteConfig(env) {
   const bucket = getConfigBucket(env);
-  const stored = bucket ? await readR2Json(bucket, SITE_CONFIG_KEY) : null;
-  return normalizeSiteConfig(stored);
+  if (!bucket) return normalizeSiteConfig(null);
+
+  const manifest = await readR2Json(bucket, SITE_CONFIG_MANIFEST_KEY);
+  if (!manifest) {
+    return normalizeSiteConfig(await readR2Json(bucket, LEGACY_SITE_CONFIG_KEY));
+  }
+
+  const parts = await readCommittedSiteConfigParts(bucket, manifest);
+  return normalizeSiteConfig(mergeSiteConfigParts(parts));
 }
 
 async function handleSaveSiteConfig(request, env, corsHeaders) {
@@ -524,14 +626,433 @@ async function handleSaveSiteConfig(request, env, corsHeaders) {
 
   const body = await request.json();
   const config = normalizeSiteConfig(body);
+  const nextParts = splitSiteConfig(config);
+  const currentManifest = await readR2Json(bucket, SITE_CONFIG_MANIFEST_KEY);
+  const currentParts = currentManifest
+    ? await readCommittedSiteConfigParts(bucket, currentManifest)
+    : {};
+  const updatedAt = new Date().toISOString();
+  const generation = crypto.randomUUID();
+  const partKeys = {};
+  const writes = [];
 
-  await bucket.put(SITE_CONFIG_KEY, JSON.stringify(config, null, 2), {
+  for (const [name, partName] of Object.entries(SITE_CONFIG_PART_NAMES)) {
+    if (currentParts[name] && jsonValuesEqual(currentParts[name], nextParts[name])) {
+      partKeys[name] = currentManifest.parts[name];
+      continue;
+    }
+
+    const key = `admin/config/${partName}/${generation}.json`;
+    partKeys[name] = key;
+    writes.push(putR2Json(bucket, key, {
+      schemaVersion: SITE_CONFIG_SCHEMA_VERSION,
+      updatedAt,
+      data: nextParts[name],
+    }));
+  }
+
+  // The manifest is the commit point. Failed/partial part writes remain
+  // unreachable, while readers continue using the previous complete commit.
+  await Promise.all(writes);
+  await putR2Json(bucket, SITE_CONFIG_MANIFEST_KEY, {
+    schemaVersion: SITE_CONFIG_SCHEMA_VERSION,
+    updatedAt,
+    generation,
+    parts: partKeys,
+  });
+
+  return jsonResponse({ ok: true, data: config }, 200, corsHeaders);
+}
+
+async function readCommittedSiteConfigParts(bucket, manifest) {
+  if (
+    manifest?.schemaVersion !== SITE_CONFIG_SCHEMA_VERSION ||
+    !manifest.parts ||
+    typeof manifest.parts !== "object"
+  ) {
+    throw new Error("Unsupported or invalid site config manifest");
+  }
+
+  const names = Object.keys(SITE_CONFIG_PART_NAMES);
+  const envelopes = await Promise.all(names.map((name) => {
+    const key = manifest.parts[name];
+    if (typeof key !== "string" || !key.startsWith("admin/config/")) {
+      throw new Error(`Site config manifest is missing part: ${name}`);
+    }
+    return readR2Json(bucket, key);
+  }));
+
+  const parts = {};
+  names.forEach((name, index) => {
+    const envelope = envelopes[index];
+    if (envelope?.schemaVersion !== SITE_CONFIG_SCHEMA_VERSION || !("data" in envelope)) {
+      throw new Error(`Site config part is missing or invalid: ${name}`);
+    }
+    parts[name] = envelope.data;
+  });
+  return parts;
+}
+
+function mergeSiteConfigParts(parts) {
+  const site = parts.site || {};
+  const images = parts.images || {};
+  const display = parts.display || {};
+  const theme = parts.theme || {};
+  const plants = parts.plants || {};
+  const plantLibrary = parts.plantLibrary || {};
+  const analysis = parts.analysis || {};
+  const merged = {
+    ...site,
+    ...plants,
+    ...plantLibrary,
+    ...analysis,
+    ...(theme?.plantAnalysisTheme ? { plantAnalysisTheme: theme.plantAnalysisTheme } : {}),
+  };
+
+  const slots = new Set([
+    ...Object.keys(images?.headerImages || {}),
+    ...Object.keys(display?.headerImages || {}),
+    ...Object.keys(theme?.headerImages || {}),
+  ]);
+  merged.headerImages = {};
+  for (const slot of slots) {
+    merged.headerImages[slot] = {
+      ...(images?.headerImages?.[slot] || {}),
+      ...(display?.headerImages?.[slot] || {}),
+      ...(theme?.headerImages?.[slot] || {}),
+    };
+  }
+  return merged;
+}
+
+function splitSiteConfig(config) {
+  const images = {};
+  const display = {};
+  const theme = {};
+
+  for (const [slot, image] of Object.entries(config.headerImages)) {
+    images[slot] = {
+      label: image.label,
+      description: image.description,
+      mobile: image.mobile,
+      desktop: image.desktop,
+      mobileVideo: image.mobileVideo,
+    };
+    display[slot] = { display: image.display };
+    theme[slot] = { darkModeColor: image.darkModeColor };
+    if (slot === "normal") {
+      theme[slot].displayTheme = image.displayTheme;
+      theme[slot].plantAnalysisTheme = image.plantAnalysisTheme;
+    }
+  }
+
+  return {
+    site: {
+      showHeroImage: config.showHeroImage,
+      visibleStatuses: config.visibleStatuses,
+      frontPageSectionOrder: config.frontPageSectionOrder,
+      frontPageSectionDefaults: config.frontPageSectionDefaults,
+      branding: config.branding,
+    },
+    images: { headerImages: images },
+    display: { headerImages: display },
+    theme: { plantAnalysisTheme: config.plantAnalysisTheme, headerImages: theme },
+    plants: {
+      plants: config.plants,
+      activePlantSeasonYear: config.activePlantSeasonYear,
+      plantDisplaySort: config.plantDisplaySort,
+      plantSeasons: config.plantSeasons,
+    },
+    plantLibrary: { plantLibrary: config.plantLibrary },
+    analysis: { plantAnalysisNotes: config.plantAnalysisNotes, plantAnalysisModel: config.plantAnalysisModel, plantAnalysisSchedule: config.plantAnalysisSchedule, plantImagePrompt: config.plantImagePrompt },
+  };
+}
+
+async function handleGeneratePlantImages(request, env, corsHeaders) {
+  if (!env.OPENAI_API_KEY) return jsonResponse({ ok: false, error: "OpenAI API key is not configured" }, 500, corsHeaders);
+  const bucket = getAssetBucket(env);
+  if (!bucket) return jsonResponse({ ok: false, error: "R2 bucket is not configured" }, 500, corsHeaders);
+  const body = await request.json().catch(() => ({}));
+  const plantId = sanitizeKeyPart(body.plantId);
+  if (!plantId) return jsonResponse({ ok: false, error: "Missing plant id" }, 400, corsHeaders);
+  const config = await getStoredSiteConfig(env);
+  const plant = config.plantLibrary.find((item) => item.id === plantId);
+  if (!plant) return jsonResponse({ ok: false, error: "Plant not found" }, 404, corsHeaders);
+  const template = config.plantImagePrompt || DEFAULT_PLANT_IMAGE_PROMPT;
+  const prompt = template
+    .replace(/{{\s*(?:plantenavn|variablet)\s*}}/gi, plant.name)
+    .replace(/{{\s*bakgrunnsfarge\s*}}/gi, plant.imageBackgroundColor)
+    .replace(/{{\s*plantebeskrivelse\s*}}/gi, plant.imagePromptDescription || plant.description || plant.name);
+  if (/{{\s*(?:plantenavn|bakgrunnsfarge|plantebeskrivelse)\s*}}/i.test(prompt)) return jsonResponse({ ok: false, error: "Bildeprompten inneholder en variabel som ikke kunne fylles ut" }, 400, corsHeaders);
+
+  const response = await fetch("https://api.openai.com/v1/images/generations", {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: "gpt-image-2", prompt, n: 2, size: "1024x1024", quality: "medium", output_format: "webp", output_compression: 85 }),
+  });
+  if (!response.ok) {
+    const details = await response.text();
+    throw new Error(`OpenAI image generation failed (${response.status}): ${details.slice(0, 500)}`);
+  }
+  const result = await response.json();
+  const generatedAt = new Date().toISOString();
+  const timestamp = generatedAt.replace(/[:.]/g, "-");
+  const images = await Promise.all((result.data || []).slice(0, 2).map(async (item, index) => {
+    if (!item.b64_json) throw new Error("OpenAI returned an image without data");
+    const bytes = Uint8Array.from(atob(item.b64_json), (character) => character.charCodeAt(0));
+    const originalName = `${plantId}-openai-${timestamp}-${index + 1}.webp`;
+    const key = `${ADMIN_IMAGE_PREFIX}${plantId}/square/${originalName}`;
+    await bucket.put(key, bytes, {
+      httpMetadata: { contentType: "image/webp", cacheControl: "public, max-age=31536000, immutable" },
+      customMetadata: { originalName, assetType: "plant-image", slot: plantId, format: "square", uploadedAt: generatedAt, source: "openai", model: "gpt-image-2" },
+    });
+    return getImageMetadata(env, bucket, key);
+  }));
+  return jsonResponse({ ok: true, data: { images, prompt, model: "gpt-image-2" } }, 201, corsHeaders);
+}
+
+function jsonValuesEqual(left, right) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function putR2Json(bucket, key, value) {
+  return bucket.put(key, JSON.stringify(value, null, 2), {
     httpMetadata: {
       contentType: "application/json; charset=utf-8",
     },
   });
+}
 
-  return jsonResponse({ ok: true, data: config }, 200, corsHeaders);
+async function handleGetNelsonGardenCatalog(env, corsHeaders) {
+  const bucket = getConfigBucket(env);
+  const catalog = bucket ? await readR2Json(bucket, NELSON_GARDEN_CATALOG_KEY) : null;
+  return jsonResponse({ ok: true, data: catalog || { manufacturer: "Nelson Garden", updatedAt: null, products: [] } }, 200, corsHeaders);
+}
+
+async function handleImportNelsonGardenCatalog(request, env, corsHeaders) {
+  const bucket = getConfigBucket(env);
+  if (!bucket) return jsonResponse({ ok: false, error: "R2 bucket is not configured" }, 500, corsHeaders);
+  const body = await request.json().catch(() => ({}));
+  const cursor = Math.max(0, Number(body?.cursor) || 0);
+  const sitemapResponse = await fetch(NELSON_GARDEN_PRODUCTS_SITEMAP, { headers: { "User-Agent": "KristinsDrivhus/1.0 product catalog importer" } });
+  if (!sitemapResponse.ok) throw new Error(`Nelson Garden sitemap returned ${sitemapResponse.status}`);
+  const sitemap = await sitemapResponse.text();
+  const urls = [...sitemap.matchAll(/<loc>(https:\/\/www\.nelsongarden\.no\/produkter\/[^<]+)<\/loc>/g)].map((match) => match[1]);
+  const batch = urls.slice(cursor, cursor + NELSON_GARDEN_IMPORT_BATCH_SIZE);
+  const results = await Promise.all(batch.map(async (url) => {
+    try {
+      const response = await fetch(url, { headers: { "User-Agent": "KristinsDrivhus/1.0 product catalog importer" } });
+      if (!response.ok) return null;
+      return parseNelsonGardenProduct(await response.text(), url);
+    } catch (error) {
+      console.error("Nelson Garden product import failed", url, error);
+      return null;
+    }
+  }));
+  const imported = results.filter((product) => product?.productType === "seed");
+  const current = await readR2Json(bucket, NELSON_GARDEN_CATALOG_KEY);
+  const productsByArticle = new Map((current?.products || []).map((product) => [product.articleNumber, product]));
+  imported.forEach((product) => productsByArticle.set(product.articleNumber, product));
+  const products = [...productsByArticle.values()].sort((a, b) => `${a.productName} ${a.varietyName}`.localeCompare(`${b.productName} ${b.varietyName}`, "nb"));
+  const nextCursor = cursor + batch.length;
+  const done = nextCursor >= urls.length;
+  const catalog = { manufacturer: "Nelson Garden", updatedAt: new Date().toISOString(), sourceCount: urls.length, products };
+  await putR2Json(bucket, NELSON_GARDEN_CATALOG_KEY, catalog);
+  return jsonResponse({ ok: true, data: { ...catalog, cursor: nextCursor, done, importedInBatch: imported.length } }, 200, corsHeaders);
+}
+
+function parseNelsonGardenProduct(html, sourceUrl) {
+  const marker = '\\"product\\":';
+  const start = html.indexOf(marker);
+  if (start < 0) return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  let end = -1;
+  const valueStart = start + marker.length;
+  for (let index = valueStart; index < html.length; index += 1) {
+    const char = html[index];
+    if (escaped) { escaped = false; continue; }
+    if (char === "\\") { escaped = true; continue; }
+    if (char === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (char === "{") depth += 1;
+    if (char === "}" && --depth === 0) { end = index + 1; break; }
+  }
+  if (end < 0) return null;
+  const product = JSON.parse(JSON.parse(`"${html.slice(valueStart, end)}"`));
+  const variation = product.variations?.[0] || {};
+  const imageRef = variation.media?.[0]?.asset?._ref || product.mainImage?.asset?._ref || "";
+  const categoryPath = flattenNelsonGardenCategoryTrail(product.primaryCategoryTrail);
+  const parsed = {
+    manufacturer: "Nelson Garden",
+    sourceProductId: product._id || "",
+    articleNumber: String(variation.variationId || ""),
+    baseArticleNumber: product.productBaseArtNr || "",
+    ean: variation.ean || "",
+    productName: product.title || variation.displayName || "",
+    varietyName: product.sortName || product.title || "",
+    description: product.description || "",
+    latinName: product.latinName || "",
+    productType: product.productType || "",
+    categoryPath,
+    sourceUrl,
+    sourceImageUrl: sanityImageUrl(imageRef),
+    attributes: Array.isArray(product.productAttributes) ? product.productAttributes : [],
+    cultivation: Array.isArray(product.productHowTo) ? product.productHowTo : [],
+  };
+  parsed.plantType = inferNelsonGardenPlantType(parsed);
+  parsed.plantGroup = inferNelsonGardenPlantGroup(parsed);
+  return parsed;
+}
+
+function flattenNelsonGardenCategoryTrail(trail) {
+  const categories = [];
+  let current = trail;
+  while (current && typeof current === "object") {
+    if (current.title) categories.unshift(String(current.title));
+    current = current.parent;
+  }
+  return categories;
+}
+
+function sanityImageUrl(reference) {
+  const match = String(reference).match(/^image-([a-f0-9]+)-(\d+x\d+)-([a-z0-9]+)$/i);
+  return match ? `https://cdn.sanity.io/images/f65p6skz/production/${match[1]}-${match[2]}.${match[3]}` : "";
+}
+
+async function handleAddNelsonGardenProduct(request, env, corsHeaders) {
+  const configBucket = getConfigBucket(env);
+  const assetBucket = getAssetBucket(env);
+  if (!configBucket || !assetBucket) return jsonResponse({ ok: false, error: "R2 bucket is not configured" }, 500, corsHeaders);
+  const { articleNumber } = await request.json();
+  const catalog = await readR2Json(configBucket, NELSON_GARDEN_CATALOG_KEY);
+  const product = (catalog?.products || []).find((item) => item.articleNumber === String(articleNumber || ""));
+  if (!product) return jsonResponse({ ok: false, error: "Produktet finnes ikke i katalogen" }, 404, corsHeaders);
+  let image = "";
+  if (product.sourceImageUrl) {
+    try {
+      const imageUrl = new URL(product.sourceImageUrl);
+      imageUrl.searchParams.set("w", "1000");
+      imageUrl.searchParams.set("fit", "max");
+      imageUrl.searchParams.set("fm", "jpg");
+      imageUrl.searchParams.set("q", "85");
+      const response = await fetch(imageUrl, { signal: AbortSignal.timeout(20000) });
+      if (response.ok) {
+        const key = `${ADMIN_IMAGE_PREFIX}plants/nelson-garden/${product.articleNumber}.jpg`;
+        await assetBucket.put(key, response.body, { httpMetadata: { contentType: "image/jpeg", cacheControl: "public, max-age=31536000" } });
+        image = getProxyAssetUrl(key);
+      }
+    } catch (error) {
+      console.error("Nelson Garden image copy failed", product.articleNumber, error);
+    }
+  }
+  const entry = {
+    id: `nelson-garden-${product.articleNumber}`,
+    name: product.varietyName || product.productName,
+    productName: product.productName,
+    plantType: product.plantType || inferNelsonGardenPlantType(product),
+    plantGroup: product.plantGroup || inferNelsonGardenPlantGroup(product),
+    description: product.description,
+    image,
+    manufacturer: product.manufacturer,
+    articleNumber: product.articleNumber,
+    sourceUrl: product.sourceUrl,
+    sourceProductId: product.sourceProductId,
+    sourceImageUrl: product.sourceImageUrl,
+    productData: { baseArticleNumber: product.baseArticleNumber, ean: product.ean, latinName: product.latinName, attributes: product.attributes, cultivation: product.cultivation },
+  };
+  return jsonResponse({ ok: true, data: entry }, 200, corsHeaders);
+}
+
+function inferNelsonGardenPlantType(product) {
+  const category = (product.categoryPath || []).join(" ").toLowerCase();
+  const text = `${product.productName} ${product.varietyName} ${product.latinName}`.toLowerCase();
+  if (/blomsterfrø|blomsterfro|sommerblomst|staude/.test(category)) return "Blomst";
+  if (/krydder|urtefrø|urtefro/.test(category)) return "Urte";
+  if (/blomst|solsikke|tagetes|zinnia|petunia|cosmos|pyntekorg|valmue|ringblomst|blomkarse|løvemunn|kornblomst/.test(text)) return "Blomst";
+  if (/basilikum|timian|oregano|persille|dill|koriander|salvie|mynte/.test(text)) return "Urte";
+  if (/tomat|agurk|chili|paprika|melon|jordbær/.test(text)) return "Frukt";
+  return "Grønnsak";
+}
+
+function inferNelsonGardenPlantGroup(product) {
+  const name = `${product.productName} ${product.varietyName}`.toLowerCase();
+  if (name.includes("tomat")) return "Tomat";
+  if (name.includes("chili") || name.includes("habanero")) return "Chili";
+  if (name.includes("agurk")) return "Agurk";
+  return "";
+}
+
+async function handleClassifyNelsonGardenCatalog(request, env, corsHeaders) {
+  const bucket = getConfigBucket(env);
+  if (!bucket) return jsonResponse({ ok: false, error: "R2 bucket is not configured" }, 500, corsHeaders);
+  if (!env.OPENAI_API_KEY) return jsonResponse({ ok: false, error: "OPENAI_API_KEY is not configured" }, 500, corsHeaders);
+  const body = await request.json().catch(() => ({}));
+  const cursor = Math.max(0, Number(body?.cursor) || 0);
+  const catalog = await readR2Json(bucket, NELSON_GARDEN_CATALOG_KEY);
+  const products = Array.isArray(catalog?.products) ? catalog.products : [];
+  const batch = products.slice(cursor, cursor + NELSON_GARDEN_CLASSIFY_BATCH_SIZE);
+  if (!batch.length) return jsonResponse({ ok: true, data: { cursor, done: true, total: products.length, classified: 0 } }, 200, corsHeaders);
+
+  const allowedPairs = Object.entries(PLANT_GROUP_OPTIONS).flatMap(([plantType, groups]) => groups.map((plantGroup) => ({ plantType, plantGroup })));
+  const input = batch.map((product) => ({
+    articleNumber: product.articleNumber,
+    productName: product.productName,
+    varietyName: product.varietyName,
+    latinName: product.latinName,
+    nelsonCategories: product.categoryPath || [],
+    description: product.description,
+  }));
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "gpt-5-mini",
+      messages: [
+        { role: "system", content: "Du klassifiserer frøprodukter til Kristins drivhus sin lukkede taksonomi. Botanisk bruk i denne appen gjelder: tomat, agurk, chili, paprika, aubergine, melon, squash, jordbær og physalis er Frukt selv om leverandøren kaller dem grønnsaker. Velg alltid nøyaktig ett av de oppgitte type/gruppe-parene. Bruk latinsk navn som viktigste artsgrunnlag, deretter norsk produktnavn og beskrivelse. Blomster skal aldri klassifiseres som Grønnsak. Returner bare skjemaet." },
+        { role: "user", content: JSON.stringify({ allowedPairs, products: input }) },
+      ],
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "nelson_garden_classification",
+          strict: true,
+          schema: {
+            type: "object", additionalProperties: false, required: ["items"],
+            properties: { items: { type: "array", items: {
+              type: "object", additionalProperties: false, required: ["articleNumber", "plantType", "plantGroup"],
+              properties: {
+                articleNumber: { type: "string" },
+                plantType: { type: "string", enum: Object.keys(PLANT_GROUP_OPTIONS) },
+                plantGroup: { type: "string", enum: [...new Set(Object.values(PLANT_GROUP_OPTIONS).flat())] },
+              },
+            } } },
+          },
+        },
+      },
+    }),
+  });
+  if (!response.ok) {
+    const details = await response.text();
+    throw new Error(`OpenAI classification failed (${response.status}): ${details.slice(0, 500)}`);
+  }
+  const result = await response.json();
+  const parsed = JSON.parse(result.choices?.[0]?.message?.content || "{}");
+  const byArticle = new Map((parsed.items || []).map((item) => [String(item.articleNumber), item]));
+  let classified = 0;
+  for (let index = cursor; index < cursor + batch.length; index += 1) {
+    const product = products[index];
+    const classification = byArticle.get(String(product.articleNumber));
+    if (!classification || !(PLANT_GROUP_OPTIONS[classification.plantType] || []).includes(classification.plantGroup)) {
+      throw new Error(`Invalid classification for article ${product.articleNumber}`);
+    }
+    products[index] = { ...product, plantType: classification.plantType, plantGroup: classification.plantGroup, classificationSource: "openai-one-off-v1" };
+    classified += 1;
+  }
+  const nextCursor = cursor + batch.length;
+  await putR2Json(bucket, NELSON_GARDEN_CATALOG_KEY, { ...catalog, products, classifiedAt: new Date().toISOString() });
+  return jsonResponse({ ok: true, data: { cursor: nextCursor, done: nextCursor >= products.length, total: products.length, classified } }, 200, corsHeaders);
 }
 
 async function handleUploadAdminImage(request, env, corsHeaders) {
@@ -1012,6 +1533,12 @@ async function getImageMetadata(env, bucket, key, objectInfo = null) {
   };
 }
 
+function normalizeFrontPageSectionOrder(value) {
+  const allowed = ["climate", "plants", "charts"];
+  const input = Array.isArray(value) ? value.filter((item) => allowed.includes(item)) : [];
+  return [...new Set([...input, ...allowed])];
+}
+
 function normalizeSiteConfig(config) {
   const input = config && typeof config === "object" ? config : {};
   const visibleStatuses = input.visibleStatuses && typeof input.visibleStatuses === "object" ? input.visibleStatuses : {};
@@ -1038,14 +1565,27 @@ function normalizeSiteConfig(config) {
       door: typeof visibleStatuses.door === "boolean" ? visibleStatuses.door : DEFAULT_SITE_CONFIG.visibleStatuses.door,
       fan: typeof visibleStatuses.fan === "boolean" ? visibleStatuses.fan : DEFAULT_SITE_CONFIG.visibleStatuses.fan,
       window: typeof visibleStatuses.window === "boolean" ? visibleStatuses.window : DEFAULT_SITE_CONFIG.visibleStatuses.window,
+      plantLibrary: typeof visibleStatuses.plantLibrary === "boolean" ? visibleStatuses.plantLibrary : DEFAULT_SITE_CONFIG.visibleStatuses.plantLibrary,
       plantAnalysis: typeof visibleStatuses.plantAnalysis === "boolean" ? visibleStatuses.plantAnalysis : DEFAULT_SITE_CONFIG.visibleStatuses.plantAnalysis,
       charts: typeof visibleStatuses.charts === "boolean" ? visibleStatuses.charts : DEFAULT_SITE_CONFIG.visibleStatuses.charts,
     },
     plants: activeSeasonPlants.length ? activeSeasonPlants : normalizePlants(plants),
     activePlantSeasonYear,
+    plantDisplaySort: ["manual", "name-asc", "name-desc", "type", "status"].includes(input.plantDisplaySort) ? input.plantDisplaySort : "manual",
     plantLibrary,
     plantSeasons,
     plantAnalysisNotes: normalizeText(input.plantAnalysisNotes, DEFAULT_SITE_CONFIG.plantAnalysisNotes, 1200),
+    plantImagePrompt: normalizePlantImagePrompt(input.plantImagePrompt),
+    plantAnalysisModel: ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5-mini"].includes(input.plantAnalysisModel) ? input.plantAnalysisModel : "gpt-5.4-mini",
+    plantAnalysisSchedule: {
+      enabled: input.plantAnalysisSchedule?.enabled !== false,
+      time: /^([01]\d|2[0-3]):(00|15|30|45)$/.test(input.plantAnalysisSchedule?.time || "") ? input.plantAnalysisSchedule.time : "06:00",
+    },
+    frontPageSectionOrder: normalizeFrontPageSectionOrder(input.frontPageSectionOrder),
+    frontPageSectionDefaults: {
+      analysisExpanded: input.frontPageSectionDefaults?.analysisExpanded === true,
+      chartsExpanded: input.frontPageSectionDefaults?.chartsExpanded === true,
+    },
     plantAnalysisTheme: normalizePlantAnalysisTheme(plantAnalysisTheme),
     headerImages: {},
     branding: {
@@ -1095,7 +1635,24 @@ function normalizeSiteConfig(config) {
     };
   }
 
+  // "Normal" is the canonical light/dark palette. Weather and temperature
+  // slots inherit it; they only keep their own media, display crop and
+  // dark-mode browser background.
+  const baseDisplayTheme = normalized.headerImages.normal.displayTheme;
+  const basePlantAnalysisTheme = normalized.headerImages.normal.plantAnalysisTheme;
+  normalized.plantAnalysisTheme = basePlantAnalysisTheme;
+  for (const image of Object.values(normalized.headerImages)) {
+    image.displayTheme = baseDisplayTheme;
+    image.plantAnalysisTheme = basePlantAnalysisTheme;
+  }
+
   return normalized;
+}
+
+function normalizePlantImagePrompt(value) {
+  const prompt = normalizeText(value, "", 2400);
+  if (!prompt || prompt.startsWith("Produktbilde av en gruppe med {{plantenavn}}")) return DEFAULT_PLANT_IMAGE_PROMPT;
+  return prompt;
 }
 
 function normalizePlantYear(value, fallback) {
@@ -1111,6 +1668,43 @@ function normalizePlantType(value) {
   return "Grønnsak";
 }
 
+const PLANT_GROUP_OPTIONS = {
+  Frukt: ["Tomat", "Agurk", "Aubergine", "Drue", "Kiwibær", "Fersken", "Chili", "Paprika", "Melon", "Squash", "Jordbær", "Bær", "Sitrus", "Fiken", "Pasjonsfrukt", "Physalis", "Annet"],
+  Grønnsak: ["Rotgrønnsak", "Bladgrønnsak", "Kål", "Løk", "Belgvekst", "Potet", "Mais", "Stengelgrønnsak", "Asparges", "Fennikel", "Annet"],
+  Blomst: ["Staude", "Sommerblomst", "Løk/knoll", "Klatreplante", "Snittblomst", "Pollinatorplante", "Potteplante", "Annet"],
+  Urte: ["Basilikum", "Persille", "Koriander", "Dill", "Mynte", "Timian", "Oregano/merian", "Rosmarin", "Salvie", "Gressløk", "Estragon", "Sitronmelisse", "Annet"],
+};
+
+function normalizePlantGroup(value, plantType, name) {
+  const raw = normalizeText(value, "", 80);
+  if ((PLANT_GROUP_OPTIONS[plantType] || []).includes(raw)) return raw;
+  const normalizedName = String(name || "").toLocaleLowerCase("nb-NO");
+  if (plantType === "Frukt") {
+    if (normalizedName.includes("tomat") || normalizedName.includes("marmande") || normalizedName.includes("marzano")) return "Tomat";
+    if (normalizedName.includes("agurk")) return "Agurk";
+    if (normalizedName.includes("drue")) return "Drue";
+    if (normalizedName.includes("kiwi")) return "Kiwibær";
+    if (normalizedName.includes("fersken") || normalizedName.includes("peach")) return "Fersken";
+    if (normalizedName.includes("reaper") || normalizedName.includes("habanero") || normalizedName.includes("chili")) return "Chili";
+  }
+  if (plantType === "Urte") {
+    if (normalizedName.includes("basilikum")) return "Basilikum";
+    if (normalizedName.includes("persille")) return "Persille";
+    if (normalizedName.includes("koriander")) return "Koriander";
+    if (normalizedName.includes("dill")) return "Dill";
+    if (normalizedName.includes("mynte")) return "Mynte";
+    if (normalizedName.includes("timian")) return "Timian";
+    if (normalizedName.includes("oregano") || normalizedName.includes("merian")) return "Oregano/merian";
+    if (normalizedName.includes("rosmarin")) return "Rosmarin";
+    if (normalizedName.includes("salvie")) return "Salvie";
+    if (normalizedName.includes("gressløk")) return "Gressløk";
+    if (normalizedName.includes("estragon")) return "Estragon";
+    if (normalizedName.includes("sitronmelisse")) return "Sitronmelisse";
+  }
+  if (plantType === "Blomst" && (normalizedName.includes("solhatt") || normalizedName.includes("brudeslør"))) return "Staude";
+  return "";
+}
+
 function normalizePlantLibrary(library, legacyPlants) {
   const input = Array.isArray(library) && library.length ? library : legacyPlants;
   const seen = new Set();
@@ -1122,17 +1716,50 @@ function normalizePlantLibrary(library, legacyPlants) {
       let id = normalizeText(item.id, slugifyPlantName(name) || `plante-${index + 1}`, 80);
       if (seen.has(id)) id = `${id}-${index + 1}`;
       seen.add(id);
+      const plantType = normalizePlantType(item.plantType);
       return {
         id,
         name,
-        plantType: normalizePlantType(item.plantType),
+        plantType,
+        plantGroup: normalizePlantGroup(item.plantGroup, plantType, name),
         description: normalizeText(item.description, "", 500),
+        imageBackgroundColor: normalizeHexColor(item.imageBackgroundColor, "#c88f44"),
+        imagePromptDescription: normalizeText(item.imagePromptDescription, "", 600),
+        waterNeed: ["low", "moderate", "high"].includes(item.waterNeed) ? item.waterNeed : "",
+        soilMoisture: ["dry-between", "evenly-moist", "moist"].includes(item.soilMoisture) ? item.soilMoisture : "",
+        developmentTime: normalizeText(item.developmentTime, "", 120),
         image: normalizeImageReference(item.image, ""),
+        productName: normalizeText(item.productName, "", 120),
+        manufacturer: normalizeText(item.manufacturer, "", 80),
+        articleNumber: normalizeText(item.articleNumber, "", 80),
+        sourceUrl: normalizeExternalUrl(item.sourceUrl),
+        sourceProductId: normalizeText(item.sourceProductId, "", 120),
+        sourceImageUrl: normalizeExternalUrl(item.sourceImageUrl),
+        productData: normalizeSupplierProductData(item.productData),
       };
     })
     .filter(Boolean);
 
   return normalized.length ? normalized : DEFAULT_PLANT_LIBRARY;
+}
+
+function normalizeExternalUrl(value) {
+  const url = String(value || "").trim();
+  return /^https:\/\//i.test(url) ? url.slice(0, 1200) : "";
+}
+
+function normalizeSupplierProductData(value) {
+  const input = value && typeof value === "object" ? value : {};
+  const rows = (items) => (Array.isArray(items) ? items : []).slice(0, 40).map((item) => ({
+    label: normalizeText(item?.label, "", 100), value: normalizeText(item?.value, "", 300),
+  })).filter((item) => item.label && item.value);
+  return {
+    baseArticleNumber: normalizeText(input.baseArticleNumber, "", 80),
+    ean: normalizeText(input.ean, "", 40),
+    latinName: normalizeText(input.latinName, "", 180),
+    attributes: rows(input.attributes),
+    cultivation: rows(input.cultivation),
+  };
 }
 
 function normalizePlantSeasons(seasons, library, legacyPlants, activeYear) {
@@ -1157,6 +1784,8 @@ function normalizePlantSeasons(seasons, library, legacyPlants, activeYear) {
       seedLocation: "",
       greenhouseDate: "",
       purchaseSource: "",
+      finished: false,
+      finishReason: "",
       harvestDate: "",
       plantingPlace: plant.plantingPlace,
       active: plant.active,
@@ -1176,6 +1805,24 @@ function normalizePlantSeasonEntry(entry, library, year, index) {
   const fallbackLibraryId = library[index]?.id || library[0]?.id || "";
   const libraryId = normalizeText(item.libraryId || item.id, fallbackLibraryId, 80);
   if (!libraryId) return null;
+  const harvestDate = normalizeDateOnly(item.harvestDate);
+  const finished = typeof item.finished === "boolean" ? item.finished : Boolean(harvestDate);
+  const inferredLocation = item.greenhouseDate ? "greenhouse" : item.seedLocation === "Innendørs" ? "indoor" : item.seedLocation === "Utendørs" ? "outdoor" : item.seedLocation === "Drivhus" ? "greenhouse" : "";
+  const allowedStages = ["new", "germinating", "growing", "budding", "flowering", "fruit-set", "fruit-growing", "ripening", "harvest-ready", "post-flowering"];
+  const observations = (Array.isArray(item.observations) ? item.observations : []).map((value, observationIndex) => {
+    const row = value && typeof value === "object" ? value : {};
+    const stage = allowedStages.includes(row.stage) ? row.stage : "";
+    const date = normalizeDateOnly(row.date);
+    if (!stage || !date) return null;
+    const growingLocation = ["indoor", "greenhouse", "outdoor"].includes(row.growingLocation) ? row.growingLocation : inferredLocation;
+    return { id: normalizeText(row.id, `${libraryId}-${date}-${observationIndex}`, 100), date, stage, note: normalizeText(row.note, "", 120), growingLocation, growingMedium: normalizeText(row.growingMedium, normalizeText(item.plantingPlace, "", 120), 120) };
+  }).filter(Boolean);
+  if (observations.length === 0 && allowedStages.includes(item.developmentStage) && normalizeDateOnly(item.observedAt)) {
+    const legacyLocation = item.greenhouseDate ? "greenhouse" : item.seedLocation === "Innendørs" ? "indoor" : item.seedLocation === "Utendørs" ? "outdoor" : item.seedLocation === "Drivhus" ? "greenhouse" : "";
+    observations.push({ id: `${libraryId}-${item.observedAt}-legacy`, date: normalizeDateOnly(item.observedAt), stage: item.developmentStage, note: normalizeText(item.observation, "", 120), growingLocation: legacyLocation, growingMedium: normalizeText(item.plantingPlace, "", 120) });
+  }
+  observations.sort((a, b) => a.date.localeCompare(b.date));
+  const latestObservation = observations.at(-1);
   return {
     id: normalizeText(item.id, `${libraryId}-${year}-${index}`, 100),
     year,
@@ -1185,8 +1832,15 @@ function normalizePlantSeasonEntry(entry, library, year, index) {
     seedLocation: SEED_LOCATION_OPTIONS.includes(item.seedLocation) ? item.seedLocation : "",
     greenhouseDate: normalizeDateOnly(item.greenhouseDate),
     purchaseSource: normalizeText(item.purchaseSource, "", 160),
-    harvestDate: normalizeDateOnly(item.harvestDate),
+    finished,
+    finishReason: finished && item.finishReason === "moved-out" ? "moved-out" : finished ? "season-over" : "",
+    harvestDate,
     plantingPlace: normalizeText(item.plantingPlace, "", 120),
+    growingLocation: ["indoor", "greenhouse", "outdoor"].includes(item.growingLocation) ? item.growingLocation : (item.greenhouseDate ? "greenhouse" : item.seedLocation === "Innendørs" ? "indoor" : item.seedLocation === "Utendørs" ? "outdoor" : item.seedLocation === "Drivhus" ? "greenhouse" : ""),
+    developmentStage: latestObservation?.stage || (allowedStages.includes(item.developmentStage) ? item.developmentStage : ""),
+    observedAt: latestObservation?.date || normalizeDateOnly(item.observedAt),
+    observation: latestObservation?.note || normalizeText(item.observation, "", 120),
+    observations,
     active: typeof item.active === "boolean" ? item.active : true,
     note: normalizeText(item.note, "", 360),
   };
@@ -1487,7 +2141,7 @@ async function handleIngest(request, env, corsHeaders, ctx) {
     return jsonResponse(
       {
         ok: false,
-        error: "Unknown sensor. Supported values: temperature, humidity, door, fan, heating, window",
+        error: "Unknown sensor. Supported values: temperature, humidity, rain_today, rain_hour, door, fan, heating, window",
         received: sensorRaw,
       },
       400,
@@ -1674,7 +2328,7 @@ async function getEnvSecretValue(env, key) {
 async function getCachedWeather(env, ctx) {
   const cached = await env.GREENHOUSE_DATA.get(WEATHER_CACHE_KEY, "json");
   const cachedAt = cached?.cachedAt ? new Date(cached.cachedAt).getTime() : 0;
-  const hasForecast = Array.isArray(cached?.forecastToday);
+  const hasForecast = Array.isArray(cached?.forecastToday) && cached.forecastToday.length >= 9;
   const isFresh = cachedAt && hasForecast && Date.now() - cachedAt < WEATHER_CACHE_MAX_AGE_MS;
 
   if (cached && isFresh) return cached;
@@ -1774,12 +2428,11 @@ async function fetchWeatherSnapshot() {
 
 function compactWeatherForecastToday(timeseries) {
   const now = new Date();
-  const today = getOsloDateKey(now);
   const entries = [];
 
   for (const item of timeseries) {
     const time = new Date(item?.time);
-    if (Number.isNaN(time.getTime()) || time < now || getOsloDateKey(time) !== today) continue;
+    if (Number.isNaN(time.getTime()) || time < now) continue;
 
     const details = item.data?.instant?.details || {};
     const rawSymbol =
@@ -1812,10 +2465,11 @@ function normalizeIsoDate(value) {
 }
 
 async function getLatest(env) {
-  const [temperatureEntry, humidityEntry, rainTodayEntry, doorEntry, fanEntry, heatingEntry, windowEntry] = await Promise.all([
+  const [temperatureEntry, humidityEntry, rainTodayEntry, rainHourEntry, doorEntry, fanEntry, heatingEntry, windowEntry] = await Promise.all([
     env.GREENHOUSE_DATA.get("latest:temperature", "json"),
     env.GREENHOUSE_DATA.get("latest:humidity", "json"),
     env.GREENHOUSE_DATA.get("latest:rain_today", "json"),
+    env.GREENHOUSE_DATA.get("latest:rain_hour", "json"),
     env.GREENHOUSE_DATA.get("latest:door", "json"),
     env.GREENHOUSE_DATA.get("latest:fan", "json"),
     env.GREENHOUSE_DATA.get("latest:heating", "json"),
@@ -1829,6 +2483,8 @@ async function getLatest(env) {
     humidityUpdatedAt: humidityEntry?.timestamp ?? null,
     rainToday: rainTodayEntry?.value ?? null,
     rainTodayUpdatedAt: rainTodayEntry?.timestamp ?? null,
+    rainHour: rainHourEntry?.value ?? null,
+    rainHourUpdatedAt: rainHourEntry?.timestamp ?? null,
     door: doorEntry?.value ?? null,
     doorUpdatedAt: doorEntry?.timestamp ?? null,
     fan: fanEntry?.value ?? null,
@@ -1847,7 +2503,10 @@ async function getLatest(env) {
                   temperatureEntry?.timestamp ?? null,
                   humidityEntry?.timestamp ?? null
                 ),
-                rainTodayEntry?.timestamp ?? null
+                maxIsoDate(
+                  rainTodayEntry?.timestamp ?? null,
+                  rainHourEntry?.timestamp ?? null
+                )
               ),
               doorEntry?.timestamp ?? null
             ),
@@ -1858,6 +2517,75 @@ async function getLatest(env) {
         windowEntry?.timestamp ?? null
       ) ?? null,
   };
+}
+
+async function monitorDataHealth(env) {
+  const latest = await getLatest(env);
+  const health = buildDataHealth(latest);
+  const previous = await env.GREENHOUSE_DATA.get(DATA_HEALTH_STATE_KEY, "json");
+  const isActive = health.status !== "ok";
+  const wasActive = previous?.active === true;
+  const affectedSensorsChanged =
+    JSON.stringify(previous?.affectedSensors || []) !== JSON.stringify(health.affectedSensors);
+  const alertChanged =
+    isActive &&
+    wasActive &&
+    (previous?.status !== health.status || affectedSensorsChanged);
+  const hasTransition = isActive !== wasActive || alertChanged;
+  const state = {
+    ...health,
+    active: isActive,
+    activeSince: isActive
+      ? wasActive
+        ? previous.activeSince
+        : health.alertStartedAt || health.checkedAt
+      : null,
+    lastTransitionAt:
+      hasTransition
+        ? health.checkedAt
+        : previous?.lastTransitionAt || health.checkedAt,
+    recoveredAt:
+      !isActive && wasActive
+        ? health.checkedAt
+        : previous?.recoveredAt || null,
+  };
+
+  if (isActive && !wasActive) {
+    console.warn(
+      "Greenhouse sensor data alert",
+      JSON.stringify({
+        event: "greenhouse_data_stale",
+        status: health.status,
+        affectedSensors: health.affectedSensors,
+        sensors: health.sensors,
+        activeSince: state.activeSince,
+      }),
+    );
+  } else if (alertChanged) {
+    console.warn(
+      "Greenhouse sensor data alert changed",
+      JSON.stringify({
+        event: "greenhouse_data_alert_changed",
+        previousStatus: previous.status,
+        status: health.status,
+        affectedSensors: health.affectedSensors,
+        sensors: health.sensors,
+        activeSince: state.activeSince,
+      }),
+    );
+  } else if (!isActive && wasActive) {
+    console.info(
+      "Greenhouse sensor data recovered",
+      JSON.stringify({
+        event: "greenhouse_data_recovered",
+        recoveredAt: state.recoveredAt,
+        previousActiveSince: previous.activeSince || null,
+      }),
+    );
+  }
+
+  await env.GREENHOUSE_DATA.put(DATA_HEALTH_STATE_KEY, JSON.stringify(state));
+  return state;
 }
 
 async function getHistory(env) {
@@ -1954,6 +2682,7 @@ async function handlePlantAnalysis(env, corsHeaders) {
   try {
     const analysis = await generatePlantAnalysis(env);
     await env.GREENHOUSE_DATA.put(PLANT_ANALYSIS_KEY, JSON.stringify(analysis));
+    await recordPlantAnalysisRun(env, analysis, "manual");
     return jsonResponse({ ok: true, data: analysis }, 200, corsHeaders);
   } catch (error) {
     return jsonResponse(
@@ -1975,6 +2704,8 @@ async function handleGetPlantAnalysis(env, corsHeaders) {
 
 async function refreshDailyPlantAnalysisIfDue(env) {
   const now = new Date();
+  const config = await getSiteConfig(env);
+  if (config.plantAnalysisSchedule?.enabled === false) return;
   const osloParts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Europe/Oslo",
     year: "numeric",
@@ -1987,8 +2718,10 @@ async function refreshDailyPlantAnalysisIfDue(env) {
   const parts = Object.fromEntries(osloParts.map((part) => [part.type, part.value]));
   const today = `${parts.year}-${parts.month}-${parts.day}`;
   const hour = Number(parts.hour);
+  const minute = Number(parts.minute);
+  const [scheduledHour, scheduledMinute] = String(config.plantAnalysisSchedule?.time || "06:00").split(":").map(Number);
 
-  if (hour !== PLANT_ANALYSIS_DAILY_HOUR_OSLO) return;
+  if (hour !== scheduledHour || minute !== scheduledMinute) return;
 
   const lastRun = await env.GREENHOUSE_DATA.get(PLANT_ANALYSIS_DAILY_KEY);
   if (lastRun === today) return;
@@ -1998,10 +2731,40 @@ async function refreshDailyPlantAnalysisIfDue(env) {
     await Promise.all([
       env.GREENHOUSE_DATA.put(PLANT_ANALYSIS_KEY, JSON.stringify(analysis)),
       env.GREENHOUSE_DATA.put(PLANT_ANALYSIS_DAILY_KEY, today),
+      recordPlantAnalysisRun(env, analysis, "scheduled"),
     ]);
   } catch (error) {
     console.error("Failed to refresh daily plant analysis", error);
   }
+}
+
+async function recordPlantAnalysisRun(env, analysis, trigger) {
+  const prices = {
+    "gpt-5.5": { input: 5, output: 30 },
+    "gpt-5.4": { input: 2.5, output: 15 },
+    "gpt-5.4-mini": { input: 0.75, output: 4.5 },
+    "gpt-5-mini": { input: 0.25, output: 2 },
+  };
+  const model = analysis.model || "gpt-5.4-mini";
+  const usage = analysis.runUsage || analysis.usage || {};
+  const inputTokens = numberOrNull(usage.inputTokens) || 0;
+  const outputTokens = numberOrNull(usage.outputTokens) || 0;
+  const rate = prices[model];
+  const costUsd = rate ? (inputTokens * rate.input + outputTokens * rate.output) / 1_000_000 : null;
+  const entry = {
+    id: crypto.randomUUID(),
+    at: new Date().toISOString(), trigger, model,
+    reason: analysis.refresh?.reason || "unknown",
+    detail: analysis.refresh?.detail || "",
+    analyzedPlants: analysis.refresh?.analyzedPlants || 0,
+    reusedPlants: analysis.refresh?.reusedPlants || 0,
+    inputTokens, outputTokens, totalTokens: inputTokens + outputTokens,
+    estimatedCostUsd: costUsd,
+    estimatedCostNok: costUsd === null ? null : costUsd * 10.5,
+    nokRate: costUsd === null ? null : 10.5,
+  };
+  const history = (await env.GREENHOUSE_DATA.get(PLANT_ANALYSIS_HISTORY_KEY, "json")) || [];
+  await env.GREENHOUSE_DATA.put(PLANT_ANALYSIS_HISTORY_KEY, JSON.stringify([entry, ...history].slice(0, 100)));
 }
 
 async function generatePlantAnalysis(env) {
@@ -2012,6 +2775,7 @@ async function generatePlantAnalysis(env) {
   }
 
   const config = await getSiteConfig(env);
+  const analysisModel = env.OPENAI_MODEL || config.plantAnalysisModel || "gpt-5.4-mini";
   const now = new Date();
   const activeYear = config.activePlantSeasonYear || 2026;
   const libraryById = new Map((config.plantLibrary || []).map((plant) => [plant.id, plant]));
@@ -2044,43 +2808,64 @@ async function generatePlantAnalysis(env) {
     listSensorHistoryEntries(env, "humidity", since),
   ]);
 
+  const climate = buildPlantClimateProfile(stats24h, weather, temperatureEntries, humidityEntries, latest);
+  const plantPayloads = plants.map((plant) => ({
+    id: plant.seasonId,
+    name: plant.name,
+    type: plant.plantType,
+    group: plant.plantGroup,
+    loc: plant.growingLocation,
+    place: plant.plantingPlace,
+    note: plant.note,
+    acq: plant.acquisition,
+    bought: plant.purchaseSource,
+    life: [
+      ...(plant.acquisition === "seed" && plant.seedDate ? [{ d: plant.seedDate, e: "seeded", l: plant.seedLocation }] : []),
+      ...(plant.greenhouseDate ? [{ d: plant.greenhouseDate, e: "greenhouse", m: plant.plantingPlace }] : []),
+      ...(plant.observations || []).map((entry) => ({ d: entry.date, e: entry.stage, l: entry.growingLocation, m: entry.growingMedium, n: entry.note })),
+      ...(plant.finished && plant.harvestDate ? [{ d: plant.harvestDate, e: "finished" }] : []),
+    ].sort((a, b) => String(a.d).localeCompare(String(b.d))),
+    hist: plant.history,
+  }));
+  const previousAnalysis = await env.GREENHOUSE_DATA.get(PLANT_ANALYSIS_KEY, "json");
+  const climateFingerprint = await hashAnalysisInput({ v: PLANT_ANALYSIS_PROMPT_VERSION, climate: fingerprintPlantClimate(climate) });
+  const plantFingerprints = Object.fromEntries(await Promise.all(plantPayloads.map(async (plant) => [plant.id, await hashAnalysisInput(plant)])));
+  const previousClimateFingerprint = previousAnalysis?.fingerprints?.climate || "";
+  const previousPlantFingerprints = previousAnalysis?.fingerprints?.plants || {};
+  const climateChanged = !previousAnalysis || previousClimateFingerprint !== climateFingerprint;
+  const previousRunAt = new Date(previousAnalysis?.generatedAt || 0).getTime();
+  const climateCooldownActive = Number.isFinite(previousRunAt) && now.getTime() - previousRunAt < PLANT_ANALYSIS_CLIMATE_COOLDOWN_MS;
+  const climateRisk = getPlantClimateRisk(climate);
+  const previousClimateRisk = previousAnalysis?.climateRisk || {};
+  const newCriticalRisk = climateRisk.critical && !previousClimateRisk.critical;
+  const modelChanged = Boolean(previousAnalysis) && previousAnalysis.model !== analysisModel;
+  const climateRequiresFullAnalysis = climateChanged && (!climateCooldownActive || newCriticalRisk);
+  const analyzeAll = !previousAnalysis || modelChanged || climateRequiresFullAnalysis;
+  const plantsToAnalyze = analyzeAll ? plants : plants.filter((plant) => previousPlantFingerprints[plant.seasonId] !== plantFingerprints[plant.seasonId]);
+  const refreshReason = !previousAnalysis ? "initial" : modelChanged ? "model" : climateRequiresFullAnalysis ? "climate" : plantsToAnalyze.length ? "plant-data" : "unchanged";
+  const refreshDetail = modelChanged
+    ? `Modell endret til ${analysisModel}`
+    : climateRequiresFullAnalysis
+      ? (newCriticalRisk ? "Ny kritisk klimaterskel" : "Klimaprofil endret etter 12 timers sperre")
+      : climateChanged && climateCooldownActive
+        ? "Klimaendring utsatt av 12 timers sperre"
+        : plantsToAnalyze.length ? "Plantedata eller observasjon endret" : "Ingen relevante endringer";
+
+  if (plantsToAnalyze.length === 0 && previousAnalysis) {
+    return { ...previousAnalysis, runUsage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 }, refresh: { reason: refreshReason, detail: refreshDetail, analyzedPlants: 0, reusedPlants: plants.length } };
+  }
+  const selectedIds = new Set(plantsToAnalyze.map((plant) => plant.seasonId));
+
   const payload = {
     gen: now.toISOString(),
     month: getNorwegianMonth(now),
     season: getNorwegianSeason(now),
     year: activeYear,
+    climate,
     gh: {
       notes: config.plantAnalysisNotes,
-      rain: latest.rainToday,
-      t24: stats24h.temperature,
-      h24: stats24h.humidity,
-      t: compactSensorEntries(temperatureEntries),
-      h: compactSensorEntries(humidityEntries),
-      weather: weather
-        ? {
-            d: weather.description,
-            s: weather.symbolCode,
-            temp: weather.temperature,
-            uv: weather.uvIndex,
-            fc: compactWeatherForecast(weather.forecastToday || []),
-          }
-        : null,
     },
-    plants: plants.map((plant) => ({
-      id: plant.seasonId,
-      lib: plant.libraryId,
-      name: plant.name,
-      type: plant.plantType,
-      place: plant.plantingPlace,
-      note: plant.note,
-      acq: plant.acquisition,
-      seed: plant.seedDate,
-      seedLoc: plant.seedLocation,
-      ghDate: plant.greenhouseDate,
-      bought: plant.purchaseSource,
-      done: plant.harvestDate,
-      hist: plant.history,
-    })),
+    plants: plantPayloads.filter((plant) => selectedIds.has(plant.id)),
   };
 
   const response = await fetch("https://api.openai.com/v1/responses", {
@@ -2090,17 +2875,54 @@ async function generatePlantAnalysis(env) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: env.OPENAI_MODEL || "gpt-5.5",
+      model: analysisModel,
       reasoning: { effort: "low" },
-      text: { format: { type: "json_object" } },
+      text: { format: {
+        type: "json_schema",
+        name: "greenhouse_plant_analysis",
+        strict: true,
+        schema: {
+          type: "object",
+          additionalProperties: false,
+          required: ["generatedAt", "month", "season", "items"],
+          properties: {
+            generatedAt: { type: "string" },
+            month: { type: "string" },
+            season: { type: "string" },
+            items: {
+              type: "array",
+              items: {
+                type: "object",
+                additionalProperties: false,
+                required: ["id", "status", "assessment", "watering", "development"],
+                properties: {
+                  id: { type: "string" },
+                  status: { type: "string", enum: ["trives", "følg med", "stress"] },
+                  assessment: { type: "string" },
+                  watering: { type: "string" },
+                  development: {
+                    type: "object",
+                    additionalProperties: false,
+                    required: ["type", "text"],
+                    properties: {
+                      type: { type: "string", enum: ["ripening", "flowering", "harvest"] },
+                      text: { type: "string" },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      } },
       instructions:
-        "Du er en nøktern norsk gartner og veksthusrådgiver. Lag praktiske plantevurderinger basert på temperatur og luftfuktighet siste 24 timer, værprognose for resten av dagen, måned og årstid. Ikke gi bastante diagnoser. Skriv kort, faglig og forståelig. Returner bare gyldig JSON.",
+        "Du er en kunnskapsrik og vennlig norsk gartner og veksthusrådgiver. Lag korte, praktiske plantevurderinger basert på temperatur og luftfuktighet siste 24 timer, værprognose, måned, årstid og oppgitte plantedata. Ikke gi bastante diagnoser. Ikke gjenta plantenavnet i plantefeltene. Skriv naturlig, hyggelig og presist. Returner bare gyldig JSON.",
       input:
-        "Returner JSON nøyaktig på denne formen: {\"generatedAt\":\"ISO\",\"month\":\"juli\",\"season\":\"sommer\",\"contextSummary\":\"maks to korte setninger\",\"items\":[{\"id\":\"samme id som input\",\"libraryId\":\"samme libraryId som input\",\"name\":\"samme name som input\",\"status\":\"trives|følg med|stress\",\"summary\":\"én konkret setning\",\"watch\":\"én konkret setning\",\"detail\":\"én ekstra konkret setning\",\"forecast\":\"valgfri prognose\"}]}. " +
-        "Det må være ett item for hver inputplante, og id må være helt identisk med inputplantens id. Ikke bruk generiske fallback-tekster. contextSummary skal analysere siste døgn og gi praktisk dagsråd for i dag, ikke live-status. Bruk generell driftstekst, plantetype, årets sesongdata og kompakt historikk når det er relevant. " +
-        "Forecast skal tilpasses plantetype: Grønnsak=Antatt høsteklar, Frukt=Forventet modning, Urte=Kan begynne å høstes, Blomst=Forventet blomstring. Utelat forecast hvis grunnlaget er for tynt. Feltmap: lib=libraryId,type=plantType,place=plantingPlace,acq=acquisition,gh=greenhouse,t/h=sensorprøver. Data:\n" +
+        "Returner JSON nøyaktig på denne formen: {\"generatedAt\":\"ISO\",\"month\":\"juli\",\"season\":\"sommer\",\"items\":[{\"id\":\"samme id som input\",\"status\":\"trives|følg med|stress\",\"assessment\":\"maks 18 ord\",\"watering\":\"maks 16 ord\",\"development\":{\"type\":\"ripening|flowering|harvest\",\"text\":\"maks 12 ord\"}}]}. " +
+        "Det må være ett item per inputplante, med helt identisk id. Assessment beskriver bare viktigste tilstand eller risiko. Watering gir ett konkret vanningsråd. Ikke start tekst med plantenavn eller etiketter. Development er obligatorisk og skal bare angi et konkret tidsvindu, for eksempel 'slutten av juli til midten av august'. Det skal aldri inneholde stellråd eller handlinger. Registrert utviklingsstadium og observasjonsdato er viktigste grunnlag for tidsanslaget. Anslå ellers nøkternt fra art/sort, så-/plantedato, utviklingstid, sesong og temperatur; skriv 'Kan ikke anslås fra registrerte data' bare når et faglig anslag er umulig. Bruk flowering for Blomst, harvest for Urte og Grønnsak, ripening for Frukt. " +
+        "Climate er en terskelbasert profil for hele drivhuset. Feltmap: type=plantType,group=plantGroup,place=currentGrowingMedium,loc=currentGrowingLocation,life=chronologicalLifecycle(d=date,e=event,l=location,m=medium,n=note),hist=kompakt tidligere sesong. Data:\n" +
         JSON.stringify(payload),
-      max_output_tokens: 3200,
+      max_output_tokens: Math.min(1800, 260 + plantsToAnalyze.length * 85),
     }),
   });
 
@@ -2117,10 +2939,27 @@ async function generatePlantAnalysis(env) {
     throw new Error("OpenAI svarte ikke med gyldig JSON.");
   }
 
-  return normalizePlantAnalysis(parsed, payload, plants, result?.usage);
+  const freshAnalysis = normalizePlantAnalysis(parsed, payload, plantsToAnalyze, result?.usage);
+  const freshById = new Map(freshAnalysis.items.map((item) => [item.id, item]));
+  const previousById = new Map((previousAnalysis?.items || []).map((item) => [item.id, item]));
+  return {
+    ...freshAnalysis,
+    items: plants.map((plant) => freshById.get(plant.seasonId) || previousById.get(plant.seasonId)).filter(Boolean),
+    fingerprints: { climate: analyzeAll ? climateFingerprint : previousClimateFingerprint, plants: plantFingerprints },
+    model: analysisModel,
+    runUsage: freshAnalysis.usage || { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+    climateRisk: analyzeAll ? climateRisk : previousClimateRisk,
+    refresh: {
+      reason: refreshReason,
+      detail: refreshDetail,
+      analyzedPlants: plantsToAnalyze.length,
+      reusedPlants: plants.length - plantsToAnalyze.length,
+    },
+  };
 }
 
 function isPlantSeasonFinished(entry, now = new Date()) {
+  if (entry?.finished === true) return true;
   const raw = String(entry?.harvestDate || "").trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return false;
   const finishedAt = new Date(`${raw}T23:59:59`);
@@ -2189,9 +3028,9 @@ function normalizePlantAnalysis(parsed, payload, plants, usage) {
     return "følg med";
   };
   const fallbackStatus = () => {
-    const maxTemp = numberOrNull(payload?.gh?.t24?.max);
-    const minTemp = numberOrNull(payload?.gh?.t24?.min);
-    const maxHumidity = numberOrNull(payload?.gh?.h24?.max);
+    const maxTemp = numberOrNull(payload?.climate?.t?.max);
+    const minTemp = numberOrNull(payload?.climate?.t?.min);
+    const maxHumidity = numberOrNull(payload?.climate?.h?.max);
     if ((typeof maxTemp === "number" && maxTemp > 30) || (typeof minTemp === "number" && minTemp < 12) || (typeof maxHumidity === "number" && maxHumidity > 82)) {
       return "følg med";
     }
@@ -2209,6 +3048,9 @@ function normalizePlantAnalysis(parsed, payload, plants, usage) {
     if (plant.plantingPlace) return `Sjekk fuktigheten jevnlig i ${plant.plantingPlace.toLowerCase()}, særlig etter varme perioder.`;
     return "Hold luftingen stabil og unngå raske skift mellom tørr og våt rotsonen.";
   };
+  const fallbackWatering = (plant) => {
+    return "Sjekk jordfuktigheten og vann ved roten tidlig på dagen ved behov.";
+  };
   const fallbackForecast = (plant) => {
     if (plant.plantType === "Urte") return "Kan begynne å høstes: når planten har tett nyvekst og tåler lett klipping.";
     if (plant.plantType === "Blomst") return "Forventet blomstring: vurderes etter videre etablering og temperatur de neste ukene.";
@@ -2221,7 +3063,6 @@ function normalizePlantAnalysis(parsed, payload, plants, usage) {
     generatedAt: normalizeIsoDate(parsed?.generatedAt) || payload.gen,
     month: normalizeText(parsed?.month, payload.month, 24),
     season: normalizeText(parsed?.season, payload.season, 24),
-    contextSummary: normalizeSummaryText(parsed?.contextSummary, "Basert på siste 24 timer i drivhuset.", 360),
     usage: usage && typeof usage === "object"
       ? {
           inputTokens: numberOrNull(usage.input_tokens),
@@ -2237,17 +3078,28 @@ function normalizePlantAnalysis(parsed, payload, plants, usage) {
         {};
       const hasItem = Object.keys(item).length > 0;
       const status = hasItem ? normalizeStatus(item.status || item.state || item.condition) : fallbackStatus();
+      const developmentType = plant.plantType === "Blomst" ? "flowering" : plant.plantType === "Frukt" ? "ripening" : "harvest";
+      const rawDevelopmentText = typeof item?.development?.text === "string"
+        ? normalizeText(item.development.text, "", 100)
+        : pickText(item, ["forecast", "expectedDevelopment", "prediction", "prognose"], fallbackForecast(plant), 100)
+            .replace(/^(Forventet modning|Forventet blomstring|Antatt høsteklar|Kan begynne å høstes):\s*/i, "");
+      const looksLikeCareAdvice = /^(hold|rist|vann|sjekk|følg|fjern|bind|la |unngå|sørg)/i.test(rawDevelopmentText);
+      const developmentText = looksLikeCareAdvice ? fallbackForecast(plant).replace(/^[^:]+:\s*/, "") : rawDevelopmentText;
       return {
         id: plant.seasonId || plant.id,
+        assessedAt: payload.gen,
         libraryId: plant.libraryId || "",
         name: plant.name,
         plantType: plant.plantType || "",
         plantingPlace: plant.plantingPlace || "",
         status,
-        summary: pickText(item, ["summary", "assessment", "vurdering", "message"], fallbackSummary(plant), 180),
-        watch: pickText(item, ["watch", "advice", "råd", "warning", "attention"], fallbackWatch(plant), 180),
-        detail: pickText(item, ["detail", "details", "nextStep", "tiltak", "note"], "", 180),
-        forecast: pickText(item, ["forecast", "expectedDevelopment", "prediction", "prognose"], hasItem ? "" : fallbackForecast(plant), 120),
+        assessment: pickText(item, ["assessment", "summary", "vurdering", "message"], fallbackSummary(plant), 140)
+          .replace(new RegExp(`^${String(plant.name).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s+`, "i"), ""),
+        watering: pickText(item, ["watering", "vanning"], fallbackWatering(plant), 130),
+        development: {
+          type: ["ripening", "flowering", "harvest"].includes(item?.development?.type) ? item.development.type : developmentType,
+          text: capitalizeNorwegianText(developmentText || "Kan ikke anslås fra registrerte data."),
+        },
       };
     }),
   };
@@ -2264,11 +3116,72 @@ function compactSensorEntries(entries) {
   }));
 }
 
+function capitalizeNorwegianText(value) {
+  const text = String(value || "").trim();
+  return text ? text.charAt(0).toLocaleUpperCase("nb-NO") + text.slice(1) : "";
+}
+
+function buildPlantClimateProfile(stats24h, weather, temperatureEntries, humidityEntries, latest) {
+  const average = (entries) => {
+    const values = entries.map((entry) => numberOrNull(entry.value ?? entry.max ?? entry.min)).filter((value) => value !== null);
+    return values.length ? Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 10) / 10 : null;
+  };
+  const hoursAt = (entries, predicate) => new Set(entries.filter((entry) => predicate(numberOrNull(entry.max ?? entry.value), numberOrNull(entry.min ?? entry.value))).map((entry) => String(entry.bucketStart || entry.timestamp || "").slice(0, 13))).size;
+  const forecast = compactWeatherForecast(weather?.forecastToday || []);
+  return {
+    t: { min: numberOrNull(stats24h?.temperature?.min), max: numberOrNull(stats24h?.temperature?.max), avg: average(temperatureEntries), hotH: hoursAt(temperatureEntries, (max) => max !== null && max >= 30), coldH: hoursAt(temperatureEntries, (_, min) => min !== null && min < 12) },
+    h: { min: numberOrNull(stats24h?.humidity?.min), max: numberOrNull(stats24h?.humidity?.max), avg: average(humidityEntries), highH: hoursAt(humidityEntries, (max) => max !== null && max >= 82) },
+    rain: numberOrNull(latest?.rainToday),
+    fc: forecast,
+  };
+}
+
+function fingerprintPlantClimate(climate) {
+  const band = (value, limits) => {
+    if (value === null) return "na";
+    return String(limits.findIndex((limit) => value < limit));
+  };
+  const forecastTemps = (climate?.fc || []).map((item) => item.temp).filter((value) => value !== null);
+  const forecastRain = (climate?.fc || []).reduce((sum, item) => sum + (item.rain || 0), 0);
+  return {
+    tMin: band(climate?.t?.min, [8, 12, 16, 20]),
+    tMax: band(climate?.t?.max, [23, 29, 32, 36]),
+    hot: band(climate?.t?.hotH, [1, 3, 6]),
+    hMax: band(climate?.h?.max, [70, 82, 90]),
+    humid: band(climate?.h?.highH, [1, 3, 6]),
+    fcMax: band(forecastTemps.length ? Math.max(...forecastTemps) : null, [23, 29, 32, 36]),
+    fcRain: band(forecastRain, [0.1, 2, 8]),
+    fcWeather: [...new Set((climate?.fc || []).map((item) => item.d).filter(Boolean))].sort().join("|").slice(0, 160),
+  };
+}
+
+function getPlantClimateRisk(climate) {
+  const forecastTemps = (climate?.fc || []).map((item) => item.temp).filter((value) => value !== null);
+  const forecastRain = (climate?.fc || []).reduce((sum, item) => sum + (item.rain || 0), 0);
+  const maxTemperature = numberOrNull(climate?.t?.max);
+  const minTemperature = numberOrNull(climate?.t?.min);
+  const maxHumidity = numberOrNull(climate?.h?.max);
+  const forecastMax = forecastTemps.length ? Math.max(...forecastTemps) : null;
+  const reasons = [];
+  if (maxTemperature !== null && maxTemperature >= 32) reasons.push("temperatur over 32 °C");
+  if (minTemperature !== null && minTemperature < 8) reasons.push("temperatur under 8 °C");
+  if (maxHumidity !== null && maxHumidity >= 90) reasons.push("luftfuktighet over 90 %");
+  if (forecastMax !== null && forecastMax >= 32) reasons.push("meldt temperatur over 32 °C");
+  if (forecastRain >= 8) reasons.push("kraftig nedbør i prognosen");
+  return { critical: reasons.length > 0, reasons };
+}
+
+async function hashAnalysisInput(value) {
+  const bytes = new TextEncoder().encode(JSON.stringify(value));
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest)).slice(0, 12).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 function compactWeatherForecast(forecast) {
-  return (Array.isArray(forecast) ? forecast : []).slice(0, 4).map((item) => ({
+  return (Array.isArray(forecast) ? forecast : []).slice(0, 10).map((item) => ({
     t: item.time || item.updatedAt || "",
     d: item.description || item.symbolCode || "",
-    temp: numberOrNull(item.temperature),
+    temp: numberOrNull(item.outdoorTemperature ?? item.temperature),
     rain: numberOrNull(item.precipitation),
   }));
 }
@@ -2282,10 +3195,12 @@ function compactPlantHistory(history) {
       seedDate: entry.seedDate,
       seedLocation: entry.seedLocation,
       greenhouseDate: entry.greenhouseDate,
+      finished: entry.finished,
+      finishReason: entry.finishReason,
       harvestDate: entry.harvestDate,
       plantingPlace: entry.plantingPlace,
     }))
-    .filter((entry) => entry.seedDate || entry.greenhouseDate || entry.harvestDate || entry.plantingPlace);
+    .filter((entry) => entry.seedDate || entry.greenhouseDate || entry.finished || entry.harvestDate || entry.plantingPlace);
 }
 
 function getNorwegianMonth(date) {
@@ -2533,6 +3448,8 @@ function normalizeSensor(sensor) {
     rain_today: "rain_today",
     rain: "rain_today",
     regn: "rain_today",
+
+    rain_hour: "rain_hour",
 
     door: "door",
     dør: "door",

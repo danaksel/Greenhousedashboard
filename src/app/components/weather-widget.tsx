@@ -7,6 +7,7 @@ interface WeatherWidgetProps {
   data: WeatherData;
   compact?: boolean;
   rainToday?: number | null;
+  rainHour?: number | null;
 }
 
 // Map symbol codes to appropriate icons
@@ -59,8 +60,12 @@ const getWeatherIcon = (symbolCode: string, compact = false, forceWhite = false,
   return <CloudIcon className={`${iconClass} ${color || "text-gray-400"}`} />;
 };
 
-export function WeatherWidget({ data, compact, rainToday }: WeatherWidgetProps) {
+export function WeatherWidget({ data, compact, rainToday, rainHour }: WeatherWidgetProps) {
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
+  const isRainingNow = typeof rainHour === "number" && rainHour > 0;
+  const hasRainedToday = typeof rainToday === "number" && rainToday > 0;
+  const showRain = isRainingNow || hasRainedToday;
+  const showUv = !isRainingNow;
 
   const formatTime = (date: Date | undefined) => {
     if (!date) return '--:--';
@@ -99,22 +104,36 @@ export function WeatherWidget({ data, compact, rainToday }: WeatherWidgetProps) 
                 {getWeatherIcon(data.symbolCode, true, true, "h-9 w-9 xl:h-10 xl:w-10")}
                 <p className="text-[36px] font-light leading-none xl:text-4xl">{data.temperature.toFixed(1)}°</p>
               </div>
-              <p className="mt-1 text-[9px] uppercase leading-tight tracking-[0.02em] text-white xl:text-[10px]">
-                UV <span className="font-semibold">{displayUvIndex.toFixed(1)}</span>
-              </p>
+              {showUv && (
+                <p className="mt-1 text-[9px] uppercase leading-tight tracking-[0.02em] text-white xl:text-[10px]">
+                  UV <span className="font-semibold">{displayUvIndex.toFixed(1)}</span>
+                </p>
+              )}
             </div>
           </button>
 
-          {rainToday !== null && rainToday !== undefined && (
+          {showRain && (
             <button
               type="button"
               onClick={() => handleTooltipClick('rain')}
-              className="rounded-lg px-1 py-0.5 text-left transition hover:bg-white/5 xl:py-1"
+              className="grid grid-cols-2 gap-2 rounded-lg px-1 py-0.5 text-left transition hover:bg-white/5 xl:gap-3 xl:py-1"
             >
-              <span className="block max-w-[10rem] text-[9px] uppercase leading-tight tracking-[0.02em] text-white xl:text-[10px]">
-                Nedbør siden midnatt
-              </span>
-              <span className="mt-0.5 block text-sm font-semibold leading-none xl:mt-1 xl:text-base">{rainToday.toFixed(1)} mm</span>
+              {rainToday !== null && rainToday !== undefined && (
+                <div>
+                  <span className="block max-w-[10rem] text-[9px] uppercase leading-tight tracking-[0.02em] text-white xl:text-[10px]">
+                    I dag
+                  </span>
+                  <span className="mt-0.5 block text-sm font-semibold leading-none xl:mt-1 xl:text-base">{rainToday.toFixed(1)} mm</span>
+                </div>
+              )}
+              {rainHour !== null && rainHour !== undefined && (
+                <div>
+                  <span className="block max-w-[10rem] text-[9px] uppercase leading-tight tracking-[0.02em] text-white xl:text-[10px]">
+                    Siste time
+                  </span>
+                  <span className="mt-0.5 block text-sm font-semibold leading-none xl:mt-1 xl:text-base">{rainHour.toFixed(1)} mm/t</span>
+                </div>
+              )}
             </button>
           )}
 
@@ -122,111 +141,107 @@ export function WeatherWidget({ data, compact, rainToday }: WeatherWidgetProps) 
             <button
               type="button"
               onClick={() => handleTooltipClick('sunrise')}
-              className="rounded-lg px-1 py-0.5 text-left transition hover:bg-white/5 xl:py-1"
+              className="flex items-center gap-1.5 rounded-lg px-1 py-0.5 text-left transition hover:bg-white/5 xl:gap-2 xl:py-1"
+              aria-label={`Soloppgang ${formatTime(sunTimes.sunrise)}`}
             >
-              <span className="block text-[9px] uppercase leading-tight tracking-[0.02em] text-white xl:text-[10px]">
-                Sol opp
-              </span>
-              <span className="mt-0.5 block text-sm font-semibold leading-none xl:mt-1">{formatTime(sunTimes.sunrise)}</span>
+              <SunriseIcon className="h-3.5 w-3.5 shrink-0 xl:h-4 xl:w-4" />
+              <span className="text-sm font-semibold leading-none">{formatTime(sunTimes.sunrise)}</span>
             </button>
             <button
               type="button"
               onClick={() => handleTooltipClick('sunset')}
-              className="rounded-lg px-1 py-0.5 text-left transition hover:bg-white/5 xl:py-1"
+              className="flex items-center gap-1.5 rounded-lg px-1 py-0.5 text-left transition hover:bg-white/5 xl:gap-2 xl:py-1"
+              aria-label={`Solnedgang ${formatTime(sunTimes.sunset)}`}
             >
-              <span className="block text-[9px] uppercase leading-tight tracking-[0.02em] text-white xl:text-[10px]">
-                Sol ned
-              </span>
-              <span className="mt-0.5 block text-sm font-semibold leading-none xl:mt-1">{formatTime(sunTimes.sunset)}</span>
+              <SunsetIcon className="h-3.5 w-3.5 shrink-0 xl:h-4 xl:w-4" />
+              <span className="text-sm font-semibold leading-none">{formatTime(sunTimes.sunset)}</span>
             </button>
           </div>
 
           {activeTooltip === 'rain' && (
             <p className="rounded-lg bg-black/25 px-3 py-2 text-xs text-white">
-              Total nedbør fra midnatt til nå. Måles i Kristins hage.
+              Nedbør siden midnatt og siste time. Måles i Kristins hage.
             </p>
           )}
         </div>
 
-      <div className="flex flex-col gap-2 md:hidden">
-        {/* Weather section */}
-        <div className="flex flex-col gap-1 bg-black/20 backdrop-blur-sm rounded-md px-2 py-1.5">
-          <div className="relative">
+      <div className="w-[136px] rounded-xl bg-black/25 p-2.5 text-white shadow-lg shadow-black/10 backdrop-blur-sm md:hidden">
+        <button
+          type="button"
+          onClick={() => handleTooltipClick('weather')}
+          className="w-full rounded-md text-left touch-manipulation transition-colors active:bg-white/5"
+          aria-label={`${data.description} ${data.temperature.toFixed(1)}°`}
+        >
+          <span className="flex items-center gap-1.5">
+            {getWeatherIcon(data.symbolCode, true, true, "h-6 w-6")}
+            <span className="text-[23px] font-light leading-none">{data.temperature.toFixed(1)}°</span>
+          </span>
+        </button>
+
+        {showUv && (
+          <div className="relative mt-1.5">
             <button
-              onClick={() => handleTooltipClick('weather')}
-              className="w-full flex items-center gap-1.5 touch-manipulation active:bg-white/5 rounded px-1 py-0.5 transition-colors"
-            >
-              {getWeatherIcon(data.symbolCode, true)}
-              <span className="text-white text-sm font-medium">{data.temperature.toFixed(1)}°</span>
-            </button>
-            {activeTooltip === 'weather' && (
-              <div className="absolute right-full top-1/2 -translate-y-1/2 mr-2 bg-black/90 text-white text-[10px] px-2 py-1 rounded shadow-lg whitespace-nowrap z-50 pointer-events-none before:content-[''] before:absolute before:left-full before:top-1/2 before:-translate-y-1/2 before:border-4 before:border-transparent before:border-l-black/90">
-                {data.description}
-              </div>
-            )}
-          </div>
-          {rainToday !== null && rainToday !== undefined && (
-            <div className="relative">
-              <button
-                onClick={() => handleTooltipClick('rain')}
-                className="w-full flex flex-col gap-0.5 mt-1 text-left touch-manipulation active:bg-white/5 rounded px-1 py-0.5 transition-colors"
-              >
-                <span className="text-white/70 text-[9px]">Akkumulert:</span>
-                <span className="text-white text-xs font-medium">{rainToday.toFixed(1)} mm</span>
-              </button>
-              {activeTooltip === 'rain' && (
-                <div className="absolute right-full top-1/2 -translate-y-1/2 mr-2 bg-black/90 text-white text-[10px] px-2 py-1 rounded shadow-lg whitespace-nowrap z-50 pointer-events-none before:content-[''] before:absolute before:left-full before:top-1/2 before:-translate-y-1/2 before:border-4 before:border-transparent before:border-l-black/90">
-                  Total nedbør fra midnatt til nå. Måles i Kristins hage.
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-        
-        {/* Sun times section */}
-        <div className="flex flex-col gap-1 bg-black/15 backdrop-blur-sm rounded-md px-2 py-1.5 text-white/90">
-          <div className="relative">
-            <button
-              onClick={() => handleTooltipClick('sunrise')}
-              className="w-full flex items-center justify-between text-[11px] touch-manipulation active:bg-white/5 rounded px-1 py-0.5 transition-colors"
-            >
-              <SunriseIcon className="w-3 h-3" />
-              <span className="font-medium">{formatTime(sunTimes.sunrise)}</span>
-            </button>
-            {activeTooltip === 'sunrise' && (
-              <div className="absolute right-full top-1/2 -translate-y-1/2 mr-2 bg-black/90 text-white text-[10px] px-2 py-1 rounded shadow-lg whitespace-nowrap z-50 pointer-events-none before:content-[''] before:absolute before:left-full before:top-1/2 before:-translate-y-1/2 before:border-4 before:border-transparent before:border-l-black/90">
-                Soloppgang
-              </div>
-            )}
-          </div>
-          <div className="relative">
-            <button
-              onClick={() => handleTooltipClick('sunset')}
-              className="w-full flex items-center justify-between text-[11px] touch-manipulation active:bg-white/5 rounded px-1 py-0.5 transition-colors"
-            >
-              <SunsetIcon className="w-3 h-3" />
-              <span className="font-medium">{formatTime(sunTimes.sunset)}</span>
-            </button>
-            {activeTooltip === 'sunset' && (
-              <div className="absolute right-full top-1/2 -translate-y-1/2 mr-2 bg-black/90 text-white text-[10px] px-2 py-1 rounded shadow-lg whitespace-nowrap z-50 pointer-events-none before:content-[''] before:absolute before:left-full before:top-1/2 before:-translate-y-1/2 before:border-4 before:border-transparent before:border-l-black/90">
-                Solnedgang
-              </div>
-            )}
-          </div>
-          <div className="relative">
-            <button
+              type="button"
               onClick={() => handleTooltipClick('uv')}
-              className="w-full flex items-center justify-between text-[11px] touch-manipulation active:bg-white/5 rounded px-1 py-0.5 transition-colors"
+              className="rounded px-0.5 text-[8px] font-semibold uppercase leading-none tracking-[0.03em] touch-manipulation transition-colors active:bg-white/5"
             >
-              <span className="opacity-90">UV</span>
-              <span className="font-medium">{displayUvIndex.toFixed(1)}</span>
+              UV {displayUvIndex.toFixed(1)}
             </button>
             {activeTooltip === 'uv' && (
-              <div className="absolute right-full top-1/2 -translate-y-1/2 mr-2 bg-black/90 text-white text-[10px] px-2 py-1 rounded shadow-lg whitespace-nowrap z-50 pointer-events-none before:content-[''] before:absolute before:left-full before:top-1/2 before:-translate-y-1/2 before:border-4 before:border-transparent before:border-l-black/90">
+              <div className="absolute right-full top-1/2 z-50 mr-2 -translate-y-1/2 whitespace-nowrap rounded bg-black/90 px-2 py-1 text-[10px] text-white shadow-lg pointer-events-none before:absolute before:left-full before:top-1/2 before:-translate-y-1/2 before:border-4 before:border-transparent before:border-l-black/90">
                 UV akkurat nå
               </div>
             )}
           </div>
+        )}
+
+        {showRain && (
+          <div className="relative mt-2.5">
+            <button
+              type="button"
+              onClick={() => handleTooltipClick('rain')}
+              className="grid w-full grid-cols-2 gap-1 rounded text-left touch-manipulation transition-colors active:bg-white/5"
+            >
+              {rainToday !== null && rainToday !== undefined && (
+                <span className="min-w-0">
+                  <span className="block text-[7px] font-medium uppercase leading-none tracking-[0.03em] text-white/85">I dag</span>
+                  <span className="mt-1 block whitespace-nowrap text-[10px] font-semibold leading-none">{rainToday.toFixed(1)} mm</span>
+                </span>
+              )}
+              {rainHour !== null && rainHour !== undefined && (
+                <span className="min-w-0">
+                  <span className="block text-[7px] font-medium uppercase leading-none tracking-[0.03em] text-white/85">Siste time</span>
+                  <span className="mt-1 block whitespace-nowrap text-[10px] font-semibold leading-none">{rainHour.toFixed(1)} mm/t</span>
+                </span>
+              )}
+            </button>
+            {activeTooltip === 'rain' && (
+              <div className="absolute right-full top-1/2 z-50 mr-2 -translate-y-1/2 whitespace-nowrap rounded bg-black/90 px-2 py-1 text-[10px] text-white shadow-lg pointer-events-none before:absolute before:left-full before:top-1/2 before:-translate-y-1/2 before:border-4 before:border-transparent before:border-l-black/90">
+                Nedbør siden midnatt og siste time. Måles i Kristins hage.
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="mt-3 grid grid-cols-2 gap-1 text-white/90">
+          <button
+            type="button"
+            onClick={() => handleTooltipClick('sunrise')}
+            className="flex min-w-0 items-center gap-1 rounded text-[10px] touch-manipulation transition-colors active:bg-white/5"
+            aria-label={`Soloppgang ${formatTime(sunTimes.sunrise)}`}
+          >
+            <SunriseIcon className="h-3 w-3 shrink-0" />
+            <span className="font-semibold leading-none">{formatTime(sunTimes.sunrise)}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleTooltipClick('sunset')}
+            className="flex min-w-0 items-center gap-1 rounded text-[10px] touch-manipulation transition-colors active:bg-white/5"
+            aria-label={`Solnedgang ${formatTime(sunTimes.sunset)}`}
+          >
+            <SunsetIcon className="h-3 w-3 shrink-0" />
+            <span className="font-semibold leading-none">{formatTime(sunTimes.sunset)}</span>
+          </button>
         </div>
       </div>
       </div>

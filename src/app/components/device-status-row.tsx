@@ -30,7 +30,7 @@ export function DeviceStatusRow({ items, darkMode = false, desktopCardLayout = f
     labelColor ? "" : darkMode ? "text-white/45" : "text-stone-500"
   }`;
   const rowClass = desktopCardLayout
-    ? "mb-8 flex items-start justify-center gap-7 pt-2 md:mb-0 md:grid md:w-full md:grid-cols-3 md:items-stretch md:gap-6 md:pt-0 xl:gap-10"
+    ? "mb-0 flex items-start justify-center gap-7 pt-2 md:grid md:w-full md:grid-cols-3 md:items-stretch md:gap-6 md:pt-0 xl:gap-10"
     : "mb-8 flex items-start justify-center gap-7 pt-2 md:mb-0 md:justify-start md:gap-6 md:pt-0";
 
   return (
@@ -73,11 +73,10 @@ export function DeviceStatusRow({ items, darkMode = false, desktopCardLayout = f
           key={item.label}
           className={`flex w-[110px] flex-col items-center text-center ${
             desktopCardLayout
-              ? "md:grid md:w-full md:grid-rows-[12px_72px_18px] md:items-center md:justify-items-center md:gap-y-3"
+              ? "md:grid md:w-full md:grid-rows-[72px_18px] md:items-center md:justify-items-center md:gap-y-3"
               : "md:w-[100px]"
           }`}
         >
-          {desktopCardLayout && <span className="hidden md:block" aria-hidden="true" />}
           {item.tooltip ? (
             <Tooltip
               open={openTooltip === item.label}

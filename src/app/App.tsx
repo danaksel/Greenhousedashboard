@@ -1,6 +1,7 @@
-import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { Drawer as VaulDrawer } from "vaul";
 import SunCalc from "suncalc";
+import { CircleAlert, CircleCheckBig, Droplets, Flower2, ShoppingBasket, TriangleAlert } from "lucide-react";
 import { AdminPage } from "./AdminPage";
 import { ChartSkeleton } from "./components/chart-skeleton";
 import {
@@ -11,7 +12,9 @@ import {
   fetchSiteConfig,
   fetchStoredPlantAnalysis,
   fetchWeatherData,
+  getPlantGrowingLocationLabel,
   resolveGreenhouseAssetUrl,
+  type DataHealth,
   type HeaderImageSlot,
   type PlantAnalysisResponse,
   type PlantLibraryEntry,
@@ -80,12 +83,22 @@ function getStoredDarkThemeColor() {
   return /^#[0-9a-fA-F]{6}$/.test(raw) ? raw : "#2d3a21";
 }
 
+function formatDataAge(ageMinutes: number | null) {
+  if (ageMinutes === null) return "ukjent tidspunkt";
+  if (ageMinutes < 60) return `${ageMinutes} min siden`;
+  const hours = Math.floor(ageMinutes / 60);
+  const minutes = ageMinutes % 60;
+  return minutes ? `${hours} t ${minutes} min siden` : `${hours} t siden`;
+}
+
 type ChartPoint = { time: string; value: number; min?: number; max?: number; range?: [number, number]; id: string };
 type HistoryPoint = { time: string; value: number | null; min?: number | null; max?: number | null; timestamp: string | null; bucketStart: string | null };
 type MetricMinMax = { min: number | undefined; max: number | undefined };
 type MetricStats = { min: number | null; max: number | null };
 type ChartRange = "12h" | "24h";
 type MobileVisualViewport = { height: number; bottomInset: number };
+type PlantReadPreference = "unknown" | "enabled" | "declined";
+type PlantReadVersions = Record<string, string>;
 type TemperatureAlert = {
   tone: "hot" | "cold";
   color: string;
@@ -96,6 +109,32 @@ type TemperatureAlert = {
   action: string;
   threshold: number;
 };
+
+const plantReadStorageKey = "greenhousePlantReadsV1";
+const plantReadPreferenceStorageKey = "greenhousePlantReadPreferenceV1";
+
+function loadStoredPlantReads(): PlantReadVersions {
+  if (typeof window === "undefined") return {};
+
+  try {
+    const parsed = JSON.parse(localStorage.getItem(plantReadStorageKey) || "null");
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed)
+        .filter(([plantId, assessedAt]) => plantId && typeof assessedAt === "string" && assessedAt)
+        .slice(-80),
+    );
+  } catch {
+    return {};
+  }
+}
+
+function loadStoredPlantReadPreference(): PlantReadPreference {
+  if (typeof window === "undefined") return "unknown";
+  const stored = localStorage.getItem(plantReadPreferenceStorageKey);
+  if (stored === "enabled" || stored === "declined") return stored;
+  return localStorage.getItem(plantReadStorageKey) !== null ? "enabled" : "unknown";
+}
 
 function buildPreviewPath(data: ChartPoint[], width: number, height: number, padding: number) {
   const points = data.filter((point) => Number.isFinite(point.value));
@@ -144,7 +183,7 @@ function CollapsedChartPreview({
       className="group grid h-12 w-full grid-cols-2 gap-2 rounded-xl border p-1.5 text-left shadow-sm transition-all"
       style={{ backgroundColor: modeTheme.graphPanelBg, borderColor: modeTheme.graphPanelBorder }}
       onClick={onClick}
-      aria-label="Åpne grafer"
+      aria-label="Åpne statistikk"
     >
       <div className="flex min-w-0 items-center gap-2 rounded-lg border px-2" style={{ borderColor: modeTheme.graphPanelBorder, color: modeTheme.mutedColor }}>
         <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.04em]">Temp</span>
@@ -204,7 +243,9 @@ export default function App() {
   const [temperature, setTemperature] = useState<number | null>(null);
   const [humidity, setHumidity] = useState<number | null>(null);
   const [rainToday, setRainToday] = useState<number | null>(null);
+  const [rainHour, setRainHour] = useState<number | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [dataHealth, setDataHealth] = useState<DataHealth | null>(null);
   const [door, setDoor] = useState<"open" | "closed" | null>(null);
   const [doorUpdatedAt, setDoorUpdatedAt] = useState<string | null>(null);
   const [windowCount, setWindowCount] = useState<number | null>(null);
@@ -237,11 +278,15 @@ export default function App() {
   });
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [chartRange, setChartRange] = useState<ChartRange>("12h");
-  const [plantAnalysisExpanded, setPlantAnalysisExpanded] = useState(false);
   const [chartsExpanded, setChartsExpanded] = useState(false);
   const [chartCarouselApi, setChartCarouselApi] = useState<CarouselApi>();
   const [activeChartSlide, setActiveChartSlide] = useState(0);
   const [selectedPlantIndex, setSelectedPlantIndex] = useState<number | null>(null);
+  const [plantMobileTab, setPlantMobileTab] = useState<"status" | "details">("status");
+  const [plantReadPreference, setPlantReadPreference] = useState<PlantReadPreference>(loadStoredPlantReadPreference);
+  const [readPlantVersions, setReadPlantVersions] = useState<PlantReadVersions>(loadStoredPlantReads);
+  const [plantSortReadVersions, setPlantSortReadVersions] = useState<PlantReadVersions>(loadStoredPlantReads);
+  const [plantReadSettingsOpen, setPlantReadSettingsOpen] = useState(false);
   const [isDesktopViewport, setIsDesktopViewport] = useState(false);
   const [mobileVisualViewport, setMobileVisualViewport] = useState<MobileVisualViewport>(() => ({
     height: window.visualViewport?.height ?? window.innerHeight,
@@ -252,6 +297,9 @@ export default function App() {
   const plantButtonRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const plantDragRef = useRef({ pointerId: -1, startX: 0, scrollLeft: 0, moved: false });
   const suppressPlantClickRef = useRef(false);
+  const wasPlantCardOpenRef = useRef(false);
+  const plantStoryNavigationAtRef = useRef(0);
+  const plantStoryContentRef = useRef<HTMLDivElement | null>(null);
   const [plantCardAnchor, setPlantCardAnchor] = useState({ left: 0, width: 720, arrowLeft: 48 });
 
   const loadData = async (isRefresh = false, options: { includeHistory?: boolean; includeWeather?: boolean } = {}) => {
@@ -288,7 +336,9 @@ export default function App() {
       setTemperature(latest.temperature);
       setHumidity(latest.humidity);
       setRainToday(latest.rainToday ?? null);
-      setLastUpdated(new Date(latest.updatedAt));
+      setRainHour(latest.rainHour ?? null);
+      setLastUpdated(latest.updatedAt ? new Date(latest.updatedAt) : null);
+      setDataHealth(latest.dataHealth);
       setDoor(latest.door ?? null);
       setDoorUpdatedAt(latest.doorUpdatedAt ?? null);
       setWindowCount(latest.window ?? null);
@@ -529,6 +579,33 @@ export default function App() {
     mediaQuery.addEventListener("change", updateViewport);
     return () => mediaQuery.removeEventListener("change", updateViewport);
   }, []);
+
+  useEffect(() => {
+    if (!siteConfigReady || plantReadPreference !== "unknown") return;
+    const frame = window.requestAnimationFrame(() => setPlantReadSettingsOpen(true));
+    return () => window.cancelAnimationFrame(frame);
+  }, [plantReadPreference, siteConfigReady]);
+
+  useEffect(() => {
+    if (!isDesktopViewport || selectedPlantIndex === null) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setSelectedPlantIndex(null);
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isDesktopViewport, selectedPlantIndex]);
+
+  useEffect(() => {
+    const isOpen = selectedPlantIndex !== null;
+    if (wasPlantCardOpenRef.current && !isOpen) {
+      setPlantSortReadVersions(readPlantVersions);
+    }
+    wasPlantCardOpenRef.current = isOpen;
+  }, [readPlantVersions, selectedPlantIndex]);
 
   useEffect(() => {
     if (isDesktopViewport || selectedPlantIndex === null) return;
@@ -950,10 +1027,10 @@ export default function App() {
   const seasonByLibraryId = new Map(activeSeason.map((entry) => [entry.libraryId, entry]));
   const plantById = new Map(siteConfig.plants.map((plant) => [plant.id, plant]));
   const isPlantSeasonOver = (season: PlantSeasonEntry | undefined | null) => {
-    if (!season?.harvestDate) return false;
-    const date = new Date(`${season.harvestDate}T23:59:59`);
-    return Number.isFinite(date.getTime()) && date <= new Date();
+    return Boolean(season?.finished);
   };
+  const getPlantFinishLabel = (season: PlantSeasonEntry | undefined | null) =>
+    season?.finishReason === "moved-out" ? "Ferdig" : "Høstet";
   const plantSortIndex = new Map<string, number>();
   activeSeason.forEach((plant, index) => {
     plantSortIndex.set(plant.id, index);
@@ -975,6 +1052,26 @@ export default function App() {
       const aOver = isPlantSeasonOver(a);
       const bOver = isPlantSeasonOver(b);
       if (aOver !== bOver) return aOver ? 1 : -1;
+      const analysisA = analysisBySeasonId.get(a.id) || analysisByLibraryId.get(a.libraryId);
+      const analysisB = analysisBySeasonId.get(b.id) || analysisByLibraryId.get(b.libraryId);
+      const versionA = analysisA?.assessedAt || plantAnalysis?.generatedAt || "";
+      const versionB = analysisB?.assessedAt || plantAnalysis?.generatedAt || "";
+      const unreadA = Boolean(versionA && plantSortReadVersions[analysisA?.id || a.id] !== versionA);
+      const unreadB = Boolean(versionB && plantSortReadVersions[analysisB?.id || b.id] !== versionB);
+      if (unreadA !== unreadB) return unreadA ? -1 : 1;
+      const libraryA = libraryById.get(a.libraryId);
+      const libraryB = libraryById.get(b.libraryId);
+      const nameA = libraryA?.name || "";
+      const nameB = libraryB?.name || "";
+      if (siteConfig.plantDisplaySort === "name-asc") return nameA.localeCompare(nameB, "nb-NO");
+      if (siteConfig.plantDisplaySort === "name-desc") return nameB.localeCompare(nameA, "nb-NO");
+      if (siteConfig.plantDisplaySort === "type") return (libraryA?.plantType || "").localeCompare(libraryB?.plantType || "", "nb-NO") || nameA.localeCompare(nameB, "nb-NO");
+      if (siteConfig.plantDisplaySort === "status") {
+        const ranks = { stress: 0, "følg med": 1, trives: 2 } as const;
+        const statusA = analysisBySeasonId.get(a.id)?.status || analysisByLibraryId.get(a.libraryId)?.status || "følg med";
+        const statusB = analysisBySeasonId.get(b.id)?.status || analysisByLibraryId.get(b.libraryId)?.status || "følg med";
+        return (ranks[statusA] ?? 1) - (ranks[statusB] ?? 1) || nameA.localeCompare(nameB, "nb-NO");
+      }
       return (plantSortIndex.get(a.id) ?? 9999) - (plantSortIndex.get(b.id) ?? 9999);
     })
     .map((season) => {
@@ -1008,11 +1105,94 @@ export default function App() {
     selectedPlantIndex !== null && sortedPlantAnalysisItems[selectedPlantIndex]
       ? sortedPlantAnalysisItems[selectedPlantIndex]
       : null;
-  const plantAnalysisSummary =
-    plantAnalysis?.contextSummary ||
-    "Analyse og tips oppdateres når ny planteanalyse er kjørt.";
+  const getPlantAssessmentVersion = (item: PlantAnalysisResponse["items"][number]) =>
+    item.assessedAt || plantAnalysis?.generatedAt || "";
+  const hasUnreadPlantAssessment = (item: PlantAnalysisResponse["items"][number]) => {
+    const version = getPlantAssessmentVersion(item);
+    return Boolean(version && readPlantVersions[item.id] !== version);
+  };
+  const storePlantReadVersions = (versions: PlantReadVersions) => {
+    const entries = Object.entries(versions).slice(-80);
+    localStorage.setItem(plantReadStorageKey, JSON.stringify(Object.fromEntries(entries)));
+  };
+  const markPlantAssessmentRead = (item: PlantAnalysisResponse["items"][number]) => {
+    const version = getPlantAssessmentVersion(item);
+    if (!version) return;
+
+    setReadPlantVersions((current) => {
+      if (current[item.id] === version) return current;
+      const next = { ...current, [item.id]: version };
+      if (plantReadPreference === "enabled") storePlantReadVersions(next);
+      return next;
+    });
+  };
+  const enablePlantReadMemory = () => {
+    localStorage.setItem(plantReadPreferenceStorageKey, "enabled");
+    setPlantReadPreference("enabled");
+    storePlantReadVersions(readPlantVersions);
+    setPlantReadSettingsOpen(false);
+  };
+  const declinePlantReadMemory = () => {
+    localStorage.removeItem(plantReadStorageKey);
+    localStorage.setItem(plantReadPreferenceStorageKey, "declined");
+    setPlantReadPreference("declined");
+    setPlantReadSettingsOpen(false);
+  };
+  const navigatePlantCard = (direction: -1 | 1) => {
+    if (selectedPlantIndex === null) return;
+    const nextIndex = selectedPlantIndex + direction;
+    const nextItem = sortedPlantAnalysisItems[nextIndex];
+    if (!nextItem) return;
+    setPlantMobileTab("status");
+    markPlantAssessmentRead(nextItem);
+    setSelectedPlantIndex(nextIndex);
+  };
+  const handlePlantStorySurfaceClick = (event: ReactMouseEvent<HTMLElement>) => {
+    const target = event.target as HTMLElement;
+    if (target.closest("button, [role='tab'], a, input, select, textarea")) return;
+
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const relativeX = event.clientX - bounds.left;
+    const direction = relativeX <= bounds.width * 0.28 ? -1 : relativeX >= bounds.width * 0.72 ? 1 : 0;
+    if (!direction) return;
+
+    const now = Date.now();
+    if (now - plantStoryNavigationAtRef.current < 250) return;
+    plantStoryNavigationAtRef.current = now;
+    navigatePlantCard(direction);
+  };
+  const effectiveChartsExpanded = isDesktopViewport || chartsExpanded;
+  const frontPageOrder = Object.fromEntries(siteConfig.frontPageSectionOrder.map((section, index) => [section, index])) as Record<string, number>;
+  useEffect(() => {
+    if (!siteConfigReady) return;
+    setChartsExpanded(siteConfig.frontPageSectionDefaults.chartsExpanded);
+  }, [siteConfigReady, siteConfig.frontPageSectionDefaults.chartsExpanded]);
   const activeSeasonEntry = activePlantItem ? resolveSeasonEntryForItem(activePlantItem) : null;
   const activeLibraryEntry = activePlantItem ? resolveLibraryEntryForItem(activePlantItem) : null;
+  useEffect(() => {
+    if (isDesktopViewport || selectedPlantIndex === null) return;
+    const frame = window.requestAnimationFrame(() => {
+      if (plantStoryContentRef.current) plantStoryContentRef.current.scrollTop = 0;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [isDesktopViewport, selectedPlantIndex]);
+  useEffect(() => {
+    if (isDesktopViewport || selectedPlantIndex === null) return;
+
+    [selectedPlantIndex - 1, selectedPlantIndex + 1].forEach((index) => {
+      const item = sortedPlantAnalysisItems[index];
+      if (!item) return;
+      const library = resolveLibraryEntryForItem(item);
+      const legacyPlant = plantById.get(item.id);
+      const imagePath = library?.image || legacyPlant?.image || "";
+      if (!imagePath) return;
+
+      const preloader = new window.Image();
+      preloader.decoding = "async";
+      preloader.src = resolveGreenhouseAssetUrl(imagePath);
+      void preloader.decode().catch(() => undefined);
+    });
+  }, [isDesktopViewport, selectedPlantIndex]);
   const plantTypeTagColor = (plantType: string | undefined) => {
     switch (plantType) {
       case "Urte":
@@ -1035,7 +1215,7 @@ export default function App() {
     const values = lines.filter((line): line is string => Boolean(line && line.trim()));
     if (values.length === 0) return null;
     return (
-      <div>
+      <div key={label}>
         <dt className="text-xs font-semibold" style={{ color: plantTheme.titleColor }}>{label}</dt>
         {values.map((value) => (
           <dd key={value} className="mt-1 text-xs leading-snug" style={{ color: plantTheme.ingressColor }}>{value}</dd>
@@ -1064,14 +1244,33 @@ export default function App() {
   ) => {
     const plantName = library?.name || item.name;
     const plantType = library?.plantType || item.plantType || "";
+    const plantGroup = library?.plantGroup || "";
     const image = library?.image ? resolveGreenhouseAssetUrl(library.image) : "";
     const seasonOver = isPlantSeasonOver(season);
+    const finishLabel = getPlantFinishLabel(season);
+    const statusColor = seasonOver ? plantTheme.watchTextColor : getPlantPillBg(item.status);
+    const statusHeadline = seasonOver
+      ? finishLabel
+      : item.status === "trives"
+        ? "Alt ser bra ut"
+        : item.status === "stress"
+          ? "Planten trenger oppfølging"
+          : "Følg litt ekstra med";
+    const StatusIcon = seasonOver ? CircleCheckBig : item.status === "trives" ? CircleCheckBig : item.status === "stress" ? TriangleAlert : CircleAlert;
+    const developmentType = item.development?.type || "ripening";
+    const DevelopmentIcon = developmentType === "flowering" ? Flower2 : developmentType === "harvest" ? ShoppingBasket : CircleCheckBig;
+    const developmentLabel = developmentType === "flowering" ? "Blomstring" : developmentType === "harvest" ? "Høsting" : "Modning";
+    const developmentText = item.development?.text || item.forecast || "";
+    const assessmentTimestamp = item.assessedAt || plantAnalysis?.generatedAt
+      ? new Date(item.assessedAt || plantAnalysis!.generatedAt).toLocaleString("nb-NO", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })
+      : "";
     const factRows = [
       renderPlantFact("Planten er sådd", season?.acquisition === "seed" ? [formatDate(season.seedDate), season.seedLocation] : []),
       renderPlantFact("Anskaffelse", season?.acquisition === "plant" ? ["Anskaffet som plante", season.purchaseSource] : [season?.purchaseSource]),
       renderPlantFact("Plassert i drivhuset", [formatDate(season?.greenhouseDate || "")]),
-      renderPlantFact("Utplanting / høsting", [formatDate(season?.harvestDate || "")]),
-      renderPlantFact("Plantested", [season?.plantingPlace]),
+      renderPlantFact(seasonOver ? "Dato avsluttet" : "Utplanting / høsting", [formatDate(season?.harvestDate || "")]),
+      renderPlantFact("Dyrkested nå", [season?.growingLocation ? getPlantGrowingLocationLabel(season.growingLocation) : ""]),
+      renderPlantFact("Vekstmedium", [season?.plantingPlace]),
     ].filter(Boolean);
 
     const panelContent = (mobileDrawer: boolean, showTitle = true) => (
@@ -1080,50 +1279,97 @@ export default function App() {
           <button
             type="button"
             onClick={() => setSelectedPlantIndex(null)}
-            className="absolute right-4 top-4 hidden size-9 place-items-center rounded-full border md:grid"
-            style={{ borderColor: plantTheme.cardBorder, color: plantTheme.titleColor }}
+            className="absolute right-4 top-4 z-10 hidden size-9 place-items-center rounded-full border bg-black/25 text-white backdrop-blur-sm md:grid"
+            style={{ borderColor: "rgba(255,255,255,0.45)" }}
             aria-label="Lukk plantekort"
           >
             <XIcon className="size-4" />
           </button>
         )}
-        {showTitle && <h3 className="pr-10 text-2xl font-medium leading-tight" style={{ color: plantTheme.titleColor }}>{plantName}</h3>}
         {mobileDrawer ? (
-          <div className={showTitle ? "mt-4 grid grid-cols-[minmax(0,1fr)_128px] items-start gap-4" : "grid grid-cols-[minmax(0,1fr)_128px] items-start gap-4"}>
-            <div className="min-w-0">
-              {plantType && (
-                <span className="inline-flex rounded-md border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.04em]" style={{ borderColor: plantTypeTagColor(plantType), color: plantTypeTagColor(plantType) }}>
-                  {plantType}
-                </span>
-              )}
-              {library?.description && (
-                <p className="mt-3 text-sm italic leading-snug text-black" style={{ color: plantTheme.titleColor }}>
-                  {library.description}
-                </p>
-              )}
-            </div>
-            <div className="aspect-square overflow-hidden rounded-full">
+          <>
+            <div className="relative -mx-6 -mt-3 h-[min(66.667vw,32dvh)] overflow-hidden [@media(max-height:700px)]:h-[22dvh]">
               {image ? (
                 <img src={image} alt={plantName} className="h-full w-full object-cover" />
               ) : (
-                <div className="grid h-full w-full place-items-center bg-black/5 px-2 text-center text-xs">Mangler bilde</div>
+                <div className="grid h-full w-full place-items-center bg-black/5 text-sm">Mangler bilde</div>
               )}
             </div>
-          </div>
+            {showTitle && (
+              <h3 className="mt-3 text-xl font-medium leading-tight" style={{ color: plantTheme.titleColor }}>
+                {plantName}
+              </h3>
+            )}
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              {plantType && <span className="inline-flex rounded-md border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.04em]" style={{ borderColor: plantTypeTagColor(plantType), color: plantTypeTagColor(plantType) }}>{plantType}</span>}
+              {plantGroup && <span className="inline-flex rounded-md border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.04em]" style={{ borderColor: plantTheme.cardBorder, color: plantTheme.watchTextColor }}>{plantGroup}</span>}
+            </div>
+            <section
+              className="mt-4 rounded-2xl p-3 pt-4"
+              style={{ backgroundColor: `${statusColor}${darkMode ? "20" : "0D"}` }}
+              role="status"
+              aria-label={`Status i dag: ${statusHeadline}`}
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="grid size-8 shrink-0 place-items-center rounded-full" style={{ backgroundColor: statusColor, color: plantTheme.pillTextColor }}>
+                  <StatusIcon className="size-4" aria-hidden="true" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-[9px] font-semibold uppercase tracking-[0.08em]" style={{ color: statusColor }}>Status i dag</p>
+                  <p className="text-base font-semibold leading-tight" style={{ color: plantTheme.titleColor }}>{statusHeadline}</p>
+                </div>
+                {assessmentTimestamp && (
+                  <p className="ml-auto shrink-0 self-start text-[9px] leading-snug opacity-55" style={{ color: plantTheme.watchTextColor }}>{assessmentTimestamp}</p>
+                )}
+              </div>
+              {!seasonOver && (item.assessment || item.summary) && (
+                <p className="mt-1.5 text-xs leading-snug" style={{ color: plantTheme.ingressColor }}>{item.assessment || item.summary}</p>
+              )}
+              {!seasonOver && (
+                <div className="mt-3 grid grid-cols-2 border-t pt-3" style={{ borderColor: `${statusColor}35` }}>
+                  <div className="flex min-w-0 items-start gap-1.5 pr-3">
+                    <Droplets className="mt-0.5 size-3.5 shrink-0 text-sky-600 dark:text-sky-400" aria-hidden="true" />
+                    <div className="min-w-0">
+                      <p className="text-[9px] font-semibold uppercase tracking-[0.06em]" style={{ color: plantTheme.watchTextColor }}>Vanning</p>
+                      <p className="mt-0.5 text-[11px] leading-snug" style={{ color: plantTheme.ingressColor }}>{item.watering || item.watch}</p>
+                    </div>
+                  </div>
+                  {developmentText && (
+                    <div className="flex min-w-0 items-start gap-1.5 border-l pl-3" style={{ borderColor: `${statusColor}35` }}>
+                      <DevelopmentIcon className={`mt-0.5 size-3.5 shrink-0 ${developmentType === "ripening" ? "text-emerald-600 dark:text-emerald-400" : ""}`} style={developmentType === "ripening" ? undefined : { color: plantTheme.titleColor }} aria-hidden="true" />
+                      <div className="min-w-0">
+                        <p className="text-[9px] font-semibold uppercase tracking-[0.06em]" style={{ color: plantTheme.watchTextColor }}>{developmentLabel}</p>
+                        <p className="mt-0.5 text-[11px] leading-snug" style={{ color: plantTheme.ingressColor }}>{developmentText.charAt(0).toLocaleUpperCase("nb-NO") + developmentText.slice(1)}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </section>
+          </>
         ) : (
           <>
-            <div className={showTitle ? "mt-4 overflow-hidden rounded-none" : "overflow-hidden rounded-none"}>
+            <div className="relative -mx-8 -mt-8 h-[280px] overflow-hidden rounded-t-2xl">
               {image ? (
-                <img src={image} alt={plantName} className="h-44 w-full object-cover" />
+                <img src={image} alt={plantName} className="h-full w-full object-cover" />
               ) : (
-                <div className="grid h-44 w-full place-items-center bg-black/5 text-sm">Mangler bilde</div>
+                <div className="grid h-full w-full place-items-center bg-black/5 text-sm">Mangler bilde</div>
+              )}
+              <div
+                className="absolute inset-0"
+                style={{ background: `linear-gradient(to bottom, transparent 38%, ${plantTheme.cardBg}22 64%, ${plantTheme.cardBg} 100%)` }}
+                aria-hidden="true"
+              />
+              {showTitle && (
+                <h3 className="absolute inset-x-8 bottom-4 pr-10 text-3xl font-medium leading-tight" style={{ color: plantTheme.titleColor }}>
+                  {plantName}
+                </h3>
               )}
             </div>
-            {plantType && (
-              <span className="mt-4 inline-flex self-start rounded-md border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.04em]" style={{ borderColor: plantTypeTagColor(plantType), color: plantTypeTagColor(plantType) }}>
-                {plantType}
-              </span>
-            )}
+            <div className="mt-2 flex flex-wrap items-center gap-1.5 self-start">
+              {plantType && <span className="inline-flex rounded-md border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.04em]" style={{ borderColor: plantTypeTagColor(plantType), color: plantTypeTagColor(plantType) }}>{plantType}</span>}
+              {plantGroup && <span className="inline-flex rounded-md border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.04em]" style={{ borderColor: plantTheme.cardBorder, color: plantTheme.watchTextColor }}>{plantGroup}</span>}
+            </div>
             {library?.description && (
               <p className="mt-3 text-sm italic leading-snug text-black md:text-sm" style={{ color: plantTheme.titleColor }}>
                 {library.description}
@@ -1131,33 +1377,118 @@ export default function App() {
             )}
           </>
         )}
+        {mobileDrawer && (
+          <div
+            className="relative z-30 mt-4 grid grid-cols-2 border-b"
+            style={{ borderColor: plantTheme.cardBorder }}
+            role="tablist"
+            aria-label="Innhold i plantekortet"
+            data-vaul-no-drag
+          >
+            {(["status", "details"] as const).map((tab) => {
+              const active = plantMobileTab === tab;
+              return (
+                <button
+                  key={tab}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setPlantMobileTab(tab)}
+                  className="px-3 py-2 text-xs font-semibold transition-colors"
+                  style={{
+                    color: active ? plantTheme.titleColor : plantTheme.ingressColor,
+                    borderBottom: active ? `2px solid ${plantTheme.titleColor}` : "2px solid transparent",
+                  }}
+                >
+                  {tab === "status" ? "Planten" : "Plantedata"}
+                </button>
+              );
+            })}
+          </div>
+        )}
+        <div className={mobileDrawer ? "grid" : undefined}>
+        <div
+          className={mobileDrawer ? `col-start-1 row-start-1 ${plantMobileTab === "status" ? "visible" : "invisible pointer-events-none"}` : undefined}
+          role={mobileDrawer ? "tabpanel" : undefined}
+          aria-hidden={mobileDrawer ? plantMobileTab !== "status" : undefined}
+        >
         {seasonOver ? (
-          <section className="mt-5 rounded-lg border p-4" style={{ borderColor: plantTheme.cardBorder }}>
-            <span className="inline-flex rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.04em]" style={{ backgroundColor: plantTheme.watchTextColor, color: plantTheme.cardBg }}>
-              Sesong over
-            </span>
-            <p className="mt-3 text-sm leading-snug" style={{ color: plantTheme.titleColor }}>
-              Denne planten er markert som ferdig for sesongen og tas ikke med i ny AI-analyse.
-            </p>
+          <section
+            className={mobileDrawer ? "mt-3" : "mt-5 rounded-lg border p-4"}
+            style={mobileDrawer ? undefined : { borderColor: plantTheme.cardBorder }}
+          >
+            {mobileDrawer && library?.description ? (
+              <p className="text-sm leading-snug" style={{ color: plantTheme.titleColor }}>{library.description}</p>
+            ) : (
+              <>
+                <span className="inline-flex rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.04em]" style={{ backgroundColor: plantTheme.watchTextColor, color: plantTheme.cardBg }}>{finishLabel}</span>
+                <p className="mt-3 text-sm leading-snug" style={{ color: plantTheme.titleColor }}>{season?.finishReason === "moved-out" ? "Denne planten er ferdig og tas ikke med i ny AI-analyse." : "Denne planten er høstet og tas ikke med i ny AI-analyse."}</p>
+              </>
+            )}
           </section>
         ) : (
-          <section className="mt-5 rounded-lg border p-4" style={{ borderColor: plantTheme.cardBorder }}>
-            <div className="mb-3 flex items-center gap-2">
-              <OpenAiIcon className="size-5" style={{ color: plantTheme.watchTextColor }} />
-              <span className="rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.04em]" style={{ backgroundColor: getPlantPillBg(item.status), color: plantTheme.pillTextColor }}>
-                {item.status === "trives" ? "Planten trives" : item.status}
-              </span>
+          <section
+            className={mobileDrawer ? "mt-4" : "mt-5 rounded-lg border p-4"}
+            style={mobileDrawer ? undefined : { borderColor: plantTheme.cardBorder, backgroundColor: darkMode ? "rgba(255,255,255,0.025)" : "rgba(93,115,66,0.035)" }}
+          >
+            {!mobileDrawer && (
+              <div className="mb-3 flex items-center gap-2">
+                <span className="rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.04em]" style={{ backgroundColor: getPlantPillBg(item.status), color: plantTheme.pillTextColor }}>
+                  {item.status === "trives" ? "Planten trives" : item.status}
+                </span>
+              </div>
+            )}
+            <div className="grid gap-3 text-sm leading-snug">
+              {!mobileDrawer && <p style={{ color: plantTheme.titleColor }}>{item.assessment || item.summary}</p>}
+              {!mobileDrawer && <div className="flex items-start gap-2">
+                <div className={mobileDrawer ? "rounded-xl border p-3" : "contents"} style={mobileDrawer ? { borderColor: plantTheme.cardBorder, backgroundColor: darkMode ? "rgba(255,255,255,0.025)" : "rgba(93,115,66,0.035)" } : undefined}>
+                  <div className="flex items-start gap-2">
+                    <Droplets className="mt-0.5 size-4 shrink-0 text-sky-600 dark:text-sky-400" aria-hidden="true" />
+                    <div>
+                      {mobileDrawer && <p className="text-[10px] font-semibold uppercase tracking-[0.07em]" style={{ color: plantTheme.watchTextColor }}>Vanning</p>}
+                      <p className={mobileDrawer ? "mt-1" : undefined} style={{ color: plantTheme.watchTextColor }}>{item.watering || item.watch}</p>
+                    </div>
+                  </div>
+                </div>
+                {developmentText && (
+                  <div className={mobileDrawer ? "rounded-xl border p-3" : "contents"} style={mobileDrawer ? { borderColor: plantTheme.cardBorder, backgroundColor: darkMode ? "rgba(255,255,255,0.025)" : "rgba(93,115,66,0.035)" } : undefined}>
+                    <div className="flex items-start gap-2">
+                      <DevelopmentIcon className={`mt-0.5 size-4 shrink-0 ${developmentType === "ripening" ? "text-emerald-600 dark:text-emerald-400" : ""}`} style={developmentType === "ripening" ? undefined : { color: plantTheme.titleColor }} aria-hidden="true" />
+                      <div>
+                        {mobileDrawer && <p className="text-[10px] font-semibold uppercase tracking-[0.07em]" style={{ color: plantTheme.watchTextColor }}>{developmentLabel}</p>}
+                        <p className={mobileDrawer ? "mt-1" : undefined} style={{ color: plantTheme.titleColor }}>{developmentText.charAt(0).toLocaleUpperCase("nb-NO") + developmentText.slice(1)}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>}
+              {mobileDrawer && library?.description && (
+                <div>
+                  <p className="text-[9px] font-semibold uppercase tracking-[0.07em]" style={{ color: plantTheme.watchTextColor }}>Om planten</p>
+                  <p className="mt-1.5 text-sm leading-snug" style={{ color: plantTheme.titleColor }}>{library.description}</p>
+                </div>
+              )}
+              {!mobileDrawer && (item.assessedAt || plantAnalysis?.generatedAt) && <p className="border-t pt-2 text-[10px] leading-snug opacity-60" style={{ borderColor: plantTheme.cardBorder, color: plantTheme.watchTextColor }}>Basert på plantehistorikk og klima siste døgn · Vurdert {new Date(item.assessedAt || plantAnalysis!.generatedAt).toLocaleString("nb-NO", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</p>}
             </div>
-            <p className="text-sm leading-snug" style={{ color: plantTheme.titleColor }}>{item.summary}</p>
-            <p className="mt-2 text-sm leading-snug" style={{ color: plantTheme.watchTextColor }}>{[item.watch, item.detail].filter(Boolean).join(" ")}</p>
-            {item.forecast && <p className="mt-4 text-sm font-semibold" style={{ color: plantTheme.titleColor }}>{item.forecast}</p>}
           </section>
         )}
-        {factRows.length > 0 && (
-          <dl className="mt-6 grid grid-cols-2 gap-x-8 gap-y-5">
-            {factRows}
-          </dl>
-        )}
+        </div>
+        <div
+          className={mobileDrawer ? `col-start-1 row-start-1 ${plantMobileTab === "details" ? "visible" : "invisible pointer-events-none"}` : undefined}
+          role={mobileDrawer ? "tabpanel" : undefined}
+          aria-hidden={mobileDrawer ? plantMobileTab !== "details" : undefined}
+        >
+        {
+          factRows.length > 0 ? (
+            <dl className="mt-5 grid grid-cols-2 gap-x-8 gap-y-5">
+              {factRows}
+            </dl>
+          ) : (
+            mobileDrawer && <p className="mt-5 text-sm leading-snug" style={{ color: plantTheme.ingressColor }}>Ingen plantedata er registrert ennå.</p>
+          )
+        }
+        </div>
+        </div>
       </>
     );
 
@@ -1169,26 +1500,61 @@ export default function App() {
             if (!open) setSelectedPlantIndex(null);
           }}
           direction="bottom"
-          dismissible
+          dismissible={false}
           fixed
           modal
         >
           <VaulDrawer.Portal>
             <VaulDrawer.Overlay className="fixed inset-0 z-40 bg-black/25 backdrop-blur-[1px]" />
             <VaulDrawer.Content
-              className="fixed inset-x-0 z-50 overflow-y-auto overscroll-contain rounded-t-[28px] p-6 pb-[calc(72px+env(safe-area-inset-bottom))] pt-3 shadow-2xl outline-none"
+              ref={plantStoryContentRef}
+              className="fixed inset-x-0 z-50 overflow-y-auto p-6 pb-[calc(32px+env(safe-area-inset-bottom))] pt-3 shadow-2xl outline-none"
+              onClick={handlePlantStorySurfaceClick}
               style={{
                 backgroundColor: plantTheme.cardBg,
                 color: plantTheme.ingressColor,
                 bottom: `${mobileVisualViewport.bottomInset}px`,
-                maxHeight: `${Math.max(320, mobileVisualViewport.height - 12)}px`,
+                height: `${mobileVisualViewport.height}px`,
+                maxHeight: `${mobileVisualViewport.height}px`,
+                overscrollBehavior: "contain",
               }}
             >
               <VaulDrawer.Title className="sr-only">{plantName}</VaulDrawer.Title>
               <VaulDrawer.Description className="sr-only">
                 Analyse, plantetype og sesongdata for {plantName}.
               </VaulDrawer.Description>
-              <VaulDrawer.Handle className="mx-auto mb-5 block h-1.5 w-12 rounded-full bg-black/20" />
+              <div
+                role="progressbar"
+                aria-label="Planteoppdateringer"
+                aria-valuemin={1}
+                aria-valuemax={sortedPlantAnalysisItems.length}
+                aria-valuenow={(selectedPlantIndex ?? 0) + 1}
+                aria-valuetext={`${plantName}, ${(selectedPlantIndex ?? 0) + 1} av ${sortedPlantAnalysisItems.length}`}
+                className="pointer-events-none absolute left-3 right-3 top-[calc(9px+env(safe-area-inset-top))] z-30 flex h-1 items-center gap-[3px]"
+              >
+                {sortedPlantAnalysisItems.map((storyItem, index) => {
+                  const active = index === selectedPlantIndex;
+                  const passed = selectedPlantIndex !== null && index < selectedPlantIndex;
+                  return (
+                    <span
+                      key={storyItem.id}
+                      className={`min-w-0 flex-1 rounded-full ${active ? "h-1" : "h-[3px]"}`}
+                      style={{
+                        backgroundColor: active ? "rgba(255,255,255,1)" : passed ? "rgba(255,255,255,0.68)" : "rgba(255,255,255,0.28)",
+                        boxShadow: "0 1px 2px rgba(0,0,0,0.32)",
+                      }}
+                    />
+                  );
+                })}
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedPlantIndex(null)}
+                className="absolute right-4 top-[calc(22px+env(safe-area-inset-top))] z-30 grid size-9 place-items-center rounded-full border border-white/35 bg-black/35 text-white backdrop-blur-sm"
+                aria-label="Lukk plantekort"
+              >
+                <XIcon className="size-4" />
+              </button>
               {panelContent(true)}
             </VaulDrawer.Content>
           </VaulDrawer.Portal>
@@ -1353,6 +1719,57 @@ export default function App() {
           </div>
         </div>
 
+        {/* Sensor data health alert */}
+        {!loading && dataHealth && dataHealth.status !== "ok" && (
+          <div className="px-4 pb-3 md:px-8" role="alert" aria-live="assertive">
+            <div
+              className={`rounded-xl border px-4 py-3 shadow-sm ${
+                dataHealth.status === "critical"
+                  ? "border-red-300 bg-red-50 text-red-950"
+                  : "border-amber-300 bg-amber-50 text-amber-950"
+              }`}
+            >
+              <div className="flex items-start gap-3">
+                <AlertTriangleIcon className="mt-0.5 h-5 w-5 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold">
+                    {dataHealth.status === "critical"
+                      ? "Ingen nye klimadata"
+                      : "En sensor har sluttet å oppdatere"}
+                  </p>
+                  <p className="mt-1 text-sm">
+                    {dataHealth.status === "critical"
+                      ? "Temperatur og luftfuktighet har ikke blitt oppdatert den siste timen."
+                      : `${dataHealth.sensors[dataHealth.affectedSensors[0]].label} har ikke blitt oppdatert den siste timen.`}
+                    {" "}Dette kan skyldes sensoren, Homey eller nettforbindelsen.
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                    {dataHealth.affectedSensors.map((sensor) => {
+                      const sensorHealth = dataHealth.sensors[sensor];
+                      return (
+                        <span key={sensor}>
+                          {sensorHealth.label}: {sensorHealth.updatedAt
+                            ? `sist mottatt ${new Date(sensorHealth.updatedAt).toLocaleTimeString("nb-NO", { hour: "2-digit", minute: "2-digit" })} (${formatDataAge(sensorHealth.ageMinutes)})`
+                            : "ingen data mottatt"}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => loadData(true, { includeHistory: false, includeWeather: false })}
+                  disabled={refreshing}
+                  className="shrink-0 rounded-full border border-current/25 p-2 transition-opacity hover:opacity-70 disabled:opacity-40"
+                  aria-label="Kontroller sensordata på nytt"
+                >
+                  <RefreshCwIcon className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Error Message */}
         <div
           className={`overflow-hidden bg-red-500 px-4 text-sm text-white transition-all duration-300 md:mx-8 md:rounded-b-xl md:px-6 ${
@@ -1368,9 +1785,9 @@ export default function App() {
         </div>
 
         <main className="md:px-8 md:py-8">
-          <div className="md:space-y-8">
+          <div className="flex flex-col md:gap-8">
             {siteConfigReady && siteConfig.showHeroImage && (
-              <section>
+              <section style={{ order: -10 }}>
                 {/* Hero Image */}
                 <div className={`relative h-[200px] w-full overflow-hidden md:mb-0 md:aspect-[3/1] md:h-auto md:rounded-2xl ${temperatureAlert ? "mb-0" : "mb-6"}`}>
                   {heroImageConfig ? (
@@ -1424,7 +1841,7 @@ export default function App() {
                   ) : weatherData ? (
                     <div className="absolute bottom-4 right-4 top-4 md:bottom-5 md:left-auto md:right-5 md:top-5">
                       <Suspense fallback={<WeatherWidgetSkeleton />}>
-                        <WeatherWidget data={weatherData} compact rainToday={rainToday} />
+                        <WeatherWidget data={weatherData} compact rainToday={rainToday} rainHour={rainHour} />
                       </Suspense>
                     </div>
                   ) : null}
@@ -1441,7 +1858,8 @@ export default function App() {
             )}
 
             <section
-              className={`px-4 pb-6 md:grid md:gap-8 md:px-0 md:pb-0 md:pt-0 ${
+              style={{ order: frontPageOrder.climate ?? 0 }}
+              className={`px-4 pb-3 md:grid md:gap-8 md:px-0 md:pb-0 md:pt-0 ${
                 siteConfigReady && !siteConfig.showHeroImage ? "pt-5" : ""
               } ${
                 siteConfigReady && siteConfig.showHeroImage && temperatureAlert ? "pt-[10px] md:pt-0" : ""
@@ -1495,9 +1913,10 @@ export default function App() {
               )}
             </section>
 
-            {siteConfig.visibleStatuses.plantAnalysis && sortedPlantAnalysisItems.length > 0 && (
+            {(siteConfig.visibleStatuses.plantLibrary || siteConfig.visibleStatuses.plantAnalysis) && sortedPlantAnalysisItems.length > 0 && (
               <>
-              <section ref={plantSectionRef} className="-mt-[30px] px-4 pb-6 md:!mt-4 md:px-0 md:pb-0">
+              {siteConfig.visibleStatuses.plantLibrary && (
+              <section ref={plantSectionRef} style={{ order: frontPageOrder.plants ?? 1 }} className="px-4 pb-6 md:px-0 md:pb-0">
                 <div
                       ref={plantScrollerRef}
                       className="greenhouse-no-scrollbar greenhouse-horizontal-fade-desktop -mx-4 -mb-4 w-[calc(100%+2rem)] cursor-grab overflow-x-auto px-4 pb-6 pt-3 active:cursor-grabbing md:-mx-8 md:mb-0 md:w-[calc(100%+4rem)] md:px-8 md:pb-3 md:pt-3 xl:-mx-10 xl:w-[calc(100%+5rem)] xl:px-10"
@@ -1512,6 +1931,7 @@ export default function App() {
                       <div className="flex w-max gap-3 pr-4 md:gap-2">
                         {sortedPlantAnalysisItems.map((item, index) => {
                           const isActive = selectedPlantIndex === index;
+                          const isUnread = hasUnreadPlantAssessment(item);
                           const ringColor = getPlantPillBg(item.status);
                           const libraryPlant = resolveLibraryEntryForItem(item);
                           const displayName = libraryPlant?.name || item.name;
@@ -1525,11 +1945,15 @@ export default function App() {
                               }}
                               key={item.id}
                               type="button"
+                              disabled={!siteConfig.visibleStatuses.plantAnalysis}
                               onClick={(event) => {
+                                if (!siteConfig.visibleStatuses.plantAnalysis) return;
                                 if (suppressPlantClickRef.current) {
                                   event.preventDefault();
                                   return;
                                 }
+                                setPlantMobileTab("status");
+                                markPlantAssessmentRead(item);
                                 setSelectedPlantIndex((current) => {
                                   if (current === index) return null;
                                   window.requestAnimationFrame(() => updatePlantCardAnchor(index));
@@ -1537,7 +1961,7 @@ export default function App() {
                                 });
                               }}
                               className={`group flex w-[96px] shrink-0 flex-col items-center justify-start gap-2 text-center md:w-[118px] ${seasonOver ? "opacity-70" : ""}`}
-                              aria-label={`Vis analyse for ${displayName}`}
+                              aria-label={siteConfig.visibleStatuses.plantAnalysis ? `Vis analyse for ${displayName}` : displayName}
                               aria-current={isActive ? "true" : undefined}
                             >
                               <span
@@ -1545,9 +1969,9 @@ export default function App() {
                                   isActive ? "scale-105" : "scale-100"
                                 }`}
                                 style={{
-                                  borderColor: ringColor,
+                                  borderColor: isUnread ? ringColor : "transparent",
                                   backgroundColor: isActive ? "rgba(255,255,255,0.9)" : seasonOver ? "rgba(255,255,255,0.22)" : "transparent",
-                                  boxShadow: isActive ? `0 0 0 5px rgba(255,255,255,0.62), 0 10px 28px ${ringColor}55` : "none",
+                                  boxShadow: isActive ? "0 0 0 5px rgba(255,255,255,0.62), 0 10px 28px rgba(0,0,0,0.16)" : "none",
                                 }}
                               >
                                 <span className="grid size-full overflow-hidden rounded-full bg-black/5">
@@ -1559,7 +1983,7 @@ export default function App() {
                               </span>
                               {seasonOver && (
                                 <span className="rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.04em]" style={{ backgroundColor: plantTheme.watchTextColor, color: plantTheme.cardBg }}>
-                                  Sesong over
+                                  {getPlantFinishLabel(season)}
                                 </span>
                               )}
                             </button>
@@ -1567,65 +1991,21 @@ export default function App() {
                         })}
                       </div>
                 </div>
-                {activePlantItem && (
+                {siteConfig.visibleStatuses.plantAnalysis && activePlantItem && (
                   renderPlantBottomSheet(activePlantItem, activeLibraryEntry, activeSeasonEntry)
                 )}
               </section>
+              )}
 
-              <section className="space-y-2 px-4 pb-6 md:px-0 md:pb-0">
-                <div className="flex items-center gap-2 px-1">
-                  <button
-                    type="button"
-                    className={`grid min-h-9 min-w-9 place-items-center rounded-full transition-colors ${
-                      darkMode ? "text-white/45 hover:text-white/70" : "text-stone-500 hover:text-stone-700"
-                    }`}
-                    onClick={() => setPlantAnalysisExpanded((expanded) => !expanded)}
-                    aria-expanded={plantAnalysisExpanded}
-                    aria-controls="plant-analysis-panel"
-                    aria-label={plantAnalysisExpanded ? "Lukk vurdering" : "Åpne vurdering"}
-                  >
-                    <ChevronDownIcon className={`size-4 transition-transform duration-300 ${plantAnalysisExpanded ? "rotate-0" : "-rotate-90"}`} />
-                  </button>
-                  <h2 className="text-xs leading-none" style={sectionHeaderTextStyle}>Vurdering</h2>
-                </div>
-                <div
-                  id="plant-analysis-panel"
-                  className={`grid overflow-hidden transition-[grid-template-rows,opacity] duration-300 ${
-                    plantAnalysisExpanded ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
-                  }`}
-                >
-                  <div className="min-h-0 overflow-hidden">
-                    <div className="px-1 pt-3 text-sm font-medium leading-snug md:max-w-4xl md:text-base" style={{ color: plantTheme.ingressColor }}>
-                      <p>{plantAnalysisSummary}</p>
-                    </div>
-                  </div>
-                </div>
-              </section>
               </>
             )}
 
             {/* Trend Charts */}
             {!loading && siteConfig.visibleStatuses.charts && (
-              <section className="space-y-3 px-4 pb-6 md:space-y-4 md:px-0 md:pb-0">
+              <section style={{ order: frontPageOrder.charts ?? 3 }} className="space-y-3 px-4 pb-6 md:space-y-4 md:px-0 md:pb-0">
               <div className="flex items-center justify-between gap-3 px-1">
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    className={`grid min-h-9 min-w-9 place-items-center rounded-full transition-colors ${
-                      darkMode ? "text-white/45 hover:text-white/70" : "text-stone-500 hover:text-stone-700"
-                    }`}
-                    onClick={() => setChartsExpanded((expanded) => !expanded)}
-                    aria-expanded={chartsExpanded}
-                    aria-controls="chart-panel"
-                    aria-label={chartsExpanded ? "Lukk grafer" : "Åpne grafer"}
-                  >
-                    <ChevronDownIcon className={`size-4 transition-transform duration-300 ${chartsExpanded ? "rotate-0" : "-rotate-90"}`} />
-                  </button>
-                  <h2 className="text-xs leading-none" style={sectionHeaderTextStyle}>
-                    Grafer
-                  </h2>
-                </div>
-                <Select value={chartRange} onValueChange={(value) => setChartRange(value as ChartRange)}>
+                <h2 className="text-xs leading-none" style={sectionHeaderTextStyle}>Statistikk</h2>
+                <div className="flex items-center gap-2">{chartsExpanded && !isDesktopViewport && <button type="button" onClick={() => setChartsExpanded(false)} className={`rounded-full px-3 py-2 text-xs font-semibold ${darkMode ? "text-white/60 hover:bg-white/10" : "text-stone-500 hover:bg-black/5"}`}>Lukk</button>}<Select value={chartRange} onValueChange={(value) => setChartRange(value as ChartRange)}>
                   <SelectTrigger className={chartSelectTriggerClass} aria-label="Velg tidsrom for grafer">
                     <SelectValue />
                   </SelectTrigger>
@@ -1637,10 +2017,10 @@ export default function App() {
                       24 timer
                     </SelectItem>
                   </SelectContent>
-                </Select>
+                </Select></div>
               </div>
 
-              {!chartsExpanded && (
+              {!effectiveChartsExpanded && (
                 <div className="md:hidden">
                   <CollapsedChartPreview
                     temperatureData={selectedTemperatureData}
@@ -1656,7 +2036,7 @@ export default function App() {
               <div
                 id="chart-panel"
                 className={`grid overflow-hidden transition-[grid-template-rows,opacity] duration-300 ${
-                  chartsExpanded ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+                  effectiveChartsExpanded ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
                 }`}
               >
                 <div className="min-h-0 overflow-hidden">
@@ -1669,7 +2049,7 @@ export default function App() {
                           setApi={setChartCarouselApi}
                           opts={{ align: "start", containScroll: "trimSnaps" }}
                           className="w-full"
-                          aria-label="Grafer for temperatur og luftfuktighet"
+                          aria-label="Statistikk for temperatur og luftfuktighet"
                         >
                           <CarouselContent className="ml-0 pb-5 pt-1 md:grid md:grid-cols-2 md:gap-4 md:pb-0">
                             <CarouselItem className="px-3 md:min-w-0 md:px-0">
@@ -1747,8 +2127,9 @@ export default function App() {
 
             {/* Footer with Last Updated */}
             {lastUpdated && (
-              <div className="mt-4 px-4 pb-6 md:mt-0 md:px-0 md:pb-0">
-                <p className="text-center text-xs md:text-right" style={{ color: darkMode ? activeDisplayTheme.dark.mutedColor : activeDisplayTheme.light.mutedColor }}>
+              <div style={{ order: 100 }} className="mt-4 px-4 pb-6 md:mt-0 md:px-0 md:pb-0">
+                <div className="flex flex-col items-center justify-center gap-2 text-xs md:flex-row md:justify-end md:gap-3">
+                <p className="text-center md:text-right" style={{ color: darkMode ? activeDisplayTheme.dark.mutedColor : activeDisplayTheme.light.mutedColor }}>
                   Siste data fra drivhuset mottatt {lastUpdated.toLocaleDateString('nb-NO', {
                     day: '2-digit',
                     month: '2-digit',
@@ -1758,10 +2139,76 @@ export default function App() {
                     minute: '2-digit'
                   })}
                 </p>
+                <button
+                  type="button"
+                  onClick={() => setPlantReadSettingsOpen(true)}
+                  className="rounded-full border px-3 py-1.5 font-semibold transition-opacity hover:opacity-75"
+                  style={{ borderColor: activeModeTheme.panelBorder, color: activeModeTheme.mutedColor }}
+                >
+                  Leste statuser: {plantReadPreference === "enabled" ? "På" : "Av"}
+                </button>
+                </div>
               </div>
             )}
           </div>
         </main>
+
+        {plantReadSettingsOpen && (
+          <>
+            <button
+              type="button"
+              className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[1px]"
+              onClick={() => setPlantReadSettingsOpen(false)}
+              aria-label="Lukk innstillinger for leste statuser"
+            />
+            <section
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="plant-read-settings-title"
+              className="fixed inset-x-4 bottom-[calc(16px+env(safe-area-inset-bottom))] z-50 mx-auto max-w-lg rounded-2xl border p-5 shadow-2xl md:bottom-6 md:p-6"
+              style={{ backgroundColor: plantTheme.cardBg, borderColor: plantTheme.cardBorder, color: plantTheme.titleColor }}
+            >
+              <button
+                type="button"
+                onClick={() => setPlantReadSettingsOpen(false)}
+                className="absolute right-3 top-3 grid size-8 place-items-center rounded-full border"
+                style={{ borderColor: plantTheme.cardBorder, color: plantTheme.watchTextColor }}
+                aria-label="Lukk"
+              >
+                <XIcon className="size-3.5" />
+              </button>
+              <p className="pr-10 text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: plantTheme.watchTextColor }}>
+                Leste statuser
+              </p>
+              <h2 id="plant-read-settings-title" className="mt-1 pr-10 text-lg font-semibold leading-snug">
+                Skal vi huske hvilke planteoppdateringer du har åpnet?
+              </h2>
+              <p className="mt-2 text-sm leading-relaxed" style={{ color: plantTheme.ingressColor }}>
+                Valget lagres lokalt i nettleseren. Hvis du velger ja, lagres også plante-ID og tidspunktet for siste leste vurdering. Ingenting sendes til serveren.
+              </p>
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={enablePlantReadMemory}
+                  aria-pressed={plantReadPreference === "enabled"}
+                  className="rounded-xl border px-3 py-3 text-sm font-semibold transition-opacity hover:opacity-80"
+                  style={{ borderColor: plantReadPreference === "enabled" ? plantTheme.titleColor : plantTheme.cardBorder, backgroundColor: plantReadPreference === "enabled" ? `${plantTheme.titleColor}12` : "transparent" }}
+                >
+                  Ja, husk dem
+                </button>
+                <button
+                  type="button"
+                  onClick={declinePlantReadMemory}
+                  aria-pressed={plantReadPreference === "declined"}
+                  className="rounded-xl border px-3 py-3 text-sm font-semibold transition-opacity hover:opacity-80"
+                  style={{ borderColor: plantReadPreference === "declined" ? plantTheme.titleColor : plantTheme.cardBorder, backgroundColor: plantReadPreference === "declined" ? `${plantTheme.titleColor}12` : "transparent" }}
+                >
+                  Nei takk
+                </button>
+              </div>
+            </section>
+          </>
+        )}
       </div>
     </div>
   );

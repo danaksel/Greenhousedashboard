@@ -110,6 +110,7 @@ Støttede sensorer:
 - `temperature`
 - `humidity`
 - `rain_today`
+- `rain_hour`
 - `door`
 - `fan`
 - `heating`
@@ -119,7 +120,7 @@ Worker støtter også noen norske/alternative sensornavn, for eksempel `temperat
 
 Verdier:
 
-- `temperature`, `humidity`, `rain_today`: tall
+- `temperature`, `humidity`, `rain_today`, `rain_hour`: tall
 - `door`: `open`/`closed`, `Ja`/`Nei`, boolean eller `1`/`0`
 - `fan`, `heating`: `on`/`off`, `Yes`/`No`, `Ja`/`Nei`, boolean eller `1`/`0`
 - `window`: heltall fra `0` til `3`
@@ -127,6 +128,14 @@ Verdier:
 ### `GET /api/latest`
 
 Raskt endepunkt for nåverdier. Frontenden bruker dette først slik at temperatur, luftfuktighet og statuskort vises raskt.
+Responsen inkluderer også `dataHealth`, som varsler når temperatur eller
+luftfuktighet ikke har blitt oppdatert på 60 minutter.
+
+### `GET /api/data-health`
+
+Returnerer ferskhetsstatus for temperatur og luftfuktighet, samt siste lagrede
+monitorstatus fra KV. Worker-cronen kontrollerer dette hvert femte minutt og
+logger bare når en alarm oppstår eller dataflyten kommer tilbake.
 
 ### `GET /api/history`
 
@@ -172,7 +181,13 @@ Kjører ny OpenAI-analyse for aktiv sesong og lagrer resultatet i KV. Planter so
 
 ### `GET`, `PUT` `/admin/api/config`
 
-Admin-endepunkter for å lese og lagre site-config.
+Admin-endepunkter for å lese og lagre konfigurasjonen som én samlet struktur. I R2
+lagres den separat under `admin/config/` som versjonerte `site-config`, `images`,
+`display-config`, `theme-config`, `plants`, `plant-library` og
+`analysis-settings`. Hvert objekt har `schemaVersion` og `updatedAt`. Bare delene
+som er endret skrives på nytt, før `manifest.json` oppdateres som atomisk
+commit-punkt. Uten manifest leses den gamle `admin/site-config.json` som
+migreringskilde; den overskrives ikke.
 
 ### `GET`, `POST`, `PATCH`, `DELETE` `/admin/api/images`
 
@@ -226,13 +241,35 @@ Adminsidene ligger under `/admin` og brukes til:
 - å endre headerbilder, logo og favicon
 - å laste opp og slette media i R2
 - å styre hvilke seksjoner som vises på forsiden
-- å redigere light/dark/display-farger per modus
+- å redigere et felles light/dark-tema under modusen «Normalt»
 - å forhåndsvise mobilvisning før lagring
 - å konfigurere rund skjerm med faktisk utsnitt
 - å generere `164 x 466` PNG og RGB565-binærfil til ESP32
 - å vedlikeholde plantebibliotek, sesonger og AI-notater
 
-Fargene for web og skjerm er samlet i site-config. Dark-modeverdiene brukes også av display-konfigurasjonen til ESP32-skjermen.
+Admin bruker en kompakt kontrollflate med gruppert navigasjon. Dyrking er delt i
+aktiv sesong, et søkbart plantebibliotek og analyse. Planter vises som kompakte
+lister, mens valgt plante redigeres i et eget detaljpanel.
+
+På mobil erstattes sidepanelet av en kompakt områdevelger. Plante- og
+bibliotekdetaljer åpnes som egne heldekkende redigeringsflater med tilbakeknapp.
+
+Oversikt viser temperatur, luftfuktighet, aktiv modus, sensorstatus og nøkkeltall
+for planter. Plantebibliotek og analyse kan vises eller skjules uavhengig på
+forsiden.
+
+Bibliotekplanter har en bred `plantType` og, med unntak av urter, en avhengig
+`plantGroup` som for eksempel Frukt/Tomat eller Blomst/Staude. Begge vises som
+tags på plantekortet, brukes i biblioteksøk og sendes til planteanalysen.
+
+Sesongplanter har en eksplisitt `finished`-status. Avslutningsdatoen er valgfri
+og vises i admin først når «Høstet / avsluttet» er valgt. Eldre sesongdata med
+avslutningsdato migreres automatisk til avsluttet status.
+
+«Normalt» er standardtema for alle temperatur- og værmoduser. De øvrige modusene
+arver light/dark-fargene, men beholder egne bilder, skjermutsnitt og mørk
+nettleserbakgrunn. Dark-modeverdiene brukes også av display-konfigurasjonen til
+ESP32-skjermen.
 
 ## Rund AMOLED-skjerm
 
